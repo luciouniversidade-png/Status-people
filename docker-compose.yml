@@ -1,0 +1,12 @@
+# Banco local para testar sem internet: docker compose up -d
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: status
+      POSTGRES_PASSWORD: status
+      POSTGRES_DB: status_people
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+volumes:
+  pgdata: {}
