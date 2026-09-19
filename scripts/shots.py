@@ -33,7 +33,7 @@ def snap():
         except Exception as e:
             print("erro", path, e)
         nxt()
-    view.get_snapshot(WebKit2.SnapshotRegion.FULL_DOCUMENT, WebKit2.SnapshotOptions.NONE, None, done, current[0])
+    view.get_snapshot(WebKit2.SnapshotRegion.VISIBLE if os.environ.get("SHOT_VISIBLE") else WebKit2.SnapshotRegion.FULL_DOCUMENT, WebKit2.SnapshotOptions.NONE, None, done, current[0])
     return False
 
 current = [None]
@@ -41,7 +41,7 @@ def on_load(v, ev):
     if ev == WebKit2.LoadEvent.FINISHED:
         js = os.environ.get("SHOT_JS")
         if js: v.run_javascript(js, None, None, None)
-        GLib.timeout_add(900, snap)
+        GLib.timeout_add(int(os.environ.get("SHOT_DELAY", "900")), snap)
 
 def nxt():
     if not queue: Gtk.main_quit(); return

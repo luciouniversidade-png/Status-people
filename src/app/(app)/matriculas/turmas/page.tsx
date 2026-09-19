@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import Link from "next/link";
 import { requireMatriculas, scopeUnit, can } from "@/lib/auth";
 import { db, schema } from "@/db";
@@ -43,7 +44,7 @@ export default async function Turmas({ searchParams }: { searchParams: Promise<R
           {rows.map(t => <tr key={t.class_id}>
             <Td><Link className="font-medium text-acao" href={`/matriculas/turmas/${t.class_id}`}>{t.nome}</Link></Td><Td>{t.unidade}</Td><Td>{t.modalidade === "REGULAR" ? "Regular" : "Integral"}</Td><Td>{t.serie ?? t.series_texto ?? "—"}</Td><Td>{t.turno}</Td><Td>{t.vagas}</Td>
             <Td className="whitespace-nowrap"><span className="text-ok">{t.confirmadas}</span> + <span className="text-aviso">{t.reservadas}</span> = {t.confirmadas + t.reservadas}</Td><Td><Badge v={t.status === "ABERTA" ? "ATIVO" : "DESLIGADO"} label={t.status === "ABERTA" ? "Aberta" : "Fechada"} /></Td>
-            <Td>{editar && <details><summary className="cursor-pointer text-xs text-acao">Editar</summary><div className="mt-2 w-72 rounded-md border border-line bg-white p-3 shadow"><Form t={t} /><form action={excluirTurma} className="mt-2"><input type="hidden" name="id" value={t.class_id} /><Btn small danger>Excluir</Btn></form></div></details>}</Td>
+            <Td>{editar && <Modal label={"Editar"} kind="link"><div className=""><Form t={t} /><form action={excluirTurma} className="mt-2"><input type="hidden" name="id" value={t.class_id} /><Btn small danger>Excluir</Btn></form></div></Modal>}</Td>
           </tr>)}
         </Table>
         {editar && <Card title="Nova turma"><Form /></Card>}

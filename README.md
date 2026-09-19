@@ -19,6 +19,18 @@ Sistema do Colégio Status com cinco módulos e o painel executivo no mesmo logi
 - Painel: progresso do ciclo, KRs com confiança baixa, projetos em risco, marcos atrasados, orçamento; card de estratégia no **Command Center**.
 - Quem define OKRs: Direção, RH (diretor: da própria unidade). Quem faz check-in e status report: o dono e os gestores. Todos leem.
 
+## Esqueci minha senha e senha temporária (v16)
+
+- Na tela de login há **Esqueci minha senha**. Com e-mail configurado (`RESEND_API_KEY` + `MAIL_FROM`), o usuário recebe um link de 1 hora e de uso único para criar a nova senha. Sem e-mail, o pedido aparece em **Configurações → Usuários** ("pediu nova senha") e o RH clica em **Gerar senha temporária**: a senha é mostrada uma vez para ser passada pessoalmente; no primeiro acesso o usuário é obrigado a trocá-la antes de navegar.
+- A resposta da tela é sempre neutra (não revela se o e-mail existe); no máximo 3 pedidos a cada 15 minutos por conta.
+
+## Responsividade (v16)
+- Celular: menu recolhido, indicadores em duas colunas, tabelas com rolagem lateral e primeira coluna fixa.
+- Formulários de ação dentro de tabelas (Editar, Decidir, Registrar contato, Presença, Check-in, Reajustar…) abrem em **janela própria** (dialog nativo), legível no PC e no celular — nada mais espremido na última coluna.
+- Notebook (1024–1366 px): indicadores em 3 colunas para não estourar valores em reais.
+- Feedback imediato: o link do menu mostra um giro enquanto a tela carrega e o botão mostra "Enviando…" enquanto a ação roda (evita clique duplo).
+- Dependências de build (Tailwind, PostCSS, TypeScript) passaram para `dependencies`, para o deploy não quebrar quando a hospedagem instala só produção.
+
 ## Segurança e homologação (v14)
 
 - **Falha segura**: sem `AUTH_SECRET` (≥ 32 caracteres) o sistema não aceita sessões; a instalação exige `ADMIN_PASSWORD` (≥ 10) e `SETUP_TOKEN` (≥ 16). Nada de valores padrão.

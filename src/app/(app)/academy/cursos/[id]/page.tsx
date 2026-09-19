@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq, asc } from "drizzle-orm";
@@ -33,7 +34,7 @@ export default async function Curso({ params, searchParams }: { params: Promise<
           </Card>
           <Card title="Turmas presenciais"><div id="turmas" />
             <Table head={["Data", "Horário", "Local", "Instrutor", "Unidade", "Presentes", ""]} empty="Nenhuma turma agendada.">{sessoes.map(t => <tr key={t.id}><Td>{fmtData(t.data)}</Td><Td className="text-xs">{t.horario ?? "—"}</Td><Td className="text-xs">{t.local ?? "—"}</Td><Td className="text-xs">{t.instrutor ?? "—"}</Td><Td className="text-xs">{t.unidade ?? "rede"}</Td><Td>{t.presentes}{t.vagas ? `/${t.vagas}` : ""}</Td>
-              <Td>{gestao && <details className="relative"><summary className="cursor-pointer rounded-md border border-line bg-white px-2.5 py-1 text-xs">Presença</summary><form action={registrarPresenca} className="mt-1 max-h-80 w-72 max-w-[85vw] space-y-1 overflow-auto rounded-md border border-line bg-white p-3 text-xs shadow-lg"><input type="hidden" name="sessionId" value={t.id} />{emps.map(e => <label key={e.id} className="flex items-center gap-2"><input type="checkbox" name="employeeId" value={e.id} /> {e.nome} <span className="text-slate-400">· {e.unidade}</span></label>)}<Btn small>Registrar presentes</Btn></form></details>}</Td></tr>)}</Table>
+              <Td>{gestao && <Modal label={"Presença"} kind="ghost"><form action={registrarPresenca} className="space-y-1"><input type="hidden" name="sessionId" value={t.id} />{emps.map(e => <label key={e.id} className="flex items-center gap-2"><input type="checkbox" name="employeeId" value={e.id} /> {e.nome} <span className="text-slate-400">· {e.unidade}</span></label>)}<Btn small>Registrar presentes</Btn></form></Modal>}</Td></tr>)}</Table>
             {gestao && <form action={salvarSessao} className="mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-3"><input type="hidden" name="courseId" value={cid} /><Field label="Data"><Input name="data" type="date" required /></Field><Field label="Horário"><Input name="horario" placeholder="14:00–17:00" /></Field><Field label="Local"><Input name="local" /></Field><Field label="Instrutor"><Input name="instrutor" /></Field><Field label="Unidade"><Select name="unitId" defaultValue={u ?? ""}><option value="">Rede</option>{units.filter(x => u === null || x.id === u).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Vagas"><Input name="vagas" type="number" min={1} /></Field><div className="sm:col-span-3"><Btn small kind="ghost">Agendar turma</Btn></div></form>}
           </Card>
         </div>

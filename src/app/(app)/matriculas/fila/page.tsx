@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import Link from "next/link";
 import { requireMatriculas, scopeUnit, can } from "@/lib/auth";
 import { db, schema, sql } from "@/db";
@@ -41,7 +42,7 @@ export default async function Fila({ searchParams }: { searchParams: Promise<Rec
               {w.status === "AGUARDANDO" && opcoes.length > 0 && <form action={ofertarFila} className="flex items-center gap-1"><input type="hidden" name="id" value={w.id} /><input type="hidden" name="voltar" value="/matriculas/fila" /><Select name="classId" className="!w-auto !py-1 !text-xs">{opcoes.map(t => <option key={t.id} value={t.id}>{rotuloTurma(t)}</option>)}</Select><Btn small kind="ghost">Ofertar</Btn></form>}
               {w.status === "AGUARDANDO" && opcoes.length === 0 && <span className="text-xs text-slate-400">sem vaga livre</span>}
               {w.status === "OFERTADA" && <form action={converterFila}><input type="hidden" name="id" value={w.id} /><input type="hidden" name="voltar" value="/matriculas/fila" /><Btn small>Aceitou → reservar</Btn></form>}
-              <details className="relative"><summary className="cursor-pointer rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-erro">Sair</summary><form action={sairFila} className="mt-1 w-56 space-y-1 rounded-md border border-line bg-white p-2 text-xs shadow-lg"><input type="hidden" name="id" value={w.id} /><input type="hidden" name="voltar" value="/matriculas/fila" /><Input name="motivo" placeholder="Motivo" /><Btn small danger>Retirar da fila</Btn></form></details>
+              <Modal label={"Sair"} kind="ghost"><form action={sairFila} className="space-y-1"><input type="hidden" name="id" value={w.id} /><input type="hidden" name="voltar" value="/matriculas/fila" /><Input name="motivo" placeholder="Motivo" /><Btn small danger>Retirar da fila</Btn></form></Modal>
             </div>}</Td>
           </tr>); })}
       </Table>

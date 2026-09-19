@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import { db, schema, sql } from "@/db";
 import { asc } from "drizzle-orm";
 import { Field, Input, Select, Textarea, Btn } from "@/components/ui";
@@ -49,19 +50,19 @@ export function AcoesMatricula({ e, voltar, podeConfirmar, podeCancelarMat, turm
   return (
     <div className="flex flex-wrap gap-1">
       {e.status === "RESERVADA" && podeConfirmar && (
-        <details className="relative"><summary className="cursor-pointer rounded-md bg-acao px-2.5 py-1 text-xs font-medium text-white">Confirmar</summary>
-          <form action={confirmar} className="absolute z-10 mt-1 w-64 space-y-2 rounded-md border border-line bg-white p-3 text-xs shadow-lg"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
+        <Modal label={"Confirmar"} kind="primary">
+          <form action={confirmar} className="absolute z-10 space-y-2"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
             <label className="flex items-center gap-2"><input type="checkbox" name="contrato" value="1" defaultChecked={e.contrato} /> Contrato assinado</label>
             <label className="flex items-center gap-2"><input type="checkbox" name="financeiro" value="1" defaultChecked={e.fin} /> Financeiro OK</label>
-            <Btn small>Confirmar matrícula</Btn></form></details>)}
+            <Btn small>Confirmar matrícula</Btn></form></Modal>)}
       {e.status === "RESERVADA" && podeConfirmar && <form action={prorrogar} className="flex items-center gap-1"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} /><input name="dias" type="number" min={1} max={30} defaultValue={3} className="w-14 rounded border border-line px-1 py-1 text-xs" aria-label="dias" /><Btn small kind="ghost">Prorrogar</Btn></form>}
-      <details className="relative"><summary className="cursor-pointer rounded-md border border-line bg-white px-2.5 py-1 text-xs">Transferir</summary>
-        <form action={transferirAcao} className="absolute z-10 mt-1 w-80 space-y-2 rounded-md border border-line bg-white p-3 text-xs shadow-lg"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
+      <Modal label={"Transferir"} kind="ghost">
+        <form action={transferirAcao} className="absolute z-10 space-y-2"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
           <Field label="Nova turma"><Select name="novaClassId" required><option value="">Escolha</option>{turmas.filter(t => t.id !== e.class_id).map(t => <option key={t.id} value={t.id}>{rotuloTurma(t)}</option>)}</Select></Field>
-          <Field label="Exceção (se lotada)"><Input name="excecao" /></Field><Btn small>Transferir</Btn></form></details>
-      {(e.status === "RESERVADA" || podeCancelarMat) && <details className="relative"><summary className="cursor-pointer rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs text-erro">Cancelar</summary>
-        <form action={cancelar} className="mt-1 w-72 max-w-[85vw] space-y-2 rounded-md border border-line bg-white p-3 text-xs shadow-lg"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
-          <Field label="Motivo"><Select name="motivo" required><option value="">Escolha</option>{MOTIVOS_PERDA.map(m => <option key={m}>{m}</option>)}</Select></Field><Btn small danger>Confirmar cancelamento</Btn></form></details>}
+          <Field label="Exceção (se lotada)"><Input name="excecao" /></Field><Btn small>Transferir</Btn></form></Modal>
+      {(e.status === "RESERVADA" || podeCancelarMat) && <Modal label={"Cancelar"} kind="ghost">
+        <form action={cancelar} className="space-y-2"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
+          <Field label="Motivo"><Select name="motivo" required><option value="">Escolha</option>{MOTIVOS_PERDA.map(m => <option key={m}>{m}</option>)}</Select></Field><Btn small danger>Confirmar cancelamento</Btn></form></Modal>}
     </div>
   );
 }

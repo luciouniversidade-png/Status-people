@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import Link from "next/link";
 import { scopeUnit } from "@/lib/auth";
 import { db, schema, sql } from "@/db";
@@ -49,9 +50,9 @@ export default async function Controles({ searchParams }: { searchParams: Promis
               {controles.map(c => <tr key={c.id} className={!c.ativo ? "opacity-50" : ""}><Td><div className="font-medium">{c.titulo}</div><div className="text-xs text-slate-500">{c.pop ?? ""}{c.unidade ? ` · ${c.unidade}` : ""}{c.descricao ? ` · ${c.descricao}` : ""}</div></Td><Td className="text-xs">{c.area}</Td><Td className="text-xs">{FREQ[c.frequencia]}</Td><Td className="text-xs">{c.responsavel ?? "—"}</Td>
                 <Td className="text-xs">{c.ultima ? <>{fmtData(c.ultima)} <Badge v={c.ultimo_resultado === "CONFORME" ? "APROVADA" : "REJEITADA"} label={c.ultimo_resultado === "CONFORME" ? "conforme" : "não conforme"} /></> : "—"}{c.nao_conformes ? <div className="text-erro">{c.nao_conformes} NC em 90 dias</div> : null}</Td>
                 <Td className={`text-xs ${c.ativo && c.proxima_em && c.proxima_em < h ? "font-medium text-erro" : ""}`}>{fmtData(c.proxima_em)}{c.ativo && c.proxima_em && c.proxima_em < h ? " · atrasado" : ""}</Td>
-                <Td>{c.ativo && <details className="relative"><summary className="cursor-pointer rounded-md bg-acao px-2.5 py-1 text-xs font-medium text-white">Registrar</summary><form action={registrarExecucao} className="mt-1 w-72 max-w-[85vw] space-y-2 rounded-md border border-line bg-white p-3 text-xs shadow-lg"><input type="hidden" name="controlId" value={c.id} />
+                <Td>{c.ativo && <Modal label={"Registrar"} kind="primary"><form action={registrarExecucao} className="space-y-2"><input type="hidden" name="controlId" value={c.id} />
                   <Field label="Data"><Input name="data" type="date" defaultValue={h} /></Field><Field label="Resultado"><Select name="resultado" defaultValue="CONFORME"><option value="CONFORME">Conforme</option><option value="NAO_CONFORME">Não conforme</option></Select></Field><Field label="Evidência (link, documento, contagem)"><Input name="evidencia" /></Field><Field label="Observação"><Input name="obs" /></Field>
-                  <label className="flex items-center gap-2"><input type="checkbox" name="abrirNc" value="1" defaultChecked /> Se não conforme, abrir não conformidade</label><Field label="Gravidade da NC"><Select name="gravidade" defaultValue="2"><option value="1">1</option><option value="2">2</option><option value="3">3</option></Select></Field><Btn small>Salvar execução</Btn></form></details>}</Td></tr>)}
+                  <label className="flex items-center gap-2"><input type="checkbox" name="abrirNc" value="1" defaultChecked /> Se não conforme, abrir não conformidade</label><Field label="Gravidade da NC"><Select name="gravidade" defaultValue="2"><option value="1">1</option><option value="2">2</option><option value="3">3</option></Select></Field><Btn small>Salvar execução</Btn></form></Modal>}</Td></tr>)}
             </Table>
           </div>
           <div>
@@ -60,7 +61,7 @@ export default async function Controles({ searchParams }: { searchParams: Promis
             <Table head={["#", "Não conformidade", "Origem", "Gravidade", "Responsável", "Prazo", "Situação", ""]} empty="Nenhuma não conformidade neste filtro.">
               {ncs.map(n => <tr key={n.id}><Td className="text-slate-500">{n.id}</Td><Td><div className="font-medium">{n.titulo}</div><div className="text-xs text-slate-500">{n.pop ?? ""}{n.unidade ? ` · ${n.unidade}` : ""}{n.case_id ? <> · <Link className="text-acao" href={`/atendimento/casos/${n.case_id}`}>caso #{n.case_id}</Link></> : ""}</div>{n.causa_raiz && <div className="text-xs">Causa: {n.causa_raiz}</div>}{n.acao_corretiva && <div className="text-xs">Ação: {n.acao_corretiva}</div>}</Td><Td className="text-xs">{NC_ORIGEM[n.origem]}</Td><Td><Badge v={n.gravidade === 3 ? "REJEITADA" : n.gravidade === 2 ? "PENDENTE" : "EM_AQUISICAO"} label={String(n.gravidade)} /></Td><Td className="text-xs">{n.responsavel ?? "—"}</Td>
                 <Td className={`text-xs ${n.status !== "ENCERRADA" && n.prazo && n.prazo < h ? "font-medium text-erro" : ""}`}>{fmtData(n.prazo)}</Td><Td><Badge v={n.status === "ENCERRADA" ? "APROVADA" : n.status === "VERIFICACAO" ? "PENDENTE" : "EM_ADMISSAO"} label={NC_STATUS[n.status]} /></Td>
-                <Td><details className="relative"><summary className="cursor-pointer rounded-md border border-line bg-white px-2.5 py-1 text-xs">Tratar</summary><div className="mt-1 w-80 max-w-[85vw] rounded-md border border-line bg-white p-3 text-xs shadow-lg"><NcForm n={n} /></div></details></Td></tr>)}
+                <Td><Modal label={"Tratar"} kind="ghost"><div className=""><NcForm n={n} /></div></Modal></Td></tr>)}
             </Table>
           </div>
         </div>

@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq, desc, asc, and } from "drizzle-orm";
@@ -167,8 +168,8 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
                 <Td>{d.link ? <a className="text-acao" href={d.link} target="_blank" rel="noreferrer">abrir</a> : "—"}</Td>
                 <Td>{can.editar(s) && <div className="flex gap-1">
                   {!d.recebidoEm && <form action={marcarRecebido}><input type="hidden" name="docId" value={d.id} /><input type="hidden" name="employeeId" value={id} /><Btn small>Recebido hoje</Btn></form>}
-                  <details className="relative"><summary className="cursor-pointer rounded border border-line bg-white px-2 py-1 text-xs">Editar</summary>
-                    <form action={salvarDocumento} className="mt-1 w-72 max-w-[85vw] space-y-2 rounded-md border border-line bg-white p-3 shadow-lg">
+                  <Modal label={"Editar"} kind="ghost">
+                    <form action={salvarDocumento} className="space-y-2">
                       <input type="hidden" name="docId" value={d.id} /><input type="hidden" name="employeeId" value={id} />
                       <Field label="Tipo"><Input name="tipo" defaultValue={d.tipo} required /></Field>
                       <Field label="Descrição"><Input name="nome" defaultValue={d.nome ?? ""} /></Field>
@@ -176,7 +177,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
                       <div className="grid grid-cols-2 gap-2"><Field label="Recebido em"><Input name="recebidoEm" type="date" defaultValue={d.recebidoEm ?? ""} /></Field><Field label="Validade"><Input name="validade" type="date" defaultValue={d.validade ?? ""} /></Field></div>
                       <label className="flex items-center gap-2 text-xs"><input type="checkbox" name="obrigatorio" value="1" defaultChecked={d.obrigatorio} /> Obrigatório</label>
                       <div className="flex gap-1"><Btn small>Salvar</Btn><Btn small danger formAction={excluirDocumento}>Excluir</Btn></div>
-                    </form></details>
+                    </form></Modal>
                 </div>}</Td>
               </tr>); })}
           </Table>

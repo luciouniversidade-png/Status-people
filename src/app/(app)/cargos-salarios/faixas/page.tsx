@@ -1,3 +1,4 @@
+import { Modal } from "@/components/Modal";
 import { redirect } from "next/navigation";
 import { asc } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
@@ -25,7 +26,7 @@ export default async function Faixas({ searchParams }: { searchParams: Promise<R
       <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-start">
         <Table head={["Faixa", "Nome", "Mínimo", "Médio", "Máximo", "Amplitude", "Pontos", "Cargos · pessoas", "Vigência", ""]} empty="Nenhuma faixa. Crie a estrutura ao lado (ex.: G1 a G8).">
           {grades.map(g => { const u = uso.find(x => x.grade_id === g.id); return <tr key={g.id}><Td className="font-medium">{g.codigo}</Td><Td>{g.nome ?? "—"}</Td><Td className="tabular-nums">{fmtBRL(g.minimo)}</Td><Td className="tabular-nums">{fmtBRL(g.medio)}</Td><Td className="tabular-nums">{fmtBRL(g.maximo)}</Td><Td>{Math.round(100 * (Number(g.maximo) - Number(g.minimo)) / Number(g.minimo))}%</Td><Td className="text-xs">{g.pontosMin !== null ? `${g.pontosMin}–${g.pontosMax}` : "—"}</Td><Td className="text-xs">{u ? `${u.cargos} · ${u.pessoas}` : "—"}</Td><Td className="text-xs">{fmtData(g.vigenciaInicio)}</Td>
-            <Td>{pode && <div className="flex gap-1"><details className="relative"><summary className="cursor-pointer text-xs text-acao">Editar</summary><div className="mt-1 w-80 max-w-[85vw] rounded-md border border-line bg-white p-3 shadow-lg"><Form g={g} /></div></details><form action={excluirFaixa}><input type="hidden" name="id" value={g.id} /><button className="text-xs text-erro">excluir</button></form></div>}</Td></tr>; })}
+            <Td>{pode && <div className="flex gap-1"><Modal label={"Editar"} kind="link"><div className=""><Form g={g} /></div></Modal><form action={excluirFaixa}><input type="hidden" name="id" value={g.id} /><button className="text-xs text-erro">excluir</button></form></div>}</Td></tr>; })}
         </Table>
         {pode && <div className="space-y-4"><Card title="Nova faixa"><Form /></Card>
           <Card title="Reajuste coletivo (dissídio)"><form action={reajustarFaixas} className="space-y-2"><Field label="Percentual (%)"><Input name="pct" type="number" step="0.01" required /></Field><Field label="Vigência"><Input name="vigenciaInicio" type="date" defaultValue={hoje()} /></Field><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="aplicarSalarios" value="1" /> Aplicar também aos salários de todos os ativos (gera histórico “Dissídio”)</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="confirmo" value="1" /> Confirmo o reajuste</label><Btn small danger>Aplicar reajuste</Btn></form></Card></div>}
