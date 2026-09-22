@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
-import { audit, str, strOrNull, num, int, erroMsg, getSettings, hoje } from "@/lib/utils";
+import { textoImportacao } from "@/lib/importacao";
+import { audit, str, strOrNull, num, int, erroMsg, getSettings, hoje, detectarSeparador, normalizarCabecalho, arquivoParaTexto } from "@/lib/utils";
 import { abrirProcesso } from "@/lib/processos";
 
 function lerColaborador(fd: FormData) {
@@ -122,10 +123,12 @@ export async function importarCSV(fd: FormData) {
   const s = await requireSession(); let resumo = "";
   try {
     assert(can.editar(s));
-    const texto = str(fd, "csv"); if (!texto) throw new Error("Cole o conteúdo do CSV.");
-    const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const sep = linhas[0].includes(";") ? ";" : ",";
-    const head = linhas[0].split(sep).map(h => h.trim().toLowerCase());
+    const arquivo = fd.get("arquivo"); let texto = str(fd, "csv");
+    if (arquivo instanceof File && arquivo.size > 0) texto = await arquivoParaTexto(arquivo);
+    if (!texto.trim()) throw new Error("Escolha a planilha (.xlsx ou .csv) ou cole o conteúdo.");
+    const linhas = texto.split(/\r?\n/).map(l => l.replace(/\s+$/, "")).filter(l => l.trim());
+    const sep = detectarSeparador(linhas[0]);
+    const head = linhas[0].split(sep).map(normalizarCabecalho);
     const idx = (k: string) => head.indexOf(k);
     if (idx("nome") < 0 || idx("unidade") < 0 || idx("admissao") < 0) throw new Error("Cabeçalho precisa ter ao menos: nome; unidade; admissao.");
     const units = await db.select().from(schema.units); const positions = await db.select().from(schema.positions); const companies = await db.select().from(schema.companies);
@@ -134,7 +137,7 @@ export async function importarCSV(fd: FormData) {
     const cfg = await getSettings();
     let ok = 0; const erros: string[] = [];
     for (const [i, l] of linhas.slice(1).entries()) {
-      const c = l.split(sep).map(x => x.trim());
+      const c = l.split(sep).map(x => x.trim().replace(/^"(.*)"$/, "$1").trim());
       const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : "");
       try {
         const unit = findBy(units, g("unidade")) ?? units.find(u => norm(u.codigo) === norm(g("unidade")));

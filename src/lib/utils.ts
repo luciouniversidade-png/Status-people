@@ -131,3 +131,23 @@ export async function saldosBanco(employeeIds: number[]) {
 
 /** Mensagem de erro amigável para redirecionar com ?erro= */
 export function erroMsg(e: unknown) { return encodeURIComponent(e instanceof Error ? e.message : "Erro inesperado."); }
+
+// ---------- Importação de planilhas coladas ----------
+/** Detecta o separador da primeira linha: tabulação (cópia direta do Excel), ponto e vírgula (CSV brasileiro) ou vírgula. */
+export function detectarSeparador(linha: string) { return linha.includes("\t") ? "\t" : linha.includes(";") ? ";" : ","; }
+/** Normaliza um título de coluna: sem BOM, sem acento, minúsculo, espaços → _ (aceita "Admissão", "jornada min dia", "E-mail"…). */
+const ALIAS_CABECALHO: Record<string, string> = { e_mail: "email", mail: "email", celular: "telefone", fone: "telefone", whatsapp: "telefone", data_de_admissao: "admissao", data_admissao: "admissao", dt_admissao: "admissao", funcao: "cargo", setor: "area", jornada: "jornada_min_dia", jornada_min: "jornada_min_dia", jornada_minutos: "jornada_min_dia", minutos_dia: "jornada_min_dia", periodo: "turno", cnpj_empregador: "empresa", empregador: "empresa", tipo_vinculo: "vinculo", aluno_a: "aluno", responsavel_financeiro: "responsavel", valor_rs: "valor", vencto: "vencimento", data_vencimento: "vencimento", competencia_mm_aaaa: "competencia", numero_titulo: "titulo", n_titulo: "titulo", nro_titulo: "titulo" };
+export function normalizarCabecalho(h: string) { const k = h.replace(/^\uFEFF/, "").replace(/^"|"$/g, "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/[\s\-\/.]+/g, "_").replace(/[()]/g, "").replace(/_+$/, ""); return ALIAS_CABECALHO[k] ?? k; }
+/** Limpa uma célula: aspas de CSV e espaços. */
+export function celula(v: string | undefined) { return (v ?? "").trim().replace(/^"(.*)"$/, "$1").trim(); }
+
+/** Lê um arquivo enviado (.xlsx/.xls/.csv/.txt) e devolve texto tabulado (primeira aba). Decodifica CSV em UTF-8 ou Windows-1252 (Excel brasileiro). */
+export async function arquivoParaTexto(file: File): Promise<string> {
+  const buf = Buffer.from(await file.arrayBuffer()); const nome = file.name.toLowerCase();
+  if (/\.(xlsx|xlsm|xls)$/.test(nome) || buf.subarray(0, 2).toString("hex") === "504b") {
+    const XLSX = await import("xlsx"); const wb = XLSX.read(buf, { type: "buffer", cellDates: true, raw: false });
+    const ws = wb.Sheets[wb.SheetNames[0]]; return XLSX.utils.sheet_to_csv(ws, { FS: "\t", blankrows: false, dateNF: "dd/mm/yyyy" });
+  }
+  let t = buf.toString("utf8"); if (t.includes("\uFFFD")) t = new TextDecoder("windows-1252").decode(buf);
+  return t.replace(/^\uFEFF/, "");
+}

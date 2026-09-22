@@ -1,9 +1,10 @@
 "use server";
+import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
-import { audit, str, strOrNull, int, num, hoje, addDays, getSettings } from "@/lib/utils";
+import { audit, str, strOrNull, int, num, hoje, addDays, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { abrirProcesso } from "@/lib/processos";
 import { nivelDesempenho, mediaNotas } from "@/lib/talento";
 
@@ -205,7 +206,7 @@ export async function moverEtapa(fd: FormData) {
 }
 export async function importarCandidatos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { assert(can.editar(s)); const texto = str(fd, "csv"); if (!texto) throw new Error("Cole o CSV."); const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = linhas[0].includes(";") ? ";" : ","; const head = linhas[0].split(sep).map(h => h.trim().toLowerCase()); const idx = (k: string) => head.indexOf(k); if (idx("nome") < 0) throw new Error("Cabeçalho precisa ter nome.");
+  try { assert(can.editar(s)); const texto = await textoImportacao(fd); if (!texto) throw new Error("Cole o CSV."); const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = detectarSeparador(linhas[0]); const head = linhas[0].split(sep).map(normalizarCabecalho); const idx = (k: string) => head.indexOf(k); if (idx("nome") < 0) throw new Error("Cabeçalho precisa ter nome.");
     let ok = 0, pulados = 0; for (const l of linhas.slice(1)) { const c = l.split(sep).map(x => x.trim()); const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : ""); if (!g("nome")) continue; const [dup] = await sql<{ id: number }[]>`SELECT id FROM candidates WHERE lower(nome)=lower(${g("nome")}) AND (${g("email") || null}::text IS NULL OR email=${g("email") || null})`; if (dup) { pulados++; continue; } await db.insert(schema.candidates).values({ nome: g("nome"), email: g("email") || null, telefone: g("telefone") || null, cidade: g("cidade") || null, curriculoLink: g("curriculo") || null, origem: (g("origem") || "BANCO_TALENTOS").toUpperCase(), formacao: g("formacao") || null, tags: g("tags") || null, consentimentoLgpd: /^(1|sim|s|x)$/i.test(g("consentimento")) }); ok++; }
     await audit(s, "importar candidatos", "candidates", null, null, { ok, pulados }); resumo = `${ok} candidato(s) importado(s), ${pulados} já existiam.`;
   } catch (e) { redirect(go("/recrutamento/candidatos", "erro", e instanceof Error ? e.message : "Erro")); }

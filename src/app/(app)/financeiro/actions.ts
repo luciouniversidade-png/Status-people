@@ -1,22 +1,23 @@
 "use server";
+import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { createHash } from "crypto";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
-import { audit, str, strOrNull, int, num, hoje, addMonths, getSettings } from "@/lib/utils";
+import { audit, str, strOrNull, int, num, hoje, addMonths, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { normNome, parseValor, parseData } from "@/lib/financeiro";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
 const COBRA = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"];
-function csv(texto: string) { const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (linhas.length < 2) throw new Error("Cole o CSV com cabeçalho e ao menos uma linha."); const sep = linhas[0].includes(";") ? ";" : linhas[0].includes("\t") ? "\t" : ","; const head = linhas[0].split(sep).map(h => normNome(h)); return { linhas: linhas.slice(1), get: (l: string) => { const c = l.split(sep).map(x => x.trim()); return (k: string) => { const i = head.indexOf(k); return i >= 0 ? c[i] ?? "" : ""; }; }, head }; }
+function csv(texto: string) { const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (linhas.length < 2) throw new Error("Cole o CSV com cabeçalho e ao menos uma linha."); const sep = detectarSeparador(linhas[0]); const head = linhas[0].split(sep).map(normalizarCabecalho); return { linhas: linhas.slice(1), get: (l: string) => { const c = l.split(sep).map(x => x.trim()); return (k: string) => { const i = head.indexOf(k); return i >= 0 ? c[i] ?? "" : ""; }; }, head }; }
 async function unidadePor(nome: string, units: { id: number; nome: string; codigo: string }[]) { return units.find(u => normNome(u.nome) === normNome(nome) || normNome(u.codigo) === normNome(nome)); }
 
 // ---------- Importação de títulos (em aberto e recebidos) ----------
 export async function importarTitulos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
   try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro), "Importar títulos exige: " + cfg.alcadas.financeiro.join(", "));
-    const { linhas, get, head } = csv(str(fd, "csv")); if (!head.includes("aluno") || !head.includes("vencimento") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter aluno, vencimento e valor (opcionais: titulo, unidade, tipo, competencia, responsavel, telefone, pago_em, valor_pago, status).");
+    const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("aluno") || !head.includes("vencimento") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter aluno, vencimento e valor (opcionais: titulo, unidade, tipo, competencia, responsavel, telefone, pago_em, valor_pago, status).");
     const units = await db.select().from(schema.units); const alunos = await sql<{ id: number; nome: string; unit_atual_id: number | null }[]>`SELECT id, nome, unit_atual_id FROM students`; const unidadePadrao = int(fd, "unitId");
     let novos = 0, atualizados = 0; const erros: string[] = [];
     for (const [i, l] of linhas.entries()) { const g = get(l); try {
@@ -120,7 +121,7 @@ export async function salvarPreco(fd: FormData) {
 }
 export async function importarCaixa(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const { linhas, get, head } = csv(str(fd, "csv")); if (!head.includes("data") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter data e valor (opcionais: tipo, categoria, forma, descricao, unidade, contraparte).");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("data") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter data e valor (opcionais: tipo, categoria, forma, descricao, unidade, contraparte).");
     const units = await db.select().from(schema.units); const unidadePadrao = int(fd, "unitId"); let ok = 0, dup = 0; const erros: string[] = [];
     for (const [i, l] of linhas.entries()) { const g = get(l); try {
       const data = parseData(g("data")); let valor = parseValor(g("valor")); if (!data || !Number.isFinite(valor)) throw new Error("data ou valor inválido");

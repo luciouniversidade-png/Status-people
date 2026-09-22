@@ -1,9 +1,10 @@
 "use server";
+import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, assertEmployeeAccess } from "@/lib/auth";
-import { audit, str, strOrNull, int, getSettings, hoje } from "@/lib/utils";
+import { audit, str, strOrNull, int, getSettings, hoje, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 
 const voltar = (fd: FormData, fallback: string) => str(fd, "voltar") || fallback;
 const go = (back: string, k: "ok" | "erro", msg: string) => `${back}${back.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}#banco`;
@@ -63,11 +64,11 @@ export async function importarSaldos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
   try {
     assert(can.editar(s));
-    const texto = str(fd, "csv"); if (!texto) throw new Error("Cole o conteúdo do CSV.");
+    const texto = await textoImportacao(fd); if (!texto) throw new Error("Cole o conteúdo do CSV.");
     const dataPadrao = str(fd, "data") || hoje();
     const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const sep = linhas[0].includes(";") ? ";" : linhas[0].includes("\t") ? "\t" : ",";
-    const head = linhas[0].split(sep).map(h => h.trim().toLowerCase());
+    const sep = detectarSeparador(linhas[0]);
+    const head = linhas[0].split(sep).map(normalizarCabecalho);
     const idx = (k: string) => head.indexOf(k);
     if (idx("nome") < 0 || idx("saldo") < 0) throw new Error("Cabeçalho precisa ter: nome; saldo (e opcionalmente data; unidade).");
     const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();

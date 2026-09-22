@@ -1,9 +1,10 @@
 "use server";
+import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
-import { audit, str, strOrNull, int, hoje, getSettings } from "@/lib/utils";
+import { audit, str, strOrNull, int, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaAte, CASE_TIPOS, CASE_STATUS } from "@/lib/atendimento";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
@@ -100,8 +101,8 @@ export async function registrarPesquisa(fd: FormData) {
 
 export async function importarPesquisas(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { assert(can.editar(s) || s.role === "COMERCIAL"); const texto = str(fd, "csv"); if (!texto) throw new Error("Cole o CSV.");
-    const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = linhas[0].includes(";") ? ";" : ","; const head = linhas[0].split(sep).map(h => h.trim().toLowerCase()); const idx = (k: string) => head.indexOf(k);
+  try { assert(can.editar(s) || s.role === "COMERCIAL"); const texto = await textoImportacao(fd); if (!texto) throw new Error("Cole o CSV.");
+    const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = detectarSeparador(linhas[0]); const head = linhas[0].split(sep).map(normalizarCabecalho); const idx = (k: string) => head.indexOf(k);
     if (idx("tipo") < 0 || idx("nota") < 0) throw new Error("Cabeçalho precisa ter tipo e nota (opcionais: data, aluno, unidade, comentario, canal).");
     const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     const units = await db.select().from(schema.units); const alunos = await sql<{ id: number; nome: string; unit_atual_id: number | null }[]>`SELECT id, nome, unit_atual_id FROM students`;
@@ -129,7 +130,7 @@ export async function atualizarSinais(fd: FormData) {
 
 export async function importarInadimplencia(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { assert(can.editar(s)); const texto = str(fd, "csv"); if (!texto) throw new Error("Cole a lista de nomes (um por linha) exportada do ActiveSoft.");
+  try { assert(can.editar(s)); const texto = await textoImportacao(fd); if (!texto) throw new Error("Cole a lista de nomes (um por linha) exportada do ActiveSoft.");
     const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     const nomes = texto.split(/\r?\n/).map(l => l.split(/[;,\t]/)[0].trim()).filter(Boolean); const alunos = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM students WHERE aluno_atual`;
     if (str(fd, "zerar") === "1") await sql`UPDATE students SET inadimplente=false`;

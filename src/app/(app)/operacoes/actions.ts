@@ -1,9 +1,10 @@
 "use server";
+import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
-import { audit, str, strOrNull, int, num, hoje, getSettings } from "@/lib/utils";
+import { audit, str, strOrNull, int, num, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaOs, OS_STATUS } from "@/lib/operacoes";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
@@ -51,7 +52,7 @@ export async function salvarAtivo(fd: FormData) {
 }
 export async function importarAtivos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { assert(can.operacoes(s)); const texto = str(fd, "csv"); if (!texto) throw new Error("Cole o CSV."); const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = linhas[0].includes(";") ? ";" : ","; const head = linhas[0].split(sep).map(h => h.trim().toLowerCase()); const idx = (k: string) => head.indexOf(k); if (idx("nome") < 0) throw new Error("Cabeçalho precisa ter nome.");
+  try { assert(can.operacoes(s)); const texto = await textoImportacao(fd); if (!texto) throw new Error("Cole o CSV."); const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); const sep = detectarSeparador(linhas[0]); const head = linhas[0].split(sep).map(normalizarCabecalho); const idx = (k: string) => head.indexOf(k); if (idx("nome") < 0) throw new Error("Cabeçalho precisa ter nome.");
     const units = await db.select().from(schema.units); const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); const unidadePadrao = int(fd, "unitId"); let ok = 0; const erros: string[] = [];
     for (const [i, l] of linhas.slice(1).entries()) { const c = l.split(sep).map(x => x.trim()); const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : ""); try { if (!g("nome")) throw new Error("nome vazio"); const un = g("unidade") ? units.find(u => norm(u.nome) === norm(g("unidade")) || norm(u.codigo) === norm(g("unidade"))) : undefined; const unitId = un?.id ?? unidadePadrao; if (!unitId) throw new Error("unidade não identificada");
       await db.insert(schema.assets).values({ codigo: g("patrimonio") || g("codigo") || null, nome: g("nome"), categoria: g("categoria") || "Outro", unitId, ambiente: g("ambiente") || null, aquisicao: g("aquisicao") ? (g("aquisicao").includes("/") ? g("aquisicao").split("/").reverse().join("-") : g("aquisicao")) : null, valor: g("valor") ? String(Number(g("valor").replace(/\./g, "").replace(",", "."))) : null, fornecedor: g("fornecedor") || null, preventivaDias: g("preventiva_dias") ? Number(g("preventiva_dias")) : null }); ok++; } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); } }

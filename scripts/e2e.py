@@ -4,6 +4,7 @@ S = requests.Session()
 S.max_redirects = 10
 S.headers.update({"Origin": B})
 
+unq = requests.utils.unquote
 def page(path, expect=200):
     r = S.get(B + path, allow_redirects=False)
     assert r.status_code == expect, (path, r.status_code, r.headers.get("location"))
@@ -85,7 +86,8 @@ aid = find_form_aid(html, "Recebido hoje")
 docid = re.search(r'name="docId" value="(\d+)"', html[html.find("Recebido hoje")-400:html.find("Recebido hoje")]).group(1)
 loc = post(f"/colaboradores/{emp}", aid, {"docId": docid, "employeeId": emp}); print("doc received", loc[-20:])
 aid = find_form_aid(html, "Adicionar documento")
-loc = post(f"/colaboradores/{emp}", aid, {"employeeId": emp, "tipo": "ASO periódico", "validade": "2026-09-20", "recebidoEm": "2025-09-20", "obrigatorio": "1"})
+from datetime import date, timedelta
+loc = post(f"/colaboradores/{emp}", aid, {"employeeId": emp, "tipo": "ASO periódico", "validade": (date.today() + timedelta(days=20)).isoformat(), "recebidoEm": (date.today() - timedelta(days=345)).isoformat(), "obrigatorio": "1"})
 html = page(f"/colaboradores/{emp}"); assert "ASO periódico" in html and "Vence em 30 dias" in html; print("documents ok")
 html = page("/documentos"); assert "ASO periódico" in html; print("documents overview ok")
 
@@ -113,7 +115,19 @@ csv = "nome;unidade;cargo;empresa;vinculo;admissao;jornada_min_dia\nJoão Import
 loc = post("/colaboradores/importar", aid, {"csv": csv}); msg = requests.utils.unquote(loc)
 assert "2 colaborador(es)" in msg and "1 linha(s) com erro" in msg, msg; print("csv import ok:", msg[:80])
 
-# ---- other pages render
+# colar direto do Excel: separador TAB, cabeçalho com acento/maiúsculas, código da unidade
+tsv = "Nome\tUnidade\tAdmissão\tCargo\tEmpresa\tVínculo\tE-mail\tTelefone\tJornada (min/dia)\tTurno\nALANA ROBERTA GRASSIO LEONEL\tCAR\t02/09/2024\tCOORDENADOR PEDAGOGICO\tSACRE EDUCACIONAL LTDA\tCLT\t\t\t528\tINTEGRAL"
+loc = post("/colaboradores/importar", aid, {"csv": tsv}); msg = requests.utils.unquote(loc); assert "1 colaborador(es) importado(s)" in msg and "erro" not in msg.split("importado(s).")[1], msg
+html = page("/colaboradores?q=ALANA"); assert "ALANA ROBERTA" in html and "Coordenador Pedag" in html; print("colar do Excel (TAB + cabeçalho com acento + código CAR) ok")
+
+# upload de arquivo .xlsx (data como célula de data, cabeçalhos com acento)
+r = S.post(B + "/colaboradores/importar", files=[(f"$ACTION_ID_{aid}", (None, "")), ("csv", (None, "")), ("arquivo", ("colaboradores_teste.xlsx", open("/tmp/colaboradores_teste.xlsx", "rb"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))], allow_redirects=False)
+msg = unq(r.headers.get("location", "")); assert "2 colaborador(es) importado(s)" in msg and "linha(s) com erro" not in msg, msg
+html = page("/colaboradores/" + re.search(r'href="/colaboradores/(\d+)"[^>]*>BRUNA XLSX', page("/colaboradores?q=BRUNA")).group(1)); assert "02/09/2024" in html; print("upload .xlsx com data e acentos ok")
+# upload .csv em ANSI (Excel pt-BR) com ; e acentos
+csvb = "nome;unidade;admissao;cargo\nDÉBORA ANSI TESTE;Cultura;01/02/2025;Auxiliar Pedagógico".encode("cp1252")
+r = S.post(B + "/colaboradores/importar", files=[(f"$ACTION_ID_{aid}", (None, "")), ("csv", (None, "")), ("arquivo", ("colabs.csv", csvb, "text/csv"))], allow_redirects=False); msg = unq(r.headers.get("location", "")); assert "1 colaborador(es) importado(s)" in msg, msg
+assert "DÉBORA ANSI" in page("/colaboradores?q=D%C3%89BORA"); print("upload .csv ANSI (cp1252) ok")# ---- other pages render
 for p in ["/organograma", "/ferias", "/banco-de-horas", "/auditoria", "/configuracoes", "/conta", "/processos?tipo=DESLIGAMENTO"]:
     page(p)
 print("pages ok")

@@ -19,6 +19,13 @@ Sistema do Colégio Status com cinco módulos e o painel executivo no mesmo logi
 - Painel: progresso do ciclo, KRs com confiança baixa, projetos em risco, marcos atrasados, orçamento; card de estratégia no **Command Center**.
 - Quem define OKRs: Direção, RH (diretor: da própria unidade). Quem faz check-in e status report: o dono e os gestores. Todos leem.
 
+## Importação de planilhas (v18)
+
+- Todas as telas de importação (colaboradores, alunos, banco de horas, títulos, caixa, ativos, candidatos, pesquisas, inadimplência) aceitam **enviar o arquivo** (.xlsx, .xls, .csv, .txt) ou **colar as células copiadas do Excel**.
+- Separador reconhecido automaticamente: tabulação (cópia do Excel), ponto e vírgula (CSV brasileiro) ou vírgula. CSV salvo em ANSI (padrão do Excel em português) é lido corretamente.
+- Cabeçalhos com acento, maiúsculas e variações são aceitos: Admissão, E-mail, Vínculo, Jornada (min/dia), Data de admissão, Celular, Função…
+- Planilha Excel: a primeira aba é lida; células de data viram DD/MM/AAAA; unidade aceita nome ou código (CAR, TVM1, TVM2, CUL).
+
 ## Esqueci minha senha e senha temporária (v16)
 
 - Na tela de login há **Esqueci minha senha**. Com e-mail configurado (`RESEND_API_KEY` + `MAIL_FROM`), o usuário recebe um link de 1 hora e de uso único para criar a nova senha. Sem e-mail, o pedido aparece em **Configurações → Usuários** ("pediu nova senha") e o RH clica em **Gerar senha temporária**: a senha é mostrada uma vez para ser passada pessoalmente; no primeiro acesso o usuário é obrigado a trocá-la antes de navegar.
