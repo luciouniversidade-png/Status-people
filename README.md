@@ -2,6 +2,38 @@
 
 Sistema do Colégio Status com cinco módulos e o painel executivo no mesmo login, mesmas unidades e mesma auditoria: **Pessoas** (DOM-05 completo), **Matrículas 2027** (DOM-03), **Atendimento e retenção da família** (DOM-12), **Governança e POPs** (DOM-07), **Financeiro** (DOM-04 — camada de gestão sobre o ActiveSoft) e **Command Center** (DOM-14 — visão única da Direção).
 
+## Painel do Colaborador e Desempenho V2 (v20)
+
+O desempenho deixa de ser só uma nota: o sistema ajuda a deixar claro o que se espera de cada função, acompanhar o trabalho durante o período, registrar evidências e transformar a avaliação em desenvolvimento verificável. Ciclos criados no formato antigo (competências + Nine Box) continuam funcionando; ciclos com **modelo por família** usam o fluxo abaixo.
+
+- **Painel do Colaborador** (`Colaboradores → ficha → Painel`, ou **Meu painel** para o próprio colaborador): cabeçalho, **próxima ação** de quem está vendo, resumo, desempenho do ciclo, perfil comportamental, situação do desenvolvimento, matriz Atitudes × Resultados, prioridades e evolução. Abas: Visão geral · Expectativas · Metas e evidências · Acompanhamento · Avaliações · Competências · Feedbacks · PDI · Prática docente (professores e coordenação) · Carreira · Histórico. Sem CPF nem salário. Acesso validado no servidor: o próprio colaborador, o gestor direto (só a equipe vinculada), o diretor da unidade e o RH/Direção.
+- **Expectativas por cargo** (`Desempenho → Expectativas`): finalidade, responsabilidades, entregas, competências com **nível requerido**, comportamentos observáveis, evidências adequadas e condições necessárias para o trabalho. Perfis versionados (rascunho → vigente → arquivado); ao publicar, cada colaborador do cargo recebe aviso e registra **ciência** (ciência não é concordância).
+- **Modelos de avaliação por família** (`Desempenho → Modelos`): a instalação cria um **modelo sugerido em rascunho** para cada família de cargos; o RH revisa critérios, rubricas por nível (1–5), evidência esperada e pesos, e aprova. Só modelo aprovado entra em ciclo; ao sair do planejamento, o modelo **congela** (mudança = nova versão). **Nota composta** (R × A) só quando o modelo declara a finalidade; sem isso, o resultado é o perfil por eixo e critério. Faixas da matriz e da nota final são configuradas e versionadas.
+- **Ciclo em 7 fases** (planejamento → acompanhamento → avaliação → calibração → feedback → conclusão → arquivado), uma por vez, com justificativa para voltar. Avaliações geradas por família com **registro da unidade, cargo e gestor da época** — mudança de lotação não altera avaliações antigas nem abre acesso a elas. **Ciclo piloto** mostra tempo de preenchimento, cobertura de evidências, qualidade dos feedbacks, cumprimento de acordos e aplicação do desenvolvimento.
+- **Metas com regra explícita**: tipo (operacional, melhoria, aprendizagem, exploratória, coletiva), regra de leitura (maior é melhor, menor é melhor, faixa, sim/não, marcos), situação inicial, esperado, fonte, prazo e regra de interpretação obrigatória. Nunca há "resultado ÷ meta" automático. Exploratória, de aprendizagem e coletiva não viram nota individual; conversão em nota só com tabela aprovada **antes** do ciclo, e apenas sugere nota ao avaliador. Alterar meta com o ciclo em andamento exige justificativa e preserva a original.
+- **Acompanhamento contínuo**: atualização curta de andamento (pelo colaborador) e reunião de acompanhamento, sem nota — o que avançou, evidência, bloqueio, apoio, próximo compromisso, compromissos do colaborador e do gestor com prazo e cumprimento. Periodicidade sugerida por família (configurável).
+- **Evidências** com natureza (entrega verificável, observação direta, relato, indicador, autoavaliação, contexto), data do fato, fonte, contexto, limitações e visibilidade (padrão: visível ao colaborador). O colaborador **contesta ou complementa**; evidência que apoia mais de um critério é sinalizada (possível dupla contagem). Volume de anexos não soma pontos.
+- **Avaliação por critérios**: nota 1–5 com evidência, **não observado** (reduz a cobertura, nunca vira zero) e **N/A** com justificativa e aprovação do RH. Cobertura mínima por eixo (padrão 50% do peso); sem base suficiente, a alçada **encerra como inconclusiva**, sem nota e sem caráter negativo. Memória de cálculo sempre visível. Painel de **qualidade da avaliação**: período observado, evidências por natureza, critérios sem evidência, textos genéricos, divergência ≥ 2 pontos com a autoavaliação, contestações. Trava de versão: duas pessoas não sobrescrevem a mesma avaliação.
+- **Calibração e publicação**: só a alçada (RH/Direção); exige justificativa **e** evidência; notas originais preservadas; ninguém calibra nem publica a própria avaliação. Colaborador só vê o resultado depois de publicado; registra ciência ou **contesta**, com resposta registrada. Autoavaliação é perspectiva separada e não entra no cálculo.
+- **Múltiplas fontes (opcional por ciclo)**: pares e liderados convidados pelo avaliador ou RH, com a oportunidade de observação registrada; cada grupo é agregado à parte e só aparece com o **mínimo de respondentes** (padrão 3). Quem foi convidado responde em **Contribuições** (qualquer perfil, inclusive colaborador).
+- **PDI em três trilhas**: execução das ações, **aplicação no trabalho** e **resultado observado**, registradas separadamente. Ações com compromissos do colaborador e do gestor, recursos, tempo e forma de acompanhamento. Estados de espera (**aguardando apoio institucional, oportunidade ou observação**) não contam como atraso do colaborador e avisam a gestão. Conclusão com evidência vai para validação do gestor. Até 3 prioridades ativas (configurável); pontos fortes podem ser aprofundados e compartilhados. **Plano formal de melhoria** é fluxo próprio (RH, Direção ou diretor da unidade), com expectativas, apoio, prazo final e manifestação do colaborador.
+- **Necessidades e encaminhamentos**: cada necessidade recebe uma hipótese (conhecimento, prática, processo, recurso, dependência de outra área, contexto) e um destino — PDI individual, melhoria de processo (abre em Governança), formação coletiva (vai ao Academy), apoio da liderança ou infraestrutura (abre chamado em Operações). Processo, recurso ou dependência **não viram PDI individual**.
+- **Prática docente**: planejamento da observação → observação por rubrica (sem dados de estudantes) → devolutiva e foco escolhidos em conjunto → aplicação → nova observação. Formativa e formal são diferentes; só a formal, se definido antes, pode compor a avaliação.
+- **Carreira e sucessão**: requisitos da função atual × registros em ciclos publicados, pontos fortes e aspectos a desenvolver, oportunidades internas (vagas abertas), **interesses declarados pelo próprio colaborador** (não se presume que todos queiram liderar). Sucessão por função específica, com requisitos, evidências, lacunas e revisão — sem índice genérico de "potencial".
+- **Visão geral** (`Desempenho`): próxima ação por perfil, filtros (ciclo, unidade, área, cargo, gestor, estado), indicadores sempre com o denominador, lista clicável, critérios com mais notas 1–2, ações bloqueadas por motivo, equipes que precisam de apoio no processo (não é ranking), práticas para compartilhar e qualidade do processo por avaliador.
+- **Liderança e encaminhamentos** (`Desempenho → Liderança`): radar das **obrigações de gestão** de cada equipe — expectativas alinhadas, acompanhamento em dia, devolutivas feitas, desenvolvimento aplicado e avaliações com evidência — e a lista de encaminhamentos. Não avalia o gestor pela média das notas da equipe.
+- **Preparação de avaliadores** (`Desempenho → Avaliadores`): casos simulados respondidos individualmente; depois o avaliador vê a referência e a distribuição do grupo; a discussão vira ajuste de rubrica, não correção automática de notas.
+- **Perfil comportamental (DISC)**: só resultado de instrumento identificado, com escala e limitações; apoio a conversas — **não altera nota, matriz, promoção ou liderança**.
+- **IA como apoio** (opcional, variável `AI_API_KEY`): rascunhos de síntese, pauta, feedback, sugestões de desenvolvimento e pendências, **com fonte citada** em cada afirmação, filtrados pelo que o usuário já pode ver; o texto passa por revisão humana e nunca atribui nota, publica ou sugere decisão de emprego. Sem a chave, a tela informa que o recurso está indisponível (nada é simulado).
+- **Exportação**: `Painel → Exportar CSV do ciclo` (`/api/export/avaliacoes?ciclo=`) calcula tudo pelo mesmo motor das telas, respeitando o escopo de quem exporta.
+- **Rotina diária** (`/api/tarefas`) passa a avisar: prazo de avaliação próximo, ação de PDI atrasada, ação aguardando validação, resultado publicado sem ciência há 7 dias, compromisso de acompanhamento vencido e encaminhamento atrasado.
+
+## Governança de IA, Modo TV e formação exigida por cargo (v20)
+
+- **Agentes de IA** (`Governança → Agentes de IA`): inventário de cada agente que apoia a operação — função, ferramenta, área, cargo que apoia, **dono humano obrigatório**, dados que acessa, **limites**, nível de autonomia (N0 consulta · N1 rascunho revisado · N2 executa com aprovação · N3 rotina com log e auditoria) e data de revisão. Agentes com dados de estudantes, saúde ou documentos pessoais ficam em N0/N1. Os agentes aparecem no **Organograma**, ao lado do cargo que apoiam, em outra cor; revisão vencida gera alerta no Command Center.
+- **Modo TV** (`/tv`): tela cheia do Command Center para a sala da direção — saúde geral, domínios e alertas, atualizando a cada 2 minutos, só com dados agregados (valores financeiros ficam ocultos na TV). Para uma tela fixa sem login, defina `TV_TOKEN` e abra `/tv?token=SEU_TV_TOKEN` (opcional `&unidade=ID`).
+- **Formação exigida por cargo** (`Configurações → Cargos`): informe a formação exigida e o documento que a comprova (ex.: profissional de apoio escolar). Quem ocupa o cargo sem o documento entregue e válido aparece em **Documentos** e gera alerta no Command Center.
+
 ## Módulo Operações e manutenção
 
 - **Chamados / ordens de serviço** — qualquer usuário abre (colaborador em autoatendimento inclusive, só na própria unidade); tipo (corretiva, preventiva, melhoria, limpeza, TI, segurança), prioridade com **SLA** (urgente 4 h, alta 24 h, normal 72 h, baixa 10 dias), ambiente, ativo relacionado, responsável, fornecedor, custo previsto e real, evidência, linha do tempo; concluído pede **avaliação do solicitante** (1–5).
@@ -18,6 +50,17 @@ Sistema do Colégio Status com cinco módulos e o painel executivo no mesmo logi
 - **Portfólio de projetos**: dono, unidade, objetivo servido, prioridade, prazo, orçamento × gasto, **marcos** com prazo (atrasados em vermelho), **riscos** (probabilidade × impacto), **status report** periódico (feito · próximo · riscos · saúde no rumo/atenção/em risco); projeto em andamento sem status report há 14 dias vira alerta.
 - Painel: progresso do ciclo, KRs com confiança baixa, projetos em risco, marcos atrasados, orçamento; card de estratégia no **Command Center**.
 - Quem define OKRs: Direção, RH (diretor: da própria unidade). Quem faz check-in e status report: o dono e os gestores. Todos leem.
+
+## Comunicação, anexos e notificações (v19)
+
+**Comunicação (DOM-13)**
+- **Comunicados internos**: mural da equipe por público (toda a rede, uma unidade ou um perfil), fixado no topo, com prazo e **ciência obrigatória** ("Li e estou ciente"); RH/Direção veem quantos deram ciência. Publicar gera notificação para o público.
+- **Mensagens às famílias e à equipe**: modelos por categoria (cobrança, matrícula, atendimento, pedagógico, RH, geral) com variáveis `{responsavel} {aluno} {valor} {data} {competencia} {turma} {protocolo} {unidade}`; envio por **WhatsApp** — com a API oficial configurada (`WHATSAPP_TOKEN` + `WHATSAPP_PHONE_ID`, Meta Cloud API) envia direto; sem API, gera o link `wa.me` com o texto pronto para enviar do celular e marcar como enviada — ou por **e-mail** (Resend). Tudo fica no histórico com quem enviou, canal, situação e o registro de origem (caso, título, aluno).
+- Botões de mensagem já embutidos: **Inadimplência** (cobrança por família, com modelo escolhido pelo atraso), **Caso de atendimento** (retorno à família) e **Ficha do aluno**.
+
+**Anexos (DOM-15)**: qualquer registro pode receber arquivos (PDF, imagem, Word, Excel, texto; até 8 MB, guardados no próprio banco): ficha do colaborador, aluno, caso, chamado, projeto, POP. Download só para quem tem acesso ao registro (escopo por unidade; colaborador só à própria ficha e a seus chamados). Toda inclusão e remoção fica na auditoria.
+
+**Notificações (DOM-15)**: sino no topo com contagem, página `/notificacoes`, e avisos gerados por eventos — comunicado publicado, chamado/caso atribuído, chamado ou caso urgente (diretor da unidade), pedido de férias, exceção, desconto acima da alçada e requisição de vaga aguardando aprovação. A rotina diária `GET /api/tarefas?token=SETUP_TOKEN` (agende no Railway Cron ou em qualquer serviço de cron, 1× por dia) expira reservas, escalona SLAs vencidos, expira exceções, gera alertas de prazo (SLA, chamados fora do prazo, documentos vencendo, pendências de aprovação) e, com Resend configurado, envia o **resumo diário por e-mail** a cada usuário.
 
 ## Importação de planilhas (v18)
 
@@ -188,6 +231,8 @@ Você vai criar duas contas gratuitas: **Neon** (banco de dados) e **Vercel** (s
 5. Clique em **Deploy**. Em 2–3 minutos a Vercel mostra o endereço do sistema (algo como `https://status-people.vercel.app`).
 
 ### Atualizando uma instalação que já existe
+**Para a v20:** depois do deploy, abra `/api/setup?token=SEU_SETUP_TOKEN` para criar as tabelas novas do desempenho e da governança de IA e carregar os modelos de avaliação sugeridos (em rascunho — revise e aprove em `Desempenho → Modelos` antes de abrir um ciclo). Variáveis novas, todas opcionais: `TV_TOKEN` (tela fixa do Modo TV), `AI_API_KEY` e `AI_MODEL` (apoio de IA no desempenho).
+
 Substitua os arquivos no GitHub (ou rode `railway up` de novo, se usou Railway) e, depois do deploy, abra mais uma vez `https://SEU-ENDERECO/api/setup?token=SEU_SETUP_TOKEN`: isso cria as tabelas novas (por exemplo, as do módulo de Matrículas) e carrega a grade 2027, sem tocar nos dados que já existem.
 
 ### Passo 3 — Criar as tabelas e o primeiro usuário (uma vez)
@@ -287,6 +332,13 @@ src/lib/financeiro.ts    aging e régua, receita prevista × realizada, caixa, o
 src/lib/command-center.ts Health Geral ponderado, alertas consolidados, retratos diários
 src/lib/operacoes.ts     SLA de chamados, painel de operações, preventivas
 src/lib/estrategia.ts    fontes automáticas de KR, progresso, portfólio
+src/lib/avaliacao.ts     motor de avaliação (cálculo por eixo, cobertura, N/A, não observado, faixas, metas, fontes, PDI) — testado em scripts/test_avaliacao.ts
+src/lib/avaliacao-server.ts único ponto de cálculo usado por telas, ações e exportações
+src/lib/desenvolvimento.ts acesso por escopo (próprio, gestor da equipe, unidade, RH), perfil vigente do cargo, alertas diários do desempenho
+src/lib/ia-desempenho.ts  prompts com fontes citáveis, validação da resposta, chamada opcional (AI_API_KEY)
+src/app/(app)/desempenho/{modelos,expectativas,lideranca,treinamento,ciclos,avaliacoes}  telas do desempenho V2
+src/app/(app)/colaboradores/[id]/painel  Painel do Colaborador · src/app/(app)/contribuicoes  respostas de múltiplas fontes
+src/app/(app)/governanca/agentes  inventário de agentes de IA · src/app/tv  Modo TV do Command Center
 src/app/(app)/estrategia painel, OKRs, projetos
 src/app/(app)/operacoes  painel, chamados, ativos, vistorias, fornecedores
 src/app/(app)/command-center painel executivo e decisões pendentes
@@ -317,10 +369,9 @@ Modelo de dados: `companies`, `units`, `positions`, `employees`, `users`, `leave
 
 ## 6. O que fica para a próxima versão
 
-- Anexar arquivos direto no sistema (hoje: link do Drive).
+- Exportar o **plano de cargos e salários completo em Excel** (fatores, ranking de cargos, tabelas por grupo, curva e enquadramentos) a partir do módulo Cargos e Salários.
 - Integração direta com o relógio de ponto (REP) e escalas rotativas.
 - Folha de pagamento e eSocial (DOM-06) — por decisão, fora desta versão; a integração é com o contador/sistema atual.
-- Notificações por e-mail/WhatsApp (aprovações, vencimentos).
-- Autenticação em dois fatores.
+- CRM de captação e módulo acadêmico — fora por decisão; o sistema cobre matrículas, retenção e atendimento.
 
 Segredos (`AUTH_SECRET`, `SETUP_TOKEN`, senha do banco) nunca devem ser enviados por mensagem nem colocados no GitHub. O arquivo `.env` está no `.gitignore` por isso.

@@ -6,6 +6,7 @@ import { Page, Card, Table, Td, Badge, Flash, Field, Input, Textarea, Select, Bt
 import { fmtData, getSettings } from "@/lib/utils";
 import { CYCLE_STATUS } from "@/lib/talento";
 import { salvarCiclo } from "../talento/actions";
+import { VisaoDesempenho } from "@/components/VisaoDesempenho";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,9 @@ export default async function Desempenho({ searchParams }: { searchParams: Promi
   const minhas = await sql<{ id: number; nome: string; ciclo: string; status: string; unidade: string }[]>`SELECT r.id, e.nome, c.nome AS ciclo, r.status, un.nome AS unidade FROM perf_reviews r JOIN employees e ON e.id=r.employee_id JOIN perf_cycles c ON c.id=r.cycle_id JOIN units un ON un.id=e.unit_id WHERE c.status IN ('ABERTO','CALIBRACAO') AND (r.avaliador_user_id=${s.id} ${u === null ? sql`` : sql`OR e.unit_id=${u}`}) AND r.status IN ('PENDENTE','AUTOAVALIADA') ORDER BY e.nome LIMIT 100`;
   const units = await db.select().from(schema.units).orderBy(asc(schema.units.nome));
   return (
-    <Page title="Desempenho" sub="Ciclos de avaliação: autoavaliação, avaliação do gestor por competências, potencial, calibração, Nine Box e PDI.">
+    <Page title="Desempenho" sub="Expectativas claras, acompanhamento contínuo, evidências, feedback, avaliação justa e desenvolvimento verificável." actions={<div className="flex flex-wrap gap-2"><Btn kind="ghost" href="/desempenho/modelos">Modelos</Btn><Btn kind="ghost" href="/desempenho/expectativas">Expectativas</Btn><Btn kind="ghost" href="/desempenho/lideranca">Liderança</Btn><Btn kind="ghost" href="/desempenho/treinamento">Avaliadores</Btn></div>}>
       <Flash ok={sp.ok} erro={sp.erro} />
+      <VisaoDesempenho s={s} sp={sp} />
       <div className={`grid gap-4 ${can.editar(s) ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
         <div className="space-y-4">
           <Table head={["Ciclo", "Período", "Unidade", "Fase", "Avaliações", "Média"]} empty="Nenhum ciclo. Crie o primeiro ao lado.">

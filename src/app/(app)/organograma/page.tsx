@@ -18,6 +18,7 @@ export default async function Organograma() {
   const byPos = new Map<number, Occ[]>();
   for (const o of occ) byPos.set(o.position_id, [...(byPos.get(o.position_id) ?? []), o]);
   const children = (pid: number | null) => positions.filter(p => p.parentId === pid);
+  const agentes = await sql<{ id: number; nome: string; nivel: string; position_id: number; dono: string | null; status: string }[]>`SELECT a.id, a.nome, a.nivel, a.position_id, us.nome AS dono, a.status FROM ai_agents a LEFT JOIN users us ON us.id=a.dono_user_id WHERE a.status IN ('ATIVO','PILOTO') AND a.position_id IS NOT NULL ${u === null ? sql`` : sql`AND (a.unit_id IS NULL OR a.unit_id=${u})`} ORDER BY a.nome`;
   const semCargo = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM employees WHERE situacao <> 'DESLIGADO' AND position_id IS NULL ${u === null ? sql`` : sql`AND unit_id=${u}`}`;
 
   const Node = ({ p, depth }: { p: Pos; depth: number }) => {
@@ -36,6 +37,7 @@ export default async function Organograma() {
           </div>
         )}
         {pessoas.length > 12 && <div className="mb-1 ml-3 text-xs text-slate-500"><Link className="text-acao" href={`/colaboradores?q=${encodeURIComponent(p.nome)}`}>ver os {pessoas.length} nomes</Link></div>}
+        {agentes.some(a => a.position_id === p.id) && <div className="mb-1 ml-3 flex flex-wrap gap-1">{agentes.filter(a => a.position_id === p.id).map(a => <Link key={a.id} href="/governanca/agentes" className="rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] text-violet-900">🤖 {a.nome} · {a.nivel}{a.dono ? ` · dono: ${a.dono}` : ""}{a.status === "PILOTO" ? " · piloto" : ""}</Link>)}</div>}
         {filhos.length > 0 && <ul>{filhos.map(f => <Node key={f.id} p={f} depth={depth + 1} />)}</ul>}
       </li>
     );
@@ -49,6 +51,7 @@ export default async function Organograma() {
           <dl className="space-y-2 text-sm">
             <div><dt className="text-xs text-slate-500">Cargos</dt><dd className="font-medium">{positions.length}</dd></div>
             <div><dt className="text-xs text-slate-500">Pessoas alocadas</dt><dd className="font-medium">{occ.length}</dd></div>
+            <div><dt className="text-xs text-slate-500">Agentes de IA vinculados a cargos</dt><dd className="font-medium">{agentes.length} <Link className="text-xs text-acao" href="/governanca/agentes">inventário</Link></dd></div>
             <div><dt className="text-xs text-slate-500">Sem cargo definido</dt><dd className="font-medium">{semCargo[0].n} <Link className="text-xs text-acao" href="/colaboradores">revisar</Link></dd></div>
             <div><dt className="text-xs text-slate-500">Por área</dt><dd className="text-xs text-slate-700">{["Direção", "Pedagógica", "Administrativa", "Serviços"].map(a => `${a}: ${positions.filter(p => p.area === a).reduce((n, p) => n + (byPos.get(p.id)?.length ?? 0), 0)}`).join(" · ")}</dd></div>
           </dl>

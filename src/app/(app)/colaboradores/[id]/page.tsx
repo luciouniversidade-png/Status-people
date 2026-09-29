@@ -12,6 +12,7 @@ import { lancarHoras, decidirHoras, excluirHoras } from "../../banco-de-horas/ac
 import { registrarCheckin, reajustarSalario } from "../../talento/actions";
 import { MOTIVO_SAL, fmtBRL } from "@/lib/talento";
 import { matrizTreinamento, PROG_STATUS } from "@/lib/clima-academy";
+import { Anexos } from "@/components/Anexos";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
   return (
     <Page title={emp.nome}
       sub={<span className="flex flex-wrap items-center gap-2"><Badge v={situacao} label={SITUACAO_LABEL[situacao]} />{position?.nome ?? "sem cargo"}{emp.nivel ? ` · ${emp.nivel}` : ""} · {unit?.nome} · {VINCULO_LABEL[emp.vinculo] ?? emp.vinculo}</span>}
-      actions={can.editar(s) ? <><Btn kind="ghost" href={`/colaboradores/${id}/editar`}>Editar</Btn>{emp.situacao !== "DESLIGADO" && <Btn kind="ghost" href="#desligamento">Desligar</Btn>}</> : undefined}>
+      actions={<><Btn kind="ghost" href={`/colaboradores/${id}/painel`}>Painel do Colaborador</Btn>{can.editar(s) && <><Btn kind="ghost" href={`/colaboradores/${id}/editar`}>Editar</Btn>{emp.situacao !== "DESLIGADO" && <Btn kind="ghost" href="#desligamento">Desligar</Btn>}</>}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -213,6 +214,8 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
         <Table head={["Treinamento", "Situação", "Concluído em", "Válido até"]} empty="Nenhum treinamento obrigatório para este cargo/regime.">{(treinos?.itens ?? []).map(i => <tr key={i.curso.id}><Td>{i.curso.codigo} {i.curso.titulo}</Td><Td><Badge v={i.status === "CONCLUIDO" ? (i.vencendo ? "VENCE_EM_BREVE" : "APROVADA") : i.status === "VENCIDO" ? "VENCIDO" : "PENDENTE"} label={PROG_STATUS[i.status]} /></Td><Td className="text-xs">{fmtData(i.concluidoEm)}</Td><Td className="text-xs">{fmtData(i.validoAte)}</Td></tr>)}</Table>
         <p className="mt-2 text-xs text-slate-500"><Link className="text-acao" href="/academy/matriz">Matriz de treinamento</Link></p>
       </Card>
+
+      <Anexos entidade="employee" id={id} voltar={`/colaboradores/${id}`} podeEnviar={can.editar(s) || s.employeeId === id} titulo="Arquivos do colaborador (contratos, certificados, laudos no Drive → aqui só o que precisa ficar no sistema)" />
 
       {/* ---------- Histórico ---------- */}
       <Card title="Histórico de alterações" className="mt-4">

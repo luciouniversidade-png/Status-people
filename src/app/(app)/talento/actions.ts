@@ -7,6 +7,7 @@ import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth"
 import { audit, str, strOrNull, int, num, hoje, addDays, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { abrirProcesso } from "@/lib/processos";
 import { nivelDesempenho, mediaNotas } from "@/lib/talento";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
@@ -147,6 +148,7 @@ export async function salvarRequisicao(fd: FormData) {
     const d = { titulo, positionId: int(fd, "positionId"), unitId, quantidade: int(fd, "quantidade") ?? 1, tipo: str(fd, "tipo") || "SUBSTITUICAO", justificativa: strOrNull(fd, "justificativa"), requisitos: strOrNull(fd, "requisitos"), regime: str(fd, "regime") || "CLT", jornada: strOrNull(fd, "jornada"), faixa: strOrNull(fd, "faixa"), prazo: strOrNull(fd, "prazo") };
     if (id) { await db.update(schema.requisitions).set(d).where(eq(schema.requisitions.id, id)); } else { const [r] = await db.insert(schema.requisitions).values({ ...d, solicitanteUserId: s.id, responsavelUserId: s.id }).returning({ id: schema.requisitions.id }); rid = r.id; }
     await audit(s, id ? "editar vaga" : "solicitar vaga", "requisitions", rid, null, d);
+    if (!id) await notificar(await usuariosPorPerfil((await getSettings()).alcadas.vagas), "Requisição de vaga aguardando aprovação", d.titulo, `/recrutamento/vagas/${rid}`, "ACAO");
   } catch (e) { redirect(go("/recrutamento", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/recrutamento/vagas/${rid}`, "ok", id ? "Vaga atualizada." : "Requisição enviada para aprovação."));
 }

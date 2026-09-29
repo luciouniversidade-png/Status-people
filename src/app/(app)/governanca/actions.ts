@@ -5,6 +5,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, addDays, addMonths, getSettings } from "@/lib/utils";
 import { FREQ_DIAS } from "@/lib/governanca";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
@@ -62,6 +63,7 @@ export async function solicitarExcecao(fd: FormData) {
     const unitId = int(fd, "unitId"); if (unitId) assertScope(s, unitId);
     const [r] = await db.insert(schema.exceptions).values({ procedureId: int(fd, "procedureId"), regra, motivo, descricao: strOrNull(fd, "descricao"), impacto: strOrNull(fd, "impacto"), referencia: strOrNull(fd, "referencia"), unitId, solicitanteUserId: s.id, validadeAte: strOrNull(fd, "validadeAte") ?? addDays(hoje(), cfg.governanca.excecaoValidadeDias) }).returning({ id: schema.exceptions.id });
     id = r.id; await audit(s, "solicitar exceção", "exceptions", id, null, { regra, motivo, unitId });
+    await notificar(await usuariosPorPerfil(cfg.alcadas.excecao), "Exceção aguardando decisão", regra, "/governanca/excecoes", "ACAO");
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go("/governanca/excecoes", "ok", `Exceção #${id} enviada para aprovação.`));
 }

@@ -12,6 +12,8 @@ import { entrarFila, sairFila } from "../../actions";
 import { NovoCasoForm } from "../../../atendimento/_shared";
 import { atualizarSinais } from "../../../atendimento/actions";
 import { riscoFamilias, CASE_TIPO_LABEL, CASE_STATUS, ABERTOS } from "@/lib/atendimento";
+import { Anexos } from "@/components/Anexos";
+import { EnviarMensagem } from "@/components/EnviarMensagem";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +70,8 @@ export default async function Aluno({ params, searchParams }: { params: Promise<
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="inadimplente" value="1" defaultChecked={st.inadimplente} /> Inadimplente</label>
               <Field label="Observação de risco" className="min-w-[240px] flex-1"><Input name="riscoObs" defaultValue={st.riscoObs ?? ""} placeholder="Ex.: família comentou mudança de bairro" /></Field><Btn small kind="ghost">Salvar sinais</Btn></form>}
           </Card>
+          <Card title="Mensagem à família" className="mt-4 print:hidden"><EnviarMensagem nome={st.responsavel ?? st.nome} contato={st.telefone ?? st.email ?? ""} vars={{ aluno: st.nome }} categoria="MATRICULA" entidade="student" entidadeId={sid} studentId={sid} unitId={st.unitAtualId ?? null} voltar={`/matriculas/alunos/${sid}`} /></Card>
+          <Anexos entidade="student" id={sid} voltar={`/matriculas/alunos/${sid}`} titulo="Documentos da matrícula" />
           <Card title="Dados do aluno">{can.reservar(s) ? <AlunoForm st={st} /> : <p className="text-sm text-slate-600">Somente leitura.</p>}</Card>
         </div>
         <div className="space-y-4">

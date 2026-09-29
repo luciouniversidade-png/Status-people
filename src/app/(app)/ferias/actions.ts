@@ -5,6 +5,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, assertEmployeeAccess } from "@/lib/auth";
 import { audit, str, strOrNull, int, erroMsg, getSettings, diasEntre, periodosFerias, fmtData, LEAVE_LABEL } from "@/lib/utils";
 import { enviarEmail, emailsPorPerfil, emailDoUsuario } from "@/lib/notify";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const voltar = (fd: FormData, fallback: string) => str(fd, "voltar") || fallback;
 
@@ -34,6 +35,7 @@ export async function solicitarAfastamento(fd: FormData) {
     }
     const [r] = await db.insert(schema.leaveRequests).values({ employeeId, tipo, inicio, fim, dias, periodoRef, justificativa: strOrNull(fd, "justificativa"), solicitadoPor: s.id }).returning({ id: schema.leaveRequests.id });
     await audit(s, "solicitar", "leave_requests", r.id, null, { employeeId, tipo, inicio, fim, dias, justificativa: tipo === "AFASTAMENTO_SAUDE" ? "(sensível)" : strOrNull(fd, "justificativa") });
+    await notificar([...await usuariosPorPerfil(["RH", "DIRECAO"]), ...await usuariosPorPerfil(["DIRETOR_UNIDADE"], e.unitId)], "Pedido de férias/afastamento aguardando aprovação", `${e.nome} · ${inicio} a ${fim}`, `/ferias?status=SOLICITADA`, "ACAO");
     const cfg = await getSettings();
     await enviarEmail(await emailsPorPerfil(cfg.alcadas.ferias, e.unitId), `[STATUS People] Solicitação de ${LEAVE_LABEL[tipo].toLowerCase()} — ${e.nome}`,
       `${s.nome} solicitou ${LEAVE_LABEL[tipo].toLowerCase()} para ${e.nome} de ${fmtData(inicio)} a ${fmtData(fim)} (${dias} dia(s)).\nAprove ou rejeite em ${process.env.APP_URL ?? ""}/colaboradores/${employeeId}#ferias`);

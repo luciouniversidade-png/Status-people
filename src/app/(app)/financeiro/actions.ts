@@ -7,6 +7,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, num, hoje, addMonths, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { normNome, parseValor, parseData } from "@/lib/financeiro";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
 const COBRA = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"];
@@ -94,6 +95,7 @@ export async function solicitarDesconto(fd: FormData) {
     const limite = (cfg.financeiro.alcadaDescontoPct as Record<string, number>)[s.role] ?? 0; const auto = pct <= limite;
     const [d] = await db.insert(schema.discounts).values({ studentId, alunoNome, unitId, ano: int(fd, "ano") ?? cfg.matriculas.anoLetivo, tipo, percentual: String(pct), motivo: strOrNull(fd, "motivo"), validadeAte: strOrNull(fd, "validadeAte"), status: auto ? "APROVADO" : "SOLICITADO", solicitanteUserId: s.id, aprovadorUserId: auto ? s.id : null, decididoEm: auto ? new Date() : null }).returning({ id: schema.discounts.id });
     await audit(s, auto ? "conceder desconto" : "solicitar desconto", "discounts", d.id, null, { alunoNome, tipo, pct, auto });
+    if (!auto) await notificar(await usuariosPorPerfil(Object.entries(cfg.financeiro.alcadaDescontoPct as Record<string, number>).filter(([, v]) => v >= pct).map(([k]) => k)), `Desconto de ${pct}% aguardando aprovação`, `${alunoNome} · ${tipo}`, "/financeiro/descontos", "ACAO");
     msg = auto ? `Desconto de ${pct}% concedido (dentro da sua alçada de ${limite}%).` : `Desconto de ${pct}% enviado para aprovação (sua alçada: ${limite}%).`;
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", msg));

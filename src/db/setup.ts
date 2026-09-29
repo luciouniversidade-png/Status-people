@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { sql } from "./index";
+import { modeloInicial, FAMILIAS } from "../lib/avaliacao";
 
 export const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS companies (id serial PRIMARY KEY, nome text NOT NULL, cnpj text);
@@ -124,6 +125,125 @@ CREATE TABLE IF NOT EXISTS projects (id serial PRIMARY KEY, nome text NOT NULL, 
 CREATE TABLE IF NOT EXISTS milestones (id serial PRIMARY KEY, project_id integer NOT NULL, titulo text NOT NULL, prazo date NOT NULL, responsavel_user_id integer, concluido_em date, ordem integer NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS project_updates (id serial PRIMARY KEY, project_id integer NOT NULL, data date NOT NULL, saude text NOT NULL, feito text, proximo text, riscos text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS project_risks (id serial PRIMARY KEY, project_id integer NOT NULL, descricao text NOT NULL, probabilidade integer NOT NULL DEFAULT 2, impacto integer NOT NULL DEFAULT 2, mitigacao text, status text NOT NULL DEFAULT 'ABERTO', created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS announcements (id serial PRIMARY KEY, titulo text NOT NULL, texto text NOT NULL, publico text NOT NULL DEFAULT 'TODOS', unit_id integer, role text, requer_ciencia boolean NOT NULL DEFAULT false, prazo_ciencia date, fixado boolean NOT NULL DEFAULT false, autor_user_id integer, autor_nome text, publicado_em timestamp NOT NULL DEFAULT now(), expira_em date);
+CREATE TABLE IF NOT EXISTS announcement_acks (id serial PRIMARY KEY, announcement_id integer NOT NULL, user_id integer NOT NULL, at timestamp NOT NULL DEFAULT now(), UNIQUE (announcement_id, user_id));
+CREATE TABLE IF NOT EXISTS message_templates (id serial PRIMARY KEY, codigo text NOT NULL UNIQUE, titulo text NOT NULL, categoria text NOT NULL DEFAULT 'GERAL', canal text NOT NULL DEFAULT 'WHATSAPP', texto text NOT NULL, ativo boolean NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS messages (id serial PRIMARY KEY, canal text NOT NULL DEFAULT 'WHATSAPP', destinatario_nome text NOT NULL, destinatario_contato text, student_id integer, employee_id integer, entidade text, entidade_id integer, template_id integer, texto text NOT NULL, status text NOT NULL DEFAULT 'REGISTRADA', agendada_para timestamp, enviada_em timestamp, provedor_id text, erro text, user_id integer, user_nome text, unit_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS attachments (id serial PRIMARY KEY, entidade text NOT NULL, entidade_id integer NOT NULL, nome text NOT NULL, mime text NOT NULL, tamanho integer NOT NULL, dados bytea NOT NULL, descricao text, unit_id integer, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS attachments_ent_idx ON attachments(entidade, entidade_id);
+CREATE TABLE IF NOT EXISTS notifications (id serial PRIMARY KEY, user_id integer NOT NULL, tipo text NOT NULL DEFAULT 'INFO', titulo text NOT NULL, texto text, link text, lida_em timestamp, chave text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id, lida_em);
+CREATE UNIQUE INDEX IF NOT EXISTS notifications_chave_idx ON notifications(user_id, chave) WHERE chave IS NOT NULL;
+ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS model_id integer; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS model_versao integer; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS criterios jsonb; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS peso_resultados integer NOT NULL DEFAULT 60; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS peso_atitudes integer NOT NULL DEFAULT 40; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS fase text NOT NULL DEFAULT 'PLANEJAMENTO'; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS prazo_avaliacao date; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS prazo_feedback date; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS familias jsonb;
+ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'RASCUNHO'; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS notas_criterios jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS auto_criterios jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calc jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS notas_originais jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calibrado_por integer; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calibracao_justificativa text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS enviada_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS publicada_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS ciencia_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS comentario_colaborador text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS contestacao text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS contestacao_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS resposta_contestacao text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS snapshot jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS versao integer NOT NULL DEFAULT 1;
+CREATE UNIQUE INDEX IF NOT EXISTS perf_reviews_unica_idx ON perf_reviews(cycle_id, employee_id);
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS familia text;
+UPDATE positions SET familia = CASE WHEN familia IS NOT NULL THEN familia WHEN nome ILIKE '%professor%' OR nome ILIKE '%pedagog%' AND nome NOT ILIKE '%coordenador%' AND nome NOT ILIKE '%diretor%' THEN 'PROFESSORES' WHEN nome ILIKE '%coordenad%' THEN 'COORDENACAO' WHEN nome ILIKE '%secret%' THEN 'SECRETARIA' WHEN nome ILIKE '%atendimento%' OR nome ILIKE '%marketing%' OR nome ILIKE '%comercial%' THEN 'ATENDIMENTO_COMERCIAL' WHEN nome ILIKE '%diretor%' OR nome ILIKE '%gerente%' THEN 'GESTAO' ELSE 'APOIO_OPERACIONAL' END WHERE familia IS NULL;
+CREATE TABLE IF NOT EXISTS eval_models (id serial PRIMARY KEY, nome text NOT NULL, familia text NOT NULL, versao integer NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'RASCUNHO', peso_resultados integer NOT NULL DEFAULT 60, peso_atitudes integer NOT NULL DEFAULT 40, criterios jsonb NOT NULL, congelado_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS eval_evidences (id serial PRIMARY KEY, review_id integer NOT NULL, criterio_id text, tipo text NOT NULL DEFAULT 'TEXTO', titulo text NOT NULL, texto text, url text, attachment_id integer, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS feedbacks (id serial PRIMARY KEY, employee_id integer NOT NULL, cycle_id integer, review_id integer, tipo text NOT NULL DEFAULT 'DESENVOLVIMENTO', data date NOT NULL, situacao text NOT NULL, comportamento text NOT NULL, impacto text, evidencia text, acordo text, autor_user_id integer, autor_nome text, ciencia_em timestamp, comentario_colaborador text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS pdi_plans (id serial PRIMARY KEY, employee_id integer NOT NULL, cycle_id integer, review_id integer, criterio_id text, competencia text NOT NULL, evidencia text, objetivo text NOT NULL, situacao_inicial text, meta text, indicador text, status text NOT NULL DEFAULT 'ATIVO', validado_por integer, validado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS pdi_actions (id serial PRIMARY KEY, plan_id integer NOT NULL, tipo text NOT NULL DEFAULT 'TREINAMENTO_INTERNO', descricao text NOT NULL, responsavel_user_id integer, apoio text, prazo date, exige_evidencia boolean NOT NULL DEFAULT true, status text NOT NULL DEFAULT 'NAO_INICIADA', evidencia text, course_id integer, concluida_em date, validada_por integer, validada_em timestamp, cancel_justificativa text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS pdi_checkins (id serial PRIMARY KEY, action_id integer NOT NULL, data date NOT NULL, texto text, obstaculo text, novo_prazo date, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS behavior_profiles (id serial PRIMARY KEY, employee_id integer NOT NULL, instrumento text NOT NULL, fornecedor text, versao text, data date NOT NULL, responsavel_user_id integer, escala text, d numeric(6,2), i numeric(6,2), s numeric(6,2), c numeric(6,2), relatorio_url text, attachment_id integer, limitacoes text, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS pdi_plans_emp_idx ON pdi_plans(employee_id, status); CREATE INDEX IF NOT EXISTS feedbacks_emp_idx ON feedbacks(employee_id); CREATE INDEX IF NOT EXISTS perf_reviews_estado_idx ON perf_reviews(cycle_id, estado);
+ALTER TABLE eval_models ADD COLUMN IF NOT EXISTS finalidade text; ALTER TABLE eval_models ADD COLUMN IF NOT EXISTS nota_composta boolean NOT NULL DEFAULT false; ALTER TABLE eval_models ADD COLUMN IF NOT EXISTS faixas jsonb; ALTER TABLE eval_models ADD COLUMN IF NOT EXISTS cobertura_minima integer NOT NULL DEFAULT 50;
+ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS nota_composta boolean NOT NULL DEFAULT false; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS faixas jsonb; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS cobertura_minima integer NOT NULL DEFAULT 50; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS fontes jsonb; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS piloto boolean NOT NULL DEFAULT false;
+ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS inconclusiva_justificativa text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS inconclusiva_aprovada_por integer; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS aprovado_por integer; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS periodo_obs_inicio date; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS periodo_obs_fim date; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calibracao_evidencia text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS iniciada_em timestamp;
+ALTER TABLE eval_evidences ALTER COLUMN review_id DROP NOT NULL;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS employee_id integer;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS cycle_id integer;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS criterios jsonb;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS natureza text NOT NULL DEFAULT 'REGISTRO';
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS data_fato date;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS fonte text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS contexto text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS visibilidade text NOT NULL DEFAULT 'COLABORADOR';
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS validacao text NOT NULL DEFAULT 'NAO_VALIDADA';
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS limitacoes text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS contestacao text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS contestada_em timestamp;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS complemento text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS origem_modulo text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS origem_ref text;
+ALTER TABLE eval_evidences ADD COLUMN IF NOT EXISTS origem_atualizado_em timestamp;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'OPERACIONAL';
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS unidade_medida text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS linha_base numeric(14,4);
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS esperado numeric(14,4);
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS direcao text NOT NULL DEFAULT 'MAIOR_MELHOR';
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS faixa_min numeric(14,4);
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS faixa_max numeric(14,4);
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS prazo date;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS fonte text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS responsavel_user_id integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS dependencias text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS periodicidade text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS regra_interpretacao text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS participa_avaliacao boolean NOT NULL DEFAULT false;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS criterio_id text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS conversao jsonb;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS conversao_aprovada_por integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS conversao_aprovada_em timestamp;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS valor_atual numeric(14,4);
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS marcos jsonb;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS contribuicao text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS original jsonb;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS alteracoes jsonb;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'REUNIAO';
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS cycle_id integer;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS goal_id integer;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS avancou text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS evidencia text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS bloqueio text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS apoio text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS proximo_compromisso text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS compromisso_gestor text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS compromisso_colaborador text;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS compromisso_prazo date;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS compromisso_cumprido boolean;
+ALTER TABLE perf_checkins ADD COLUMN IF NOT EXISTS pauta_colaborador text;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'CRESCIMENTO';
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS natureza text NOT NULL DEFAULT 'LACUNA';
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS compartilhar boolean NOT NULL DEFAULT false;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS aplicacao_status text NOT NULL DEFAULT 'PENDENTE';
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS aplicacao_evidencia text;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS aplicacao_em date;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS resultado_status text NOT NULL DEFAULT 'NAO_VERIFICADO';
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS resultado_observado text;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS resultado_verificado_por integer;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS resultado_verificado_em timestamp;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS expectativas text;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS prazo_final date;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS manifestacao text;
+ALTER TABLE pdi_plans ADD COLUMN IF NOT EXISTS manifestacao_em timestamp;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS compromisso_colaborador text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS compromisso_gestor text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS recursos text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS tempo_previsto text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS forma_acompanhamento text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS bloqueio text;
+ALTER TABLE pdi_actions ADD COLUMN IF NOT EXISTS bloqueio_desde date;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS requisitos text;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS evidencias text;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS lacunas text;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS experiencias text;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS interesse_declarado text;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS revisao_em date;
+ALTER TABLE successors ADD COLUMN IF NOT EXISTS responsavel_user_id integer;
+CREATE TABLE IF NOT EXISTS role_profiles (id serial PRIMARY KEY, position_id integer, familia text, nivel text, titulo text NOT NULL, versao integer NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'RASCUNHO', vigencia_inicio date, vigencia_fim date, finalidade text, responsabilidades jsonb, entregas jsonb, competencias jsonb, comportamentos jsonb, evidencias jsonb, condicoes jsonb, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS role_profile_acks (id serial PRIMARY KEY, profile_id integer NOT NULL, employee_id integer NOT NULL, comentario text, at timestamp NOT NULL DEFAULT now(), UNIQUE (profile_id, employee_id));
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS formacao_exigida text;
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS documento_formacao text;
+CREATE TABLE IF NOT EXISTS ai_agents (id serial PRIMARY KEY, nome text NOT NULL, funcao text NOT NULL, area text, unit_id integer, position_id integer, dono_user_id integer, nivel text NOT NULL DEFAULT 'N1', ferramenta text, dados text, limites text, revisao_humana text, status text NOT NULL DEFAULT 'PILOTO', revisao_em date, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS dev_needs (id serial PRIMARY KEY, employee_id integer, unit_id integer, cycle_id integer, review_id integer, criterio_id text, origem text NOT NULL DEFAULT 'GESTAO', descricao text NOT NULL, hipotese text NOT NULL DEFAULT 'CONTEXTO', encaminhamento text NOT NULL, acao text, responsavel_user_id integer, prazo date, apoio text, evidencia_esperada text, verificacao text, status text NOT NULL DEFAULT 'ABERTO', ref_modulo text, ref_id integer, resultado_verificado text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS teaching_observations (id serial PRIMARY KEY, employee_id integer NOT NULL, observador_user_id integer, unit_id integer, segmento text, turma_ref text, finalidade text NOT NULL DEFAULT 'FORMATIVA', pode_compor boolean NOT NULL DEFAULT false, data_planejada date, data_observacao date, foco_planejado text, rubrica jsonb, status text NOT NULL DEFAULT 'PLANEJADA', devolutiva text, foco_desenvolvimento text, aplicacao text, anterior_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS rater_trainings (id serial PRIMARY KEY, titulo text NOT NULL, model_id integer, model_versao integer, versao integer NOT NULL DEFAULT 1, orientacoes text, casos jsonb NOT NULL, discussao text, status text NOT NULL DEFAULT 'ABERTO', created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS rater_training_responses (id serial PRIMARY KEY, training_id integer NOT NULL, user_id integer NOT NULL, caso_id text NOT NULL, notas jsonb NOT NULL, justificativa text, at timestamp NOT NULL DEFAULT now(), UNIQUE (training_id, user_id, caso_id));
+CREATE TABLE IF NOT EXISTS career_interests (id serial PRIMARY KEY, employee_id integer NOT NULL, data date NOT NULL, interesses text, funcoes text, lideranca text NOT NULL DEFAULT 'NAO_INFORMADO', mobilidade text, obs text, registrado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS review_raters (id serial PRIMARY KEY, review_id integer NOT NULL, user_id integer NOT NULL, grupo text NOT NULL, motivo text, status text NOT NULL DEFAULT 'CONVIDADO', notas jsonb, comentario text, respondido_em timestamp, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (review_id, user_id));
+CREATE TABLE IF NOT EXISTS ai_drafts (id serial PRIMARY KEY, employee_id integer NOT NULL, review_id integer, tipo text NOT NULL, modelo text, config_versao text, fontes jsonb, texto text NOT NULL, alertas jsonb, status text NOT NULL DEFAULT 'RASCUNHO', aprovado_por integer, aprovado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS dev_needs_emp_idx ON dev_needs(employee_id, status); CREATE INDEX IF NOT EXISTS eval_evid_emp_idx ON eval_evidences(employee_id, cycle_id); CREATE INDEX IF NOT EXISTS teach_obs_emp_idx ON teaching_observations(employee_id);
 CREATE TABLE IF NOT EXISTS login_attempts (id serial PRIMARY KEY, email text NOT NULL, ip text, ok boolean NOT NULL, at timestamp NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS login_attempts_email_idx ON login_attempts(email, at);
 CREATE INDEX IF NOT EXISTS employees_unit_idx ON employees(unit_id);
@@ -185,6 +305,15 @@ export const DEFAULT_SETTINGS = {
     pilares: ["Pedagógico", "Comercial e Marca", "Pessoas e Cultura", "Financeiro", "Operações e Infraestrutura", "Governança e Tecnologia"],
     atualizacaoProjetoDias: 14, // projeto sem status report há mais de N dias vira alerta
   },
+  comunicacao: {
+    categoriasTemplate: ["COBRANCA", "MATRICULA", "ATENDIMENTO", "PEDAGOGICO", "RH", "GERAL"],
+    assinatura: "Colégio Status",
+    digestEmailHora: 7, // hora do resumo diário por e-mail (quando RESEND configurado e a rotina /api/tarefas é chamada)
+  },
+  plataforma: {
+    anexoMaxMb: 8,
+    anexoTipos: ["application/pdf", "image/jpeg", "image/png", "image/webp", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/msword", "application/vnd.ms-excel", "text/plain", "text/csv"],
+  },
   seguranca: {
     exigir2FA: ["DIRECAO", "RH", "FINANCEIRO"], // perfis obrigados a ativar a verificação em duas etapas
   },
@@ -223,6 +352,9 @@ export const DEFAULT_SETTINGS = {
     escala: 5,
     limiarAlto: 4.2,
     limiarMedio: 3.0,
+    maxPrioridadesAtivas: 3,                 // PDIs de crescimento ativos por pessoa (configurável)
+    checkinDias: { PROFESSORES: 30, COORDENACAO: 30, SECRETARIA: 45, ATENDIMENTO_COMERCIAL: 30, APOIO_OPERACIONAL: 60, GESTAO: 30, PADRAO: 45 } as Record<string, number>, // periodicidade de acompanhamento por família
+    dimensoesDocentes: ["Clareza dos objetivos de aprendizagem", "Planejamento", "Estratégias de ensino", "Verificação da compreensão", "Qualidade das devolutivas", "Gestão do ambiente de aprendizagem", "Práticas inclusivas", "Comunicação profissional", "Uso pedagógico dos recursos disponíveis"], // sujeitas à homologação pedagógica
     boxes: { "3-3": "Talento estratégico", "3-2": "Alto desempenho consistente", "3-1": "Especialista sólido", "2-3": "Alto potencial em desenvolvimento", "2-2": "Mantenedor confiável", "2-1": "Contribuidor estável", "1-3": "Enigma — investigar", "1-2": "Em desenvolvimento", "1-1": "Atenção — plano de melhoria" },
   },
   clima: {
@@ -423,6 +555,35 @@ export async function seedEstrategia() {
   return ["OKRs 2027 sugeridos carregados (edite em Estratégia)."];
 }
 
+const TEMPLATES: [string, string, string, string][] = [
+  ["COB-LEMBRETE", "Lembrete de vencimento", "COBRANCA", "Olá, {responsavel}! Aqui é do {unidade}. Passando para lembrar que a mensalidade de {aluno} ({competencia}) no valor de {valor} venceu em {data}. Se já pagou, desconsidere. Precisando de uma nova via ou de conversar, é só responder por aqui. 😊"],
+  ["COB-CONTATO", "Contato de cobrança", "COBRANCA", "Olá, {responsavel}. Identificamos títulos em aberto de {aluno} totalizando {valor}. Podemos combinar a melhor forma de regularizar? Temos opções de parcelamento. Aguardo seu retorno."],
+  ["COB-ACORDO", "Confirmação de acordo", "COBRANCA", "Olá, {responsavel}! Confirmando o acordo de {aluno}: {valor} em {parcelas} parcela(s), primeira em {data}. Obrigado pela confiança."],
+  ["MAT-RESERVA", "Reserva de vaga", "MATRICULA", "Olá, {responsavel}! A vaga de {aluno} na turma {turma} do {unidade} está reservada até {data}. Para confirmar, basta trazer os documentos e assinar o contrato. Qualquer dúvida, estamos aqui!"],
+  ["MAT-FILA", "Vaga liberada para a lista de espera", "MATRICULA", "Boa notícia, {responsavel}! Abriu uma vaga para {aluno} na turma {turma} do {unidade}. Ela fica reservada para vocês até {data}. Podemos agendar a matrícula?"],
+  ["ATD-RETORNO", "Retorno de atendimento", "ATENDIMENTO", "Olá, {responsavel}. Sobre o atendimento nº {protocolo}: {texto}. Ficamos à disposição."],
+  ["ATD-REUNIAO", "Convite para reunião", "ATENDIMENTO", "Olá, {responsavel}! Gostaríamos de conversar sobre {aluno}. Podemos marcar para {data}? Se preferir outro horário, me avise."],
+  ["PED-OCORRENCIA", "Comunicado pedagógico", "PEDAGOGICO", "Olá, {responsavel}. Hoje ({data}) registramos o seguinte sobre {aluno}: {texto}. Estamos acompanhando de perto e contamos com a parceria de vocês."],
+  ["RH-CONVOCACAO", "Convocação de colaborador", "RH", "Olá, {nome}! Precisamos da sua presença em {data} para {texto}. Confirma, por favor?"],
+  ["RH-ANIVERSARIO", "Aniversário", "RH", "Parabéns, {nome}! 🎉 A equipe do {unidade} deseja um ano cheio de saúde e realizações."],
+  ["GER-AVISO", "Aviso geral", "GERAL", "Olá, {nome}. {texto}"],
+];
+/** Modelos sugeridos por família, como RASCUNHO: o RH revisa critérios, pesos e rubricas e aprova antes de usar em ciclos. Não habilita nota composta. */
+export async function seedDesempenho() {
+  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM eval_models`; if (n) return [] as string[];
+  for (const [fam, nome] of Object.entries(FAMILIAS)) {
+    const crit = modeloInicial(fam).map((c, i) => ({ ...c, id: `c${i + 1}`, naPermitido: c.eixo !== "ATITUDES" }));
+    await sql`INSERT INTO eval_models (nome, familia, criterios, nota_composta, cobertura_minima) VALUES (${`${nome} — modelo sugerido`}, ${fam}, ${JSON.stringify(crit)}::jsonb, false, 50)`;
+  }
+  return [`${Object.keys(FAMILIAS).length} modelos de avaliação sugeridos (rascunho, aguardando aprovação do RH)`];
+}
+export async function seedComunicacao() {
+  const [{ n }] = await sql`SELECT count(*)::int AS n FROM message_templates`;
+  if (n > 0) return [];
+  for (const [c, t, cat, txt] of TEMPLATES) await sql`INSERT INTO message_templates (codigo, titulo, categoria, texto) VALUES (${c}, ${t}, ${cat}, ${txt})`;
+  return ["Modelos de mensagem carregados."];
+}
+
 export async function seedCommandCenter() {
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM exec_pending`;
   if (n > 0) return [];
@@ -470,9 +631,11 @@ export async function seedMatriculas() {
 
 // Chaves estrangeiras (integridade referencial). Aplicadas de forma idempotente; RESTRICT protege contra apagar o que ainda é referenciado.
 const FKS: [string, string, string, string][] = [
+  ["eval_evidences", "review_id", "perf_reviews", "CASCADE"], ["eval_evidences", "employee_id", "employees", "CASCADE"], ["feedbacks", "employee_id", "employees", "CASCADE"], ["pdi_plans", "employee_id", "employees", "CASCADE"], ["pdi_actions", "plan_id", "pdi_plans", "CASCADE"], ["pdi_checkins", "action_id", "pdi_actions", "CASCADE"], ["behavior_profiles", "employee_id", "employees", "CASCADE"], ["perf_cycles", "model_id", "eval_models", "SET NULL"],
+  ["role_profile_acks", "profile_id", "role_profiles", "CASCADE"], ["role_profile_acks", "employee_id", "employees", "CASCADE"], ["dev_needs", "employee_id", "employees", "CASCADE"], ["teaching_observations", "employee_id", "employees", "CASCADE"], ["rater_training_responses", "training_id", "rater_trainings", "CASCADE"], ["career_interests", "employee_id", "employees", "CASCADE"], ["review_raters", "review_id", "perf_reviews", "CASCADE"], ["ai_drafts", "employee_id", "employees", "CASCADE"],
   // tabela, coluna, tabela referenciada, ação
   ["employees", "unit_id", "units", "RESTRICT"], ["employees", "position_id", "positions", "SET NULL"], ["employees", "company_id", "companies", "SET NULL"], ["employees", "gestor_id", "employees", "SET NULL"],
-  ["users", "unit_id", "units", "SET NULL"], ["password_resets", "user_id", "users", "CASCADE"], ["users", "employee_id", "employees", "SET NULL"],
+  ["users", "unit_id", "units", "SET NULL"], ["password_resets", "user_id", "users", "CASCADE"], ["announcement_acks", "announcement_id", "announcements", "CASCADE"], ["announcement_acks", "user_id", "users", "CASCADE"], ["notifications", "user_id", "users", "CASCADE"], ["messages", "template_id", "message_templates", "SET NULL"], ["users", "employee_id", "employees", "SET NULL"],
   ["leave_requests", "employee_id", "employees", "CASCADE"], ["hour_entries", "employee_id", "employees", "CASCADE"], ["processes", "employee_id", "employees", "CASCADE"], ["process_items", "process_id", "processes", "CASCADE"], ["documents", "employee_id", "employees", "CASCADE"],
   ["schedules", "employee_id", "employees", "CASCADE"], ["timesheet_days", "employee_id", "employees", "CASCADE"], ["salary_history", "employee_id", "employees", "CASCADE"], ["perf_reviews", "employee_id", "employees", "CASCADE"], ["perf_reviews", "cycle_id", "perf_cycles", "CASCADE"], ["perf_goals", "employee_id", "employees", "CASCADE"], ["perf_checkins", "employee_id", "employees", "CASCADE"], ["training_progress", "employee_id", "employees", "CASCADE"], ["training_progress", "course_id", "courses", "CASCADE"], ["session_attendance", "session_id", "training_sessions", "CASCADE"], ["training_sessions", "course_id", "courses", "CASCADE"],
   ["classes", "unit_id", "units", "RESTRICT"], ["classes", "grade_id", "grades", "SET NULL"], ["enrollments", "student_id", "students", "CASCADE"], ["enrollments", "class_id", "classes", "RESTRICT"], ["waitlist", "student_id", "students", "CASCADE"], ["waitlist", "unit_id", "units", "RESTRICT"], ["waitlist", "grade_id", "grades", "RESTRICT"],
@@ -524,6 +687,8 @@ export async function seedBase(adminPassword: string) {
   log.push(...(await seedGovernanca()));
   log.push(...(await seedCommandCenter()));
   log.push(...(await seedEstrategia()));
+  log.push(...(await seedComunicacao()));
+  log.push(...(await seedDesempenho()));
   const [{ u }] = await sql`SELECT count(*)::int AS u FROM users`;
   if (u === 0) {
     const hash = await bcrypt.hash(adminPassword, 10);

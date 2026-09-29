@@ -30,7 +30,8 @@ export async function salvarEmpresa(fd: FormData) {
 export async function salvarCargo(fd: FormData) {
   const s = await requireSession();
   try { assert(can.configurar(s)); const id = int(fd, "id"); const nome = str(fd, "nome"); const area = str(fd, "area"); if (!nome || !area) throw new Error("Informe nome e área.");
-    const d = { nome, area, parentId: int(fd, "parentId"), regulamentado: str(fd, "regulamentado") === "1", ordem: int(fd, "ordem") ?? 100 };
+    const d = { nome, area, parentId: int(fd, "parentId"), regulamentado: str(fd, "regulamentado") === "1", ordem: int(fd, "ordem") ?? 100, formacaoExigida: strOrNull(fd, "formacaoExigida"), documentoFormacao: strOrNull(fd, "documentoFormacao") };
+    if (d.formacaoExigida && !d.documentoFormacao) throw new Error("Informe o documento que comprova a formação exigida (ex.: Diploma, Certificado do curso).");
     if (id && d.parentId === id) throw new Error("Um cargo não pode reportar a si mesmo.");
     if (id) { await db.update(schema.positions).set(d).where(eq(schema.positions.id, id)); await audit(s, "editar", "positions", id, null, d); }
     else { const [r] = await db.insert(schema.positions).values(d).returning({ id: schema.positions.id }); await audit(s, "criar", "positions", r.id, null, d); }

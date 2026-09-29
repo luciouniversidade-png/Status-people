@@ -8,6 +8,8 @@ import { fmtDataHora, getSettings, MOTIVOS_PERDA } from "@/lib/utils";
 import { CASE_TIPO_LABEL, CASE_STATUS, CASE_PRIO, CANAL_LABEL, ABERTOS, escalarVencidos } from "@/lib/atendimento";
 import { usuariosAtivos } from "../../_shared";
 import { comentar, mudarStatus, atribuir, marcarItem } from "../../actions";
+import { Anexos } from "@/components/Anexos";
+import { EnviarMensagem } from "@/components/EnviarMensagem";
 
 export const dynamic = "force-dynamic";
 type Item = { titulo: string; feito: boolean };
@@ -49,6 +51,8 @@ export default async function Caso({ params, searchParams }: { params: Promise<{
             <ul className="space-y-2 text-sm">{eventos.map(e => <li key={e.id} className="flex gap-3"><span className="w-32 shrink-0 text-xs text-slate-500">{fmtDataHora(e.at)}</span><span><span className="font-medium">{e.userNome}</span> <span className="text-xs text-slate-500">{e.tipo === "CONTATO" ? "contato com a família" : e.tipo.toLowerCase()}</span><div className="whitespace-pre-wrap">{e.texto}</div></span></li>)}</ul>
             {podeAtender && aberto && <form action={comentar} className="mt-3 space-y-2 border-t border-line pt-3"><input type="hidden" name="id" value={cid} /><Field label="Novo registro"><Textarea name="texto" className="min-h-[60px]" required /></Field><div className="flex gap-2"><Btn small name="tipoEvento" value="COMENTARIO">Registrar</Btn><Btn small kind="ghost" name="tipoEvento" value="CONTATO">Registrar contato com a família</Btn></div></form>}
           </Card>
+          <Anexos entidade="case" id={cid} voltar={`/atendimento/casos/${cid}`} />
+          <Card title="Mensagem à família (WhatsApp / e-mail)" className="mt-4 print:hidden"><EnviarMensagem nome={st?.responsavel ?? c.contatoNome ?? ""} contato={st?.telefone ?? c.contatoTelefone ?? ""} vars={{ aluno: st?.nome ?? "", protocolo: cid, unidade: unit?.nome ?? "Colégio Status" }} categoria="ATENDIMENTO" modeloPadrao="ATD-RETORNO" entidade="caso" entidadeId={cid} studentId={st?.id ?? null} unitId={c.unitId} voltar={`/atendimento/casos/${cid}`} /></Card>
           {outros.length > 0 && <Card title="Outros casos desta família"><ul className="text-sm">{outros.map(o => <li key={o.id}><Link className="text-acao" href={`/atendimento/casos/${o.id}`}>#{o.id} {o.assunto}</Link> <span className="text-xs text-slate-500">· {CASE_TIPO_LABEL[o.tipo]} · {CASE_STATUS[o.status]} · {fmtDataHora(o.created_at)}</span></li>)}</ul></Card>}
         </div>
         {podeAtender && <div className="space-y-4">

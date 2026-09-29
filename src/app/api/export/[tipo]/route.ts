@@ -13,6 +13,8 @@ import { inadimplencia, ETAPA_COB, DESC_STATUS, caixaMes } from "@/lib/financeir
 import { OS_TIPO, OS_STATUS, OS_PRIO, ATIVO_STATUS } from "@/lib/operacoes";
 import { portfolio, PROJ_STATUS, SAUDE } from "@/lib/estrategia";
 import { getSettings, ENR_STATUS } from "@/lib/utils";
+import { calcularRevisao } from "@/lib/avaliacao-server";
+import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PADRAO, type Criterio, type Memoria, type Notas, type Faixas } from "@/lib/avaliacao";
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +119,23 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
   } else if (tipo === "projetos") {
     const pf = await portfolio(u);
     rows = [["projeto", "objetivo", "dono", "unidade", "situacao", "saude", "prioridade", "inicio", "fim", "marcos_concluidos", "marcos", "marcos_atrasados", "orcamento", "gasto", "ultima_atualizacao"], ...pf.rows.map(r => [r.nome, r.objetivo, r.owner, r.unidade ?? "rede", PROJ_STATUS[r.status], SAUDE[r.saude], r.prioridade, fmtData(r.inicio), fmtData(r.fim), r.marcos_ok, r.marcos, r.marcos_atrasados, r.orcamento, r.gasto, fmtData(r.ultima_atualizacao)])];
+  } else if (tipo === "avaliacoes") {
+    if (!["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "LEITURA"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
+    const cid = Number(new URL(req.url).searchParams.get("ciclo"));
+    const [c] = await sql<{ id: number; nome: string; criterios: Criterio[] | null; peso_resultados: number; peso_atitudes: number; nota_composta: boolean; cobertura_minima: number; model_versao: number | null; faixas: Faixas | null }[]>`SELECT id, nome, criterios, peso_resultados, peso_atitudes, nota_composta, cobertura_minima, model_versao, faixas FROM perf_cycles WHERE id=${cid}`;
+    if (!c || !c.criterios) return NextResponse.json({ erro: "Ciclo por critérios não encontrado." }, { status: 404 });
+    const gestorSo = s.role === "GESTOR" ? (s.employeeId ?? -1) : null;
+    const revs = await sql<{ id: number; employee_id: number; nome: string; estado: string; calc: Memoria | null; notas_criterios: Notas | null; snapshot: { unitId?: number; unidade?: string; cargo?: string } | null; avaliador: string | null; publicada_em: string | null; ciencia_em: string | null; contestacao: string | null }[]>`SELECT r.id, r.employee_id, e.nome, r.estado, r.calc, r.notas_criterios, r.snapshot, av.nome AS avaliador, r.publicada_em::text, r.ciencia_em::text, r.contestacao FROM perf_reviews r JOIN employees e ON e.id=r.employee_id LEFT JOIN users av ON av.id=r.avaliador_user_id WHERE r.cycle_id=${cid} ${u === null ? sql`` : sql`AND (r.snapshot->>'unitId')::int=${u}`} ${gestorSo === null ? sql`` : sql`AND (r.snapshot->>'gestorId')::int=${gestorSo}`} ORDER BY e.nome`;
+    const crit = c.criterios; const fx = c.faixas ?? FAIXAS_PADRAO; const f2 = (v: number | null | undefined) => v === null || v === undefined ? "" : v.toFixed(2).replace(".", ",");
+    const cab = ["colaborador", "unidade_na_epoca", "cargo_na_epoca", "avaliador", "estado", "modelo_versao", "R", "A", "N", "nota_composta_habilitada", "provisoria", "faixa_final", "quadrante", "cobertura_R_%", "cobertura_A_%", "publicada_em", "ciencia_em", "contestada", ...crit.map(x => `${x.titulo} (${x.eixo.toLowerCase()}, peso ${x.peso})`)];
+    const linhas: (string | number | null)[][] = [];
+    for (const r of revs) {
+      const fechada = ["PUBLICADA", "CONTESTADA", "INCONCLUSIVA"].includes(r.estado); const m = fechada && r.calc ? r.calc : await calcularRevisao({ id: r.id, employeeId: r.employee_id, cycleId: cid, notasCriterios: r.notas_criterios }, { criterios: crit, pesoResultados: c.peso_resultados, pesoAtitudes: c.peso_atitudes, notaComposta: c.nota_composta, coberturaMinima: c.cobertura_minima });
+      const visivelNota = fechada || ["DIRECAO", "RH"].includes(s.role);
+      linhas.push([r.nome, r.snapshot?.unidade ?? "", r.snapshot?.cargo ?? "", r.avaliador ?? "", ESTADO_AV[r.estado] ?? r.estado, c.model_versao, visivelNota ? f2(m.R) : "", visivelNota ? f2(m.A) : "", visivelNota && m.composta ? f2(m.N) : "", m.composta ? "sim" : "não", m.provisoria ? "sim" : "não", visivelNota && m.composta && m.N !== null ? FAIXA_FINAL_LABEL[faixaFinal(m.N, fx.final)] : "", visivelNota && m.A !== null && m.R !== null ? descricaoQuadrante(m.A, m.R, fx.matriz) : "", m.coberturaR?.pct === null || m.coberturaR?.pct === undefined ? "" : Math.round(m.coberturaR.pct), m.coberturaA?.pct === null || m.coberturaA?.pct === undefined ? "" : Math.round(m.coberturaA.pct), fmtData(r.publicada_em), fmtData(r.ciencia_em), r.contestacao ? "sim" : "não",
+        ...crit.map(x => { const n = r.notas_criterios?.[x.id]; return !visivelNota ? "" : n?.na ? (n.naAprovado ? "N/A" : "N/A (aguarda)") : n?.naoObservado ? "não observado" : n?.nota ?? "pendente"; })]);
+    }
+    rows = [[`Ciclo: ${c.nome} · cálculo pelo motor oficial (pendências e não observados nunca viram zero)`], cab, ...linhas];
   } else return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
   return new NextResponse(csv(rows), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${tipo}-${new Date().toISOString().slice(0, 10)}.csv"` } });
 }

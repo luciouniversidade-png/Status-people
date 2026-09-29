@@ -40,3 +40,6 @@ export async function estatisticasGov(unitId: number | null) {
   const score = Math.max(0, 100 + fatores.reduce((a, f) => a + f.peso, 0));
   return { pops, exc, ctl, nc, dec, recorrentes, popsVencidos, score, fatores };
 }
+
+/** Níveis de autonomia de agentes de IA (inventário de Governança). */
+export const NIVEIS_IA: Record<string, string> = { N0: "N0 · Consulta (responde, não produz entregável)", N1: "N1 · Rascunho (pessoa revisa antes de usar)", N2: "N2 · Executa com aprovação caso a caso", N3: "N3 · Rotina autônoma com log e auditoria" };

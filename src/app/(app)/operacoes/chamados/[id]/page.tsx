@@ -8,6 +8,7 @@ import { fmtDataHora } from "@/lib/utils";
 import { OS_TIPO, OS_STATUS, OS_PRIO, ABERTAS, brl } from "@/lib/operacoes";
 import { atualizarChamado } from "../../actions";
 import { usuariosOps } from "../../_shared";
+import { Anexos } from "@/components/Anexos";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function Chamado({ params, searchParams }: { params: Promis
         <div className="space-y-4">
           <Card title="Detalhes"><dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4"><div><dt className="text-xs text-slate-500">Solicitante</dt><dd>{solic?.nome ?? "—"}</dd></div><div><dt className="text-xs text-slate-500">Responsável</dt><dd>{responsavel ?? "—"}{fornecedor ? ` · ${fornecedor}` : ""}</dd></div><div><dt className="text-xs text-slate-500">Aberto em</dt><dd>{fmtDataHora(w.createdAt)}</dd></div><div><dt className="text-xs text-slate-500">Prazo (SLA)</dt><dd className={atrasado ? "font-medium text-erro" : ""}>{aberto ? fmtDataHora(w.slaAte) : w.concluidoEm ? `concluído ${fmtDataHora(w.concluidoEm)}` : "—"}</dd></div><div><dt className="text-xs text-slate-500">Custo previsto</dt><dd>{brl(w.custoPrevisto)}</dd></div><div><dt className="text-xs text-slate-500">Custo real</dt><dd>{brl(w.custoReal)}</dd></div>{w.avaliacao && <div><dt className="text-xs text-slate-500">Avaliação</dt><dd>{w.avaliacao} / 5</dd></div>}{w.inspectionId && <div><dt className="text-xs text-slate-500">Origem</dt><dd><Link className="text-acao" href="/operacoes/vistorias">vistoria #{w.inspectionId}</Link></dd></div>}</dl>{w.descricao && <p className="mt-3 whitespace-pre-wrap rounded bg-mist px-3 py-2 text-sm">{w.descricao}</p>}{w.evidencia && <p className="mt-2 text-sm"><span className="text-xs text-slate-500">Evidência · </span>{w.evidencia}</p>}</Card>
           <Card title="Linha do tempo"><ul className="space-y-2 text-sm">{eventos.map(e => <li key={e.id} className="flex gap-3"><span className="w-32 shrink-0 text-xs text-slate-500">{fmtDataHora(e.at)}</span><span><span className="font-medium">{e.userNome}</span> <span className="text-xs text-slate-500">{e.tipo.toLowerCase()}</span><div>{e.texto}</div></span></li>)}</ul></Card>
+          <Anexos entidade="work_order" id={wid} voltar={`/operacoes/chamados/${wid}`} titulo="Fotos, orçamentos e notas" />
         </div>
         <div className="space-y-4">
           {gestor && aberto && <Card title="Atualizar"><form action={atualizarChamado} className="space-y-2"><input type="hidden" name="id" value={wid} />

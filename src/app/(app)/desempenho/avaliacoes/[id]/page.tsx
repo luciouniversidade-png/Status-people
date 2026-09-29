@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq, and, desc } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { requireSession, can, canSeeEmployee } from "@/lib/auth";
+import { requireSession, scopeUnit, can, canSeeEmployee } from "@/lib/auth";
 import { Page, Card, Badge, Btn, Flash, Field, Input, Select, Textarea, Table, Td } from "@/components/ui";
 import { PrintButton } from "@/components/PrintButton";
 import { fmtData, fmtDataHora, getSettings } from "@/lib/utils";
 import { REV_STATUS, CYCLE_STATUS, NIVEL_LABEL, GOAL_STATUS, mediaNotas } from "@/lib/talento";
 import { autoavaliar, avaliarGestor, calibrar, atualizarPdi, salvarMeta } from "../../../talento/actions";
+import { AvaliacaoCriterios } from "@/components/AvaliacaoCriterios";
 
 export const dynamic = "force-dynamic";
 type Notas = { notas?: Record<string, number>; comentario?: string | null; realizacoes?: string | null; pontosFortes?: string | null; melhorias?: string | null };
@@ -18,12 +19,15 @@ export default async function Avaliacao({ params, searchParams }: { params: Prom
   const [[c], [e], metas, checkins] = await Promise.all([db.select().from(schema.perfCycles).where(eq(schema.perfCycles.id, r.cycleId)), db.select().from(schema.employees).where(eq(schema.employees.id, r.employeeId)), db.select().from(schema.perfGoals).where(and(eq(schema.perfGoals.cycleId, r.cycleId), eq(schema.perfGoals.employeeId, r.employeeId))), db.select().from(schema.perfCheckins).where(eq(schema.perfCheckins.employeeId, r.employeeId)).orderBy(desc(schema.perfCheckins.data)).limit(6)]);
   if (!e || !c) notFound();
   const proprio = s.employeeId === e.id; if (!proprio && !canSeeEmployee(s, e)) notFound();
+  // Avaliação histórica pertence à lotação registrada na época: mudança de unidade não abre acesso a avaliações antigas
+  const snapUnit = (r.snapshot as { unitId?: number } | null)?.unitId; const escopo = scopeUnit(s); if (!proprio && escopo !== null && snapUnit && snapUnit !== escopo) notFound();
   const comps = c.competencias as string[]; const auto = (r.auto as Notas | null) ?? {}; const g = (r.gestor as Notas | null) ?? {}; const pdi = (r.pdi as { acao: string; prazo: string | null; status: string }[] | null) ?? [];
   const avaliador = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role) && !proprio; const podeCal = can.aprovar(s, cfg.alcadas.calibracao); const aberto = c.status === "ABERTO" || c.status === "CALIBRACAO";
   const voltar = `/desempenho/avaliacoes/${rid}`; const esc = Array.from({ length: cfg.desempenho.escala }, (_, i) => i + 1);
   return (
     <Page title={`Avaliação — ${e.nome}`} sub={<span className="flex flex-wrap items-center gap-2"><Badge v={r.status === "CONCLUIDA" ? "APROVADA" : r.status === "PENDENTE" ? "PENDENTE" : "EM_ADMISSAO"} label={REV_STATUS[r.status]} /> {c.nome} · {CYCLE_STATUS[c.status]} · nota {r.notaFinal ?? "—"}{r.desempenhoNivel && r.potencial ? ` · ${(cfg.desempenho.boxes as Record<string, string>)[`${r.desempenhoNivel}-${r.potencial}`]}` : ""} · <Link className="text-acao" href={proprio ? "/desempenho/minha" : `/desempenho/ciclos/${c.id}`}>voltar</Link></span>} actions={<PrintButton />}>
       <Flash ok={sp.ok} erro={sp.erro} />
+      {c.criterios && proprio && !["PUBLICADA", "CONTESTADA"].includes(r.estado) ? <Card><p className="text-sm">Sua avaliação deste ciclo está em andamento. O resultado aparece aqui e no seu painel depois da publicação.</p><p className="mt-2 text-sm"><a className="text-acao" href={`/colaboradores/${e.id}/painel?aba=avaliacoes`}>Fazer ou revisar a autoavaliação no painel</a></p></Card> : c.criterios ? <AvaliacaoCriterios s={s} r={r} c={c} podeAvaliar={!proprio && (["RH", "DIRECAO"].includes(s.role) || r.avaliadorUserId === s.id || (s.role === "DIRETOR_UNIDADE" && (r.snapshot as { unitId?: number } | null)?.unitId === s.unitId))} podeCalibrar={podeCal} voltar={voltar} /> :
       <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-start">
         <div className="space-y-4">
           <Card title="Competências — autoavaliação × gestor">
@@ -56,7 +60,7 @@ export default async function Avaliacao({ params, searchParams }: { params: Prom
             <Field label="Nível de desempenho"><Select name="desempenhoNivel" defaultValue={r.desempenhoNivel ?? ""}>{[1, 2, 3].map(n => <option key={n} value={n}>{n} · {NIVEL_LABEL[n]}</option>)}</Select></Field><Field label="Potencial"><Select name="potencial" defaultValue={r.potencial ?? ""}>{[1, 2, 3].map(n => <option key={n} value={n}>{n} · {NIVEL_LABEL[n]}</option>)}</Select></Field><Field label="Justificativa"><Input name="nota" defaultValue={r.calibracaoNota ?? ""} /></Field><Btn small kind="ghost">Registrar calibração</Btn></form></Card>}
           <Card title="Resumo"><dl className="space-y-1 text-sm"><div><dt className="text-xs text-slate-500">Colaborador</dt><dd><Link className="text-acao" href={`/colaboradores/${e.id}`}>{e.nome}</Link></dd></div><div><dt className="text-xs text-slate-500">Nota final</dt><dd className="text-xl font-semibold tabular-nums text-navy">{r.notaFinal ?? "—"}</dd></div><div><dt className="text-xs text-slate-500">Desempenho × potencial</dt><dd>{r.desempenhoNivel ? NIVEL_LABEL[r.desempenhoNivel] : "—"} × {r.potencial ? NIVEL_LABEL[r.potencial] : "—"}</dd></div><div><dt className="text-xs text-slate-500">Atualizada</dt><dd className="text-xs">{fmtDataHora(r.updatedAt)}</dd></div></dl></Card>
         </div>
-      </div>
+      </div>}
     </Page>
   );
 }

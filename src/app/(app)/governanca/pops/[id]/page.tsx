@@ -9,6 +9,7 @@ import { fmtData, fmtDataHora, getSettings } from "@/lib/utils";
 import { POP_STATUS } from "@/lib/governanca";
 import { salvarPop, publicarPop, mudarStatusPop, darCiencia } from "../../actions";
 import { GESTAO, usuariosGestao } from "../../_shared";
+import { Anexos } from "@/components/Anexos";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function Pop({ params, searchParams }: { params: Promise<{ 
             {p.status === "VIGENTE" && <div className="mt-4 border-t border-line pt-3 print:hidden">{jaDeu ? <p className="text-sm text-ok">Você já deu ciência desta versão.</p> : <form action={darCiencia}><input type="hidden" name="id" value={pid} /><Btn>Li e entendi este procedimento (v{p.versao})</Btn></form>}</div>}
           </Card>
           {p.status === "VIGENTE" && <Card title={`Ciência da equipe — versão ${p.versao} (${acks.length})`}>{acks.length === 0 ? <p className="text-sm text-slate-500">Ninguém deu ciência ainda.</p> : <ul className="grid gap-1 text-sm sm:grid-cols-2">{acks.map((a, i) => <li key={i}>{a.nome} <span className="text-xs text-slate-500">· {fmtDataHora(a.at)}</span></li>)}</ul>}</Card>}
+          <Anexos entidade="procedure" id={pid} voltar={`/governanca/pops/${pid}`} podeEnviar={podeEditar} titulo="Modelos, formulários e evidências do POP" />
           {versoes.length > 0 && <Card title="Histórico de versões"><ul className="space-y-1 text-sm">{versoes.map(v => <li key={v.id}>v{v.versao} · {fmtDataHora(v.publicadoEm)} · {users.find(u => u.id === v.publicadoPor)?.nome ?? ""}{v.notas ? ` — ${v.notas}` : ""}</li>)}</ul></Card>}
         </div>
         {(podeEditar || podePublicar) && <div className="space-y-4 print:hidden">

@@ -1,5 +1,5 @@
 import {
-  pgTable, serial, text, integer, boolean, date, timestamp, jsonb, numeric,
+  pgTable, serial, text, integer, boolean, date, timestamp, jsonb, numeric, customType,
 } from "drizzle-orm/pg-core";
 
 // Convenção: IDs técnicos inteiros; datas civis em `date`; instantes em `timestamp`.
@@ -29,6 +29,9 @@ export const positions = pgTable("positions", {
   avaliacao: jsonb("avaliacao"),           // { fator: nota }
   descricao: text("descricao"),
   requisitos: text("requisitos"),
+  formacaoExigida: text("formacao_exigida"),
+  documentoFormacao: text("documento_formacao"),
+  familia: text("familia"),                 // família para o modelo de avaliação: PROFESSORES · COORDENACAO · SECRETARIA · ATENDIMENTO_COMERCIAL · APOIO_OPERACIONAL · GESTAO
 });
 
 export const employees = pgTable("employees", {
@@ -504,6 +507,21 @@ export const perfCycles = pgTable("perf_cycles", {
   competencias: jsonb("competencias").notNull(),          // string[]
   unitId: integer("unit_id"),
   descricao: text("descricao"),
+  // Avaliação por critérios (Painel do Colaborador): modelo congelado ao abrir o ciclo
+  modelId: integer("model_id"),
+  modelVersao: integer("model_versao"),
+  criterios: jsonb("criterios"),                            // snapshot [{id, eixo, titulo, descricao, peso, niveis, evidencia, naPermitido}]
+  pesoResultados: integer("peso_resultados").notNull().default(60),
+  pesoAtitudes: integer("peso_atitudes").notNull().default(40),
+  fase: text("fase").notNull().default("PLANEJAMENTO"),     // PLANEJAMENTO · ACOMPANHAMENTO · AVALIACAO · CALIBRACAO · FEEDBACK · CONCLUSAO · ARQUIVADO
+  prazoAvaliacao: date("prazo_avaliacao"),
+  prazoFeedback: date("prazo_feedback"),
+  familias: jsonb("familias"),                             // string[] famílias elegíveis (vazio = todas)
+  notaComposta: boolean("nota_composta").notNull().default(false),
+  faixas: jsonb("faixas"),
+  coberturaMinima: integer("cobertura_minima").notNull().default(50),
+  fontes: jsonb("fontes"),                                // múltiplas fontes opt-in: { PAR: {peso, minimo}, LIDERADO: {peso, minimo} }
+  piloto: boolean("piloto").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -521,6 +539,30 @@ export const perfReviews = pgTable("perf_reviews", {
   calibracaoNota: text("calibracao_nota"),
   pdi: jsonb("pdi"),                                       // [{acao, prazo, status}]
   concluidaEm: timestamp("concluida_em"),
+  // Avaliação por critérios
+  estado: text("estado").notNull().default("RASCUNHO"),    // RASCUNHO · ENVIADA · EM_CALIBRACAO · PUBLICADA · CONTESTADA
+  notasCriterios: jsonb("notas_criterios"),                // gestor: { critId: { nota, na, naJustificativa, naAprovado, evidencia } }
+  autoCriterios: jsonb("auto_criterios"),                  // autoavaliação por critério (perspectiva separada)
+  calc: jsonb("calc"),                                     // memória de cálculo publicada
+  notasOriginais: jsonb("notas_originais"),                // antes da calibração
+  calibradoPor: integer("calibrado_por"),
+  calibracaoJustificativa: text("calibracao_justificativa"),
+  enviadaEm: timestamp("enviada_em"),
+  publicadaEm: timestamp("publicada_em"),
+  cienciaEm: timestamp("ciencia_em"),
+  comentarioColaborador: text("comentario_colaborador"),
+  contestacao: text("contestacao"),
+  contestacaoEm: timestamp("contestacao_em"),
+  respostaContestacao: text("resposta_contestacao"),
+  snapshot: jsonb("snapshot"),                             // { unitId, unidade, positionId, cargo, gestorId, familia } no momento da geração
+  inconclusivaJustificativa: text("inconclusiva_justificativa"),
+  inconclusivaAprovadaPor: integer("inconclusiva_aprovada_por"),
+  aprovadoPor: integer("aprovado_por"),                    // quem publicou (aprovação)
+  periodoObsInicio: date("periodo_obs_inicio"),
+  periodoObsFim: date("periodo_obs_fim"),
+  calibracaoEvidencia: text("calibracao_evidencia"),
+  iniciadaEm: timestamp("iniciada_em"),
+  versao: integer("versao").notNull().default(1),          // controle de concorrência otimista
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
@@ -535,6 +577,29 @@ export const perfGoals = pgTable("perf_goals", {
   peso: integer("peso").notNull().default(1),
   atingimento: integer("atingimento"),       // 0–150 (%)
   status: text("status").notNull().default("EM_ANDAMENTO"), // EM_ANDAMENTO · ATINGIDA · PARCIAL · NAO_ATINGIDA
+  tipo: text("tipo").notNull().default("OPERACIONAL"),    // OPERACIONAL · MELHORIA · APRENDIZAGEM · EXPLORATORIA · COLETIVA
+  unidadeMedida: text("unidade_medida"),
+  linhaBase: numeric("linha_base", { precision: 14, scale: 4 }),
+  esperado: numeric("esperado", { precision: 14, scale: 4 }),
+  direcao: text("direcao").notNull().default("MAIOR_MELHOR"), // MAIOR_MELHOR · MENOR_MELHOR · FAIXA · BINARIO · MARCOS
+  faixaMin: numeric("faixa_min", { precision: 14, scale: 4 }),
+  faixaMax: numeric("faixa_max", { precision: 14, scale: 4 }),
+  prazo: date("prazo"),
+  fonte: text("fonte"),
+  responsavelUserId: integer("responsavel_user_id"),
+  dependencias: text("dependencias"),
+  periodicidade: text("periodicidade"),
+  regraInterpretacao: text("regra_interpretacao"),
+  participaAvaliacao: boolean("participa_avaliacao").notNull().default(false),
+  criterioId: text("criterio_id"),
+  conversao: jsonb("conversao"),                          // [{ ate: número (progresso %), nota: 1..5 }] aprovada antes do ciclo
+  conversaoAprovadaPor: integer("conversao_aprovada_por"),
+  conversaoAprovadaEm: timestamp("conversao_aprovada_em"),
+  valorAtual: numeric("valor_atual", { precision: 14, scale: 4 }),
+  marcos: jsonb("marcos"),                                // [{ titulo, feito }]
+  contribuicao: text("contribuicao"),                     // contribuição individual em meta coletiva
+  original: jsonb("original"),
+  alteracoes: jsonb("alteracoes"),                        // [{ em, por, de, para, justificativa }]
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -545,6 +610,19 @@ export const perfCheckins = pgTable("perf_checkins", {
   userId: integer("user_id"),
   temas: text("temas"),
   combinados: text("combinados"),
+  tipo: text("tipo").notNull().default("REUNIAO"),        // ANDAMENTO (atualização curta) · REUNIAO (acompanhamento)
+  cycleId: integer("cycle_id"),
+  goalId: integer("goal_id"),
+  avancou: text("avancou"),
+  evidencia: text("evidencia"),
+  bloqueio: text("bloqueio"),
+  apoio: text("apoio"),
+  proximoCompromisso: text("proximo_compromisso"),
+  compromissoGestor: text("compromisso_gestor"),
+  compromissoColaborador: text("compromisso_colaborador"),
+  compromissoPrazo: date("compromisso_prazo"),
+  compromissoCumprido: boolean("compromisso_cumprido"),
+  pautaColaborador: text("pauta_colaborador"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -732,6 +810,13 @@ export const successors = pgTable("successors", {
   prontidao: text("prontidao").notNull().default("EM_DESENVOLVIMENTO"), // PRONTO · UM_DOIS_ANOS · EM_DESENVOLVIMENTO
   plano: text("plano"),
   ativo: boolean("ativo").notNull().default(true),
+  requisitos: text("requisitos"),
+  evidencias: text("evidencias"),
+  lacunas: text("lacunas"),
+  experiencias: text("experiencias"),
+  interesseDeclarado: text("interesse_declarado"),
+  revisaoEm: date("revisao_em"),
+  responsavelUserId: integer("responsavel_user_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -1096,4 +1181,314 @@ export const passwordResets = pgTable("password_resets", {
   viaEmail: boolean("via_email").notNull().default(false),
   atendidoPor: integer("atendido_por"),     // RH que gerou senha temporária
   createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ================= COMUNICAÇÃO E INBOX (DOM-13) =================
+export const announcements = pgTable("announcements", {
+  id: serial("id").primaryKey(),
+  titulo: text("titulo").notNull(),
+  texto: text("texto").notNull(),
+  publico: text("publico").notNull().default("TODOS"),   // TODOS · UNIDADE · PERFIL
+  unitId: integer("unit_id"),
+  role: text("role"),
+  requerCiencia: boolean("requer_ciencia").notNull().default(false),
+  prazoCiencia: date("prazo_ciencia"),
+  fixado: boolean("fixado").notNull().default(false),
+  autorUserId: integer("autor_user_id"),
+  autorNome: text("autor_nome"),
+  publicadoEm: timestamp("publicado_em").notNull().defaultNow(),
+  expiraEm: date("expira_em"),
+});
+
+export const announcementAcks = pgTable("announcement_acks", {
+  id: serial("id").primaryKey(),
+  announcementId: integer("announcement_id").notNull(),
+  userId: integer("user_id").notNull(),
+  at: timestamp("at").notNull().defaultNow(),
+});
+
+export const messageTemplates = pgTable("message_templates", {
+  id: serial("id").primaryKey(),
+  codigo: text("codigo").notNull(),
+  titulo: text("titulo").notNull(),
+  categoria: text("categoria").notNull().default("GERAL"), // COBRANCA · MATRICULA · ATENDIMENTO · PEDAGOGICO · RH · GERAL
+  canal: text("canal").notNull().default("WHATSAPP"),
+  texto: text("texto").notNull(),                          // variáveis {nome} {aluno} {valor} {data} {unidade} {responsavel}
+  ativo: boolean("ativo").notNull().default(true),
+});
+
+export const messages = pgTable("messages", {
+  id: serial("id").primaryKey(),
+  canal: text("canal").notNull().default("WHATSAPP"),     // WHATSAPP · EMAIL · TELEFONE · PRESENCIAL
+  destinatarioNome: text("destinatario_nome").notNull(),
+  destinatarioContato: text("destinatario_contato"),
+  studentId: integer("student_id"),
+  employeeId: integer("employee_id"),
+  entidade: text("entidade"),                             // caso, receivable, work_order…
+  entidadeId: integer("entidade_id"),
+  templateId: integer("template_id"),
+  texto: text("texto").notNull(),
+  status: text("status").notNull().default("REGISTRADA"), // REGISTRADA · ENVIADA · ENTREGUE · FALHOU · AGENDADA
+  agendadaPara: timestamp("agendada_para"),
+  enviadaEm: timestamp("enviada_em"),
+  provedorId: text("provedor_id"),
+  erro: text("erro"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  unitId: integer("unit_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ================= PLATAFORMA: ANEXOS E NOTIFICAÇÕES (DOM-15) =================
+export const attachments = pgTable("attachments", {
+  id: serial("id").primaryKey(),
+  entidade: text("entidade").notNull(),                   // employee · student · case · work_order · project · procedure · receivable
+  entidadeId: integer("entidade_id").notNull(),
+  nome: text("nome").notNull(),
+  mime: text("mime").notNull(),
+  tamanho: integer("tamanho").notNull(),
+  dados: customType<{ data: Buffer; driverData: Buffer }>({ dataType() { return "bytea"; } })("dados").notNull(),
+  descricao: text("descricao"),
+  unitId: integer("unit_id"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const notifications = pgTable("notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  tipo: text("tipo").notNull().default("INFO"),           // INFO · ACAO · ALERTA
+  titulo: text("titulo").notNull(),
+  texto: text("texto"),
+  link: text("link"),
+  lidaEm: timestamp("lida_em"),
+  chave: text("chave"),                                   // evita duplicar o mesmo aviso (ex.: sla:123)
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ================= AVALIAÇÃO POR CRITÉRIOS (Painel do Colaborador) =================
+export const evalModels = pgTable("eval_models", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull(),
+  familia: text("familia").notNull(),                     // PROFESSORES · COORDENACAO · SECRETARIA · ATENDIMENTO_COMERCIAL · APOIO_OPERACIONAL · GESTAO
+  versao: integer("versao").notNull().default(1),
+  status: text("status").notNull().default("RASCUNHO"),   // RASCUNHO · ATIVO · ARQUIVADO
+  pesoResultados: integer("peso_resultados").notNull().default(60),
+  pesoAtitudes: integer("peso_atitudes").notNull().default(40),
+  criterios: jsonb("criterios").notNull(),                // [{id, eixo, titulo, descricao, peso, niveis: {1..5}, evidencia, naPermitido}]
+  finalidade: text("finalidade"),                         // finalidade da nota composta (obrigatória para habilitá-la)
+  notaComposta: boolean("nota_composta").notNull().default(false),
+  faixas: jsonb("faixas"),                                // { matriz: [2,3,4], final: [3,4] } — configuradas e versionadas
+  coberturaMinima: integer("cobertura_minima").notNull().default(50), // % do peso de cada eixo com critério válido para concluir
+  congeladoEm: timestamp("congelado_em"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const evalEvidences = pgTable("eval_evidences", {
+  id: serial("id").primaryKey(),
+  reviewId: integer("review_id"),
+  employeeId: integer("employee_id"),
+  cycleId: integer("cycle_id"),
+  criterioId: text("criterio_id"),
+  criterios: jsonb("criterios"),                          // string[] — uma evidência pode apoiar mais de um critério (sinaliza dupla contagem)
+  natureza: text("natureza").notNull().default("REGISTRO"), // REGISTRO (verificável) · OBSERVACAO (direta) · RELATO (terceiro) · AUTO (autoavaliação) · INTERPRETACAO (do avaliador)
+  dataFato: date("data_fato"),
+  fonte: text("fonte"),
+  contexto: text("contexto"),
+  visibilidade: text("visibilidade").notNull().default("COLABORADOR"), // COLABORADOR (o avaliado vê) · GESTAO
+  validacao: text("validacao").notNull().default("NAO_VALIDADA"),    // NAO_VALIDADA · VALIDADA · CONTESTADA
+  limitacoes: text("limitacoes"),
+  contestacao: text("contestacao"),
+  contestadaEm: timestamp("contestada_em"),
+  complemento: text("complemento"),
+  origemModulo: text("origem_modulo"),
+  origemRef: text("origem_ref"),
+  origemAtualizadoEm: timestamp("origem_atualizado_em"),
+  tipo: text("tipo").notNull().default("TEXTO"),          // TEXTO · LINK · ANEXO
+  titulo: text("titulo").notNull(),
+  texto: text("texto"),
+  url: text("url"),
+  attachmentId: integer("attachment_id"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const feedbacks = pgTable("feedbacks", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  cycleId: integer("cycle_id"),
+  reviewId: integer("review_id"),
+  tipo: text("tipo").notNull().default("DESENVOLVIMENTO"), // RECONHECIMENTO · DESENVOLVIMENTO · DEVOLUTIVA
+  data: date("data").notNull(),
+  situacao: text("situacao").notNull(),
+  comportamento: text("comportamento").notNull(),
+  impacto: text("impacto"),
+  evidencia: text("evidencia"),
+  acordo: text("acordo"),
+  autorUserId: integer("autor_user_id"),
+  autorNome: text("autor_nome"),
+  cienciaEm: timestamp("ciencia_em"),
+  comentarioColaborador: text("comentario_colaborador"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const pdiPlans = pgTable("pdi_plans", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  cycleId: integer("cycle_id"),
+  reviewId: integer("review_id"),
+  criterioId: text("criterio_id"),
+  competencia: text("competencia").notNull(),
+  evidencia: text("evidencia"),
+  objetivo: text("objetivo").notNull(),
+  situacaoInicial: text("situacao_inicial"),
+  meta: text("meta"),
+  indicador: text("indicador"),
+  status: text("status").notNull().default("ATIVO"),      // ATIVO · CONCLUIDO · CANCELADO
+  validadoPor: integer("validado_por"),
+  validadoEm: timestamp("validado_em"),
+  tipo: text("tipo").notNull().default("CRESCIMENTO"),    // CRESCIMENTO · MELHORIA_FORMAL (plano formal de melhoria — fluxo próprio)
+  natureza: text("natureza").notNull().default("LACUNA"), // LACUNA · FORTALEZA (ponto forte a aprofundar/compartilhar)
+  compartilhar: boolean("compartilhar").notNull().default(false),
+  aplicacaoStatus: text("aplicacao_status").notNull().default("PENDENTE"), // PENDENTE · APLICANDO · APLICADA · NAO_APLICADA
+  aplicacaoEvidencia: text("aplicacao_evidencia"),
+  aplicacaoEm: date("aplicacao_em"),
+  resultadoStatus: text("resultado_status").notNull().default("NAO_VERIFICADO"), // NAO_VERIFICADO · MELHORA_OBSERVADA · SEM_MUDANCA · INCONCLUSIVO
+  resultadoObservado: text("resultado_observado"),
+  resultadoVerificadoPor: integer("resultado_verificado_por"),
+  resultadoVerificadoEm: timestamp("resultado_verificado_em"),
+  expectativas: text("expectativas"),
+  prazoFinal: date("prazo_final"),
+  manifestacao: text("manifestacao"),
+  manifestacaoEm: timestamp("manifestacao_em"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const pdiActions = pgTable("pdi_actions", {
+  id: serial("id").primaryKey(),
+  planId: integer("plan_id").notNull(),
+  tipo: text("tipo").notNull().default("TREINAMENTO_INTERNO"), // CURSO · LEITURA · MENTORIA · OBSERVACAO · PROJETO · TREINAMENTO_INTERNO
+  descricao: text("descricao").notNull(),
+  responsavelUserId: integer("responsavel_user_id"),
+  apoio: text("apoio"),
+  prazo: date("prazo"),
+  exigeEvidencia: boolean("exige_evidencia").notNull().default(true),
+  status: text("status").notNull().default("NAO_INICIADA"), // NAO_INICIADA · EM_ANDAMENTO · AGUARDANDO_VALIDACAO · CONCLUIDA · CANCELADA
+  evidencia: text("evidencia"),
+  courseId: integer("course_id"),
+  concluidaEm: date("concluida_em"),
+  validadaPor: integer("validada_por"),
+  validadaEm: timestamp("validada_em"),
+  cancelJustificativa: text("cancel_justificativa"),
+  compromissoColaborador: text("compromisso_colaborador"),
+  compromissoGestor: text("compromisso_gestor"),
+  recursos: text("recursos"),
+  tempoPrevisto: text("tempo_previsto"),
+  formaAcompanhamento: text("forma_acompanhamento"),
+  bloqueio: text("bloqueio"),
+  bloqueioDesde: date("bloqueio_desde"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const pdiCheckins = pgTable("pdi_checkins", {
+  id: serial("id").primaryKey(),
+  actionId: integer("action_id").notNull(),
+  data: date("data").notNull(),
+  texto: text("texto"),
+  obstaculo: text("obstaculo"),
+  novoPrazo: date("novo_prazo"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const behaviorProfiles = pgTable("behavior_profiles", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  instrumento: text("instrumento").notNull(),
+  fornecedor: text("fornecedor"),
+  versao: text("versao"),
+  data: date("data").notNull(),
+  responsavelUserId: integer("responsavel_user_id"),
+  escala: text("escala"),                                 // descrição da escala original (ex.: 0–100 por fator, não composicional)
+  d: numeric("d", { precision: 6, scale: 2 }),
+  i: numeric("i", { precision: 6, scale: 2 }),
+  s: numeric("s", { precision: 6, scale: 2 }),
+  c: numeric("c", { precision: 6, scale: 2 }),
+  relatorioUrl: text("relatorio_url"),
+  attachmentId: integer("attachment_id"),
+  limitacoes: text("limitacoes"),
+  obs: text("obs"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ================= APRIMORAMENTO V2 — expectativas, encaminhamentos, prática docente, avaliadores, carreira, fontes, IA =================
+export const roleProfiles = pgTable("role_profiles", {
+  id: serial("id").primaryKey(),
+  positionId: integer("position_id"),
+  familia: text("familia"),
+  nivel: text("nivel"),
+  titulo: text("titulo").notNull(),
+  versao: integer("versao").notNull().default(1),
+  status: text("status").notNull().default("RASCUNHO"),   // RASCUNHO · VIGENTE · ARQUIVADO
+  vigenciaInicio: date("vigencia_inicio"),
+  vigenciaFim: date("vigencia_fim"),
+  finalidade: text("finalidade"),
+  responsabilidades: jsonb("responsabilidades"), entregas: jsonb("entregas"), competencias: jsonb("competencias"), // competencias: [{ nome, nivel (1–5), descricao }]
+  comportamentos: jsonb("comportamentos"), evidencias: jsonb("evidencias"), condicoes: jsonb("condicoes"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const roleProfileAcks = pgTable("role_profile_acks", { id: serial("id").primaryKey(), profileId: integer("profile_id").notNull(), employeeId: integer("employee_id").notNull(), comentario: text("comentario"), at: timestamp("at").notNull().defaultNow() });
+export const devNeeds = pgTable("dev_needs", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id"), unitId: integer("unit_id"), cycleId: integer("cycle_id"), reviewId: integer("review_id"), criterioId: text("criterio_id"),
+  origem: text("origem").notNull().default("GESTAO"),     // AVALIACAO · ACOMPANHAMENTO · OBSERVACAO · FEEDBACK · GESTAO
+  descricao: text("descricao").notNull(),
+  hipotese: text("hipotese").notNull().default("CONTEXTO"), // INDIVIDUAL · PROCESSO · ORIENTACAO · RECURSO · DEPENDENCIA · CONTEXTO
+  encaminhamento: text("encaminhamento").notNull(),       // PDI · PROCESSO · FORMACAO_COLETIVA · APOIO_LIDERANCA · INFRAESTRUTURA
+  acao: text("acao"), responsavelUserId: integer("responsavel_user_id"), prazo: date("prazo"), apoio: text("apoio"), evidenciaEsperada: text("evidencia_esperada"), verificacao: text("verificacao"),
+  status: text("status").notNull().default("ABERTO"),     // ABERTO · EM_ANDAMENTO · CONCLUIDO · CANCELADO
+  refModulo: text("ref_modulo"), refId: integer("ref_id"), resultadoVerificado: text("resultado_verificado"),
+  createdBy: integer("created_by"), createdAt: timestamp("created_at").notNull().defaultNow(), updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const teachingObservations = pgTable("teaching_observations", {
+  id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), observadorUserId: integer("observador_user_id"), unitId: integer("unit_id"),
+  segmento: text("segmento"), turmaRef: text("turma_ref"),        // rótulo da turma apenas — nenhum dado de estudante
+  finalidade: text("finalidade").notNull().default("FORMATIVA"), // FORMATIVA · FORMAL
+  podeCompor: boolean("pode_compor").notNull().default(false),  // definido no planejamento; só FORMAL pode compor avaliação
+  dataPlanejada: date("data_planejada"), dataObservacao: date("data_observacao"), focoPlanejado: text("foco_planejado"),
+  rubrica: jsonb("rubrica"),                                    // [{ dimensao, nivel (1–4 descritivo), registro }]
+  status: text("status").notNull().default("PLANEJADA"),        // PLANEJADA · OBSERVADA · DEVOLUTIVA · FOCO · APLICACAO · REOBSERVADA
+  devolutiva: text("devolutiva"), focoDesenvolvimento: text("foco_desenvolvimento"), aplicacao: text("aplicacao"), anteriorId: integer("anterior_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const raterTrainings = pgTable("rater_trainings", { id: serial("id").primaryKey(), titulo: text("titulo").notNull(), modelId: integer("model_id"), modelVersao: integer("model_versao"), versao: integer("versao").notNull().default(1), orientacoes: text("orientacoes"), casos: jsonb("casos").notNull(), discussao: text("discussao"), status: text("status").notNull().default("ABERTO"), createdBy: integer("created_by"), createdAt: timestamp("created_at").notNull().defaultNow() });
+export const raterTrainingResponses = pgTable("rater_training_responses", { id: serial("id").primaryKey(), trainingId: integer("training_id").notNull(), userId: integer("user_id").notNull(), casoId: text("caso_id").notNull(), notas: jsonb("notas").notNull(), justificativa: text("justificativa"), at: timestamp("at").notNull().defaultNow() });
+export const careerInterests = pgTable("career_interests", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), data: date("data").notNull(), interesses: text("interesses"), funcoes: text("funcoes"), lideranca: text("lideranca").notNull().default("NAO_INFORMADO"), mobilidade: text("mobilidade"), obs: text("obs"), registradoPor: integer("registrado_por"), createdAt: timestamp("created_at").notNull().defaultNow() });
+export const reviewRaters = pgTable("review_raters", { id: serial("id").primaryKey(), reviewId: integer("review_id").notNull(), userId: integer("user_id").notNull(), grupo: text("grupo").notNull(), motivo: text("motivo"), status: text("status").notNull().default("CONVIDADO"), notas: jsonb("notas"), comentario: text("comentario"), respondidoEm: timestamp("respondido_em"), createdAt: timestamp("created_at").notNull().defaultNow() });
+export const aiDrafts = pgTable("ai_drafts", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), reviewId: integer("review_id"), tipo: text("tipo").notNull(), modelo: text("modelo"), configVersao: text("config_versao"), fontes: jsonb("fontes"), texto: text("texto").notNull(), alertas: jsonb("alertas"), status: text("status").notNull().default("RASCUNHO"), aprovadoPor: integer("aprovado_por"), aprovadoEm: timestamp("aprovado_em"), createdBy: integer("created_by"), createdAt: timestamp("created_at").notNull().defaultNow() });
+
+/** Agentes de IA da operação (inventário com dono humano, nível de autonomia N0–N3, escopo e limites). */
+export const aiAgents = pgTable("ai_agents", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull(),
+  funcao: text("funcao").notNull(),
+  area: text("area"),
+  unitId: integer("unit_id"),
+  positionId: integer("position_id"),
+  donoUserId: integer("dono_user_id"),
+  nivel: text("nivel").notNull().default("N1"),
+  ferramenta: text("ferramenta"),
+  dados: text("dados"),
+  limites: text("limites"),
+  revisaoHumana: text("revisao_humana"),
+  status: text("status").notNull().default("PILOTO"),
+  revisaoEm: date("revisao_em"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

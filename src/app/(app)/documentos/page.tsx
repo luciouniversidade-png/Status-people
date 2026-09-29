@@ -14,6 +14,7 @@ export default async function Documentos() {
     sql<{ employee_id: number; nome: string; unidade: string; pendentes: number; total: number }[]>`SELECT e.id AS employee_id, e.nome, u.nome AS unidade, count(*) FILTER (WHERE d.obrigatorio AND d.recebido_em IS NULL)::int AS pendentes, count(*) FILTER (WHERE d.obrigatorio)::int AS total FROM employees e JOIN units u ON u.id=e.unit_id JOIN documents d ON d.employee_id=e.id WHERE e.situacao<>'DESLIGADO' ${uf} GROUP BY e.id, e.nome, u.nome HAVING count(*) FILTER (WHERE d.obrigatorio AND d.recebido_em IS NULL) > 0 ORDER BY 4 DESC, e.nome LIMIT 300`,
     sql<{ vencidos: number; em30: number; pend: number }[]>`SELECT count(*) FILTER (WHERE d.validade < ${h})::int AS vencidos, count(*) FILTER (WHERE d.validade >= ${h} AND d.validade <= ${em30})::int AS em30, count(*) FILTER (WHERE d.obrigatorio AND d.recebido_em IS NULL)::int AS pend FROM documents d JOIN employees e ON e.id=d.employee_id WHERE e.situacao<>'DESLIGADO' ${uf}`,
   ]);
+  const formacao = await sql<{ employee_id: number; nome: string; unidade: string; cargo: string; formacao: string; documento: string }[]>`SELECT e.id AS employee_id, e.nome, u.nome AS unidade, p.nome AS cargo, p.formacao_exigida AS formacao, p.documento_formacao AS documento FROM employees e JOIN units u ON u.id=e.unit_id JOIN positions p ON p.id=e.position_id WHERE e.situacao='ATIVO' AND p.formacao_exigida IS NOT NULL ${uf} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.employee_id=e.id AND d.recebido_em IS NOT NULL AND (d.validade IS NULL OR d.validade >= ${h}) AND (d.tipo ILIKE '%' || coalesce(p.documento_formacao, '§') || '%' OR d.nome ILIKE '%' || coalesce(p.documento_formacao, '§') || '%')) ORDER BY u.nome, e.nome`;
   return (
     <Page title="Documentos" sub="Controle de entrega e validade. Os arquivos ficam no Drive; aqui fica o registro, o link e o prazo.">
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -21,6 +22,7 @@ export default async function Documentos() {
         <Stat label="Vencem em 30 dias" value={<span className="text-aviso">{tot.em30}</span>} />
         <Stat label="Obrigatórios não entregues" value={tot.pend} />
       </div>
+      {formacao.length > 0 && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/60 p-3"><h2 className="mb-2 text-sm font-semibold text-navy">Formação exigida pelo cargo sem comprovante ({formacao.length})</h2><Table head={["Colaborador", "Unidade", "Cargo", "Formação exigida", "Documento esperado"]}>{formacao.map(f => <tr key={f.employee_id}><Td><Link className="text-acao" href={`/colaboradores/${f.employee_id}#documentos`}>{f.nome}</Link></Td><Td>{f.unidade}</Td><Td>{f.cargo}</Td><Td className="text-xs">{f.formacao}</Td><Td className="text-xs">{f.documento}</Td></tr>)}</Table><p className="mt-1 text-[11px] text-slate-600">Configure a formação exigida em Configurações → Cargos (ex.: profissional de apoio escolar). O registro do documento entregue resolve a pendência.</p></div>}
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-semibold text-navy">Validade próxima ou vencida</h2>

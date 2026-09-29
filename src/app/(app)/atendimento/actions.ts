@@ -6,6 +6,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaAte, CASE_TIPOS, CASE_STATUS } from "@/lib/atendimento";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
 const podeAtender = (r: string) => ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL"].includes(r);
@@ -29,6 +30,7 @@ export async function abrirCaso(fd: FormData) {
     const [r] = await db.insert(schema.cases).values({ studentId, unitId, contatoNome: strOrNull(fd, "contatoNome"), contatoTelefone: strOrNull(fd, "contatoTelefone"), tipo, categoria: strOrNull(fd, "categoria"), gravidade: int(fd, "gravidade"), canal: str(fd, "canal") || "WHATSAPP", assunto, descricao: strOrNull(fd, "descricao"), prioridade, responsavelUserId: int(fd, "responsavelUserId") ?? s.id, abertoPor: s.id, slaAte: await slaAte(prioridade), checklist, resultado: tipo === "SAIDA" ? "EM_ANDAMENTO" : null }).returning({ id: schema.cases.id });
     id = r.id; await evento(id, s, "STATUS", `Caso aberto (${prioridade.toLowerCase()})`);
     await audit(s, "abrir caso", "cases", id, null, { tipo, assunto, studentId, unitId, prioridade });
+    const respId = int(fd, "responsavelUserId") ?? s.id; if (respId !== s.id) await notificar([respId], `Atendimento #${id} atribuído a você`, assunto, `/atendimento/casos/${id}`, "ACAO"); if (prioridade === "URGENTE") await notificar(await usuariosPorPerfil(["DIRETOR_UNIDADE"], unitId), `URGENTE · atendimento #${id}`, assunto, `/atendimento/casos/${id}`, "ALERTA");
   } catch (e) { redirect(go(voltar || "/atendimento/casos", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/atendimento/casos/${id}`, "ok", "Caso registrado."));
 }
@@ -68,7 +70,8 @@ export async function atribuir(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = `/atendimento/casos/${id}`;
   try { assert(podeAtender(s.role)); const c = await carregar(id); assertScope(s, c.unitId);
     const upd: Partial<typeof schema.cases.$inferInsert> = { updatedAt: new Date() };
-    const resp = int(fd, "responsavelUserId"); if (resp !== null) { upd.responsavelUserId = resp; const [u] = await db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, resp)); await evento(id, s, "ATRIBUICAO", `Responsável: ${u?.nome ?? resp}`); }
+    const resp = int(fd, "responsavelUserId"); if (resp !== null) { upd.responsavelUserId = resp; const [u] = await db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, resp)); await evento(id, s, "ATRIBUICAO", `Responsável: ${u?.nome ?? resp}`);
+      if (resp !== s.id) await notificar([resp], `Atendimento #${id} atribuído a você`, c.assunto, `/atendimento/casos/${id}`, "ACAO"); }
     const prio = str(fd, "prioridade"); if (prio && prio !== c.prioridade) { upd.prioridade = prio; upd.slaAte = await slaAte(prio, c.createdAt); upd.escaladoEm = null; await evento(id, s, "STATUS", `Prioridade: ${prio.toLowerCase()}`); }
     const cat = strOrNull(fd, "categoria"); if (cat) upd.categoria = cat; const g = int(fd, "gravidade"); if (g) upd.gravidade = g;
     await db.update(schema.cases).set(upd).where(eq(schema.cases.id, id)); await audit(s, "atribuir", "cases", id, null, upd);

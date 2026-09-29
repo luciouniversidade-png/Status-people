@@ -6,6 +6,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, num, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaOs, OS_STATUS } from "@/lib/operacoes";
+import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
 async function evento(id: number, s: { nome: string }, tipo: string, texto: string | null) { await db.insert(schema.workOrderEvents).values({ workOrderId: id, userNome: s.nome, tipo, texto }); }
@@ -17,6 +18,7 @@ export async function abrirChamado(fd: FormData) {
     const prioridade = str(fd, "prioridade") || "NORMAL"; const tipo = str(fd, "tipo") || "CORRETIVA";
     const [r] = await db.insert(schema.workOrders).values({ tipo, titulo, descricao: strOrNull(fd, "descricao"), unitId, ambiente: strOrNull(fd, "ambiente"), assetId: int(fd, "assetId"), prioridade, solicitanteUserId: s.id, responsavelUserId: int(fd, "responsavelUserId"), slaAte: await slaOs(prioridade), custoPrevisto: num(fd, "custoPrevisto") === null ? null : String(num(fd, "custoPrevisto")), inspectionId: int(fd, "inspectionId") }).returning({ id: schema.workOrders.id });
     id = r.id; await evento(id, s, "STATUS", `Chamado aberto (${prioridade.toLowerCase()})`); await audit(s, "abrir chamado", "work_orders", id, null, { titulo, tipo, prioridade, unitId });
+    await notificar([int(fd, "responsavelUserId") ?? 0, ...await usuariosPorPerfil(["OPERACOES"]), ...(prioridade === "URGENTE" ? await usuariosPorPerfil(["DIRETOR_UNIDADE"], unitId) : [])], `${prioridade === "URGENTE" ? "URGENTE · " : ""}Novo chamado #${id}`, titulo, `/operacoes/chamados/${id}`, prioridade === "URGENTE" ? "ALERTA" : "ACAO");
     if (int(fd, "assetId")) await db.update(schema.assets).set({ status: "MANUTENCAO" }).where(eq(schema.assets.id, int(fd, "assetId")!));
   } catch (e) { redirect(go(voltar, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/operacoes/chamados/${id}`, "ok", "Chamado aberto."));
@@ -31,7 +33,8 @@ export async function atualizarChamado(fd: FormData) {
       if (novo === "CONCLUIDO") { upd.concluidoEm = new Date(); const cr = num(fd, "custoReal"); if (cr !== null) upd.custoReal = String(cr); upd.evidencia = strOrNull(fd, "evidencia") ?? w.evidencia; if (w.assetId) { await db.update(schema.assets).set({ status: "EM_USO", ...(w.tipo === "PREVENTIVA" ? { ultimaPreventiva: hoje() } : {}) }).where(eq(schema.assets.id, w.assetId)); } msg = "Chamado concluído."; }
       await evento(id, s, "STATUS", `${OS_STATUS[w.status]} → ${OS_STATUS[novo]}${strOrNull(fd, "nota") ? `: ${str(fd, "nota")}` : ""}`); }
     else if (strOrNull(fd, "nota")) await evento(id, s, "COMENTARIO", str(fd, "nota"));
-    if (gestor) { const resp = int(fd, "responsavelUserId"); if (resp !== null && resp !== w.responsavelUserId) { upd.responsavelUserId = resp; const [u] = await db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, resp)); await evento(id, s, "ATRIBUICAO", `Responsável: ${u?.nome ?? resp}`); }
+    if (gestor) { const resp = int(fd, "responsavelUserId"); if (resp !== null && resp !== w.responsavelUserId) { upd.responsavelUserId = resp; const [u] = await db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, resp)); await evento(id, s, "ATRIBUICAO", `Responsável: ${u?.nome ?? resp}`);
+      await notificar([resp], `Chamado #${id} atribuído a você`, w.titulo, `/operacoes/chamados/${id}`, "ACAO"); }
       const sup = int(fd, "supplierId"); if (sup !== null) upd.supplierId = sup || null; const prio = strOrNull(fd, "prioridade"); if (prio && prio !== w.prioridade) { upd.prioridade = prio; upd.slaAte = await slaOs(prio, w.createdAt); await evento(id, s, "STATUS", `Prioridade: ${prio.toLowerCase()}`); }
       const cp = num(fd, "custoPrevisto"); if (cp !== null) upd.custoPrevisto = String(cp); const cr2 = num(fd, "custoReal"); if (cr2 !== null && !upd.custoReal) upd.custoReal = String(cr2); }
     const av = int(fd, "avaliacao"); if (av && av >= 1 && av <= 5 && (dono || gestor)) { upd.avaliacao = av; await evento(id, s, "AVALIACAO", `Avaliação do solicitante: ${av}/5`); }
