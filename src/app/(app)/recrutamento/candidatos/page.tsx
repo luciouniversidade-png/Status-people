@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireStaff, can } from "@/lib/auth";
 import { sql } from "@/db";
 import { Page, Card, Table, Td, Flash, Field, Input, Select, Textarea, Btn } from "@/components/ui";

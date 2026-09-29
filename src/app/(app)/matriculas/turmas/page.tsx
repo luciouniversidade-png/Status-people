@@ -1,5 +1,5 @@
 import { Modal } from "@/components/Modal";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireMatriculas, scopeUnit, can } from "@/lib/auth";
 import { db, schema } from "@/db";
 import { asc } from "drizzle-orm";

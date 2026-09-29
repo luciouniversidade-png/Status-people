@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireMatriculas, can } from "@/lib/auth";
 import { sql } from "@/db";
 import { Page, Table, Td, Badge, Flash, Field, Btn, Input, Select } from "@/components/ui";

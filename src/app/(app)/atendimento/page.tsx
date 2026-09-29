@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireMatriculas, scopeUnit } from "@/lib/auth";
 import { db, schema } from "@/db";
 import { asc } from "drizzle-orm";

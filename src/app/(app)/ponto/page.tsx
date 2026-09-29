@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireStaff, scopeUnit, can } from "@/lib/auth";
 import { Page, Table, Td, Badge, Flash, Field, Btn, Input, Stat } from "@/components/ui";
 import { fmtMin } from "@/lib/utils";

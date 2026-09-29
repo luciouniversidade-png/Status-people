@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireSession } from "@/lib/auth";
 import { sql } from "@/db";
 import { Page, Card, Badge, Btn } from "@/components/ui";

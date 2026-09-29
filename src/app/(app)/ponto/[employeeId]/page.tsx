@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { notFound } from "next/navigation";
 import { requireSession, canSeeEmployee } from "@/lib/auth";
 import { Page, Card, Flash, Btn, Input, Field, Stat } from "@/components/ui";

@@ -18,9 +18,10 @@ export async function GET(req: Request) {
     } else if (!process.env.ADMIN_PASSWORD || process.env.ADMIN_PASSWORD.length < 10) {
       return NextResponse.json({ erro: "ADMIN_PASSWORD ausente ou curta (mínimo 10 caracteres). Defina a variável antes da instalação." }, { status: 500 });
     }
-    await runMigrations();
-    const log = await seedBase(process.env.ADMIN_PASSWORD ?? "");
-    return NextResponse.json({ ok: true, mensagens: [...log, instalado ? "Atualização aplicada." : "Instalação concluída. Acesse /login."] });
+    const rel = await runMigrations();
+    let log: string[] = []; try { log = await seedBase(process.env.ADMIN_PASSWORD ?? ""); } catch (e) { log = [`Dados-base não carregados: ${e instanceof Error ? e.message : String(e)}`]; }
+    const ok = rel.falhas.length === 0;
+    return NextResponse.json({ ok, versao: rel.versao, aplicadas: rel.aplicadas, falhas: rel.falhas, mensagens: [...log, ok ? (instalado ? "Atualização aplicada." : "Instalação concluída. Acesse /login.") : `Atualização aplicada com ${rel.falhas.length} pendência(s): veja "falhas" e Configurações → Banco de dados.`] });
   } catch (e) {
     return NextResponse.json({ ok: false, erro: e instanceof Error ? e.message : String(e) }, { status: 500 });
   }

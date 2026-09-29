@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { requireStaff, scopeUnit } from "@/lib/auth";
 import { Page, Card, Table, Td, Btn, Input, Field, Stat } from "@/components/ui";
 import { PrintButton } from "@/components/PrintButton";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { sql } from "@/db";
 import { scopeUnit, type Session } from "@/lib/auth";
 import { Card, Table, Td, Badge, Field, Select, Textarea, Btn } from "@/components/ui";

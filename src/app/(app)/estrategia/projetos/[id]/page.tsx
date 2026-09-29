@@ -1,5 +1,5 @@
 import { Modal } from "@/components/Modal";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { notFound } from "next/navigation";
 import { eq, asc, desc } from "drizzle-orm";
 import { db, schema, sql } from "@/db";

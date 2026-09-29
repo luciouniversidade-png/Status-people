@@ -1,5 +1,5 @@
 import { Modal } from "@/components/Modal";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { redirect } from "next/navigation";
 import { requireSession, scopeUnit, can } from "@/lib/auth";
 import { db, schema, sql } from "@/db";

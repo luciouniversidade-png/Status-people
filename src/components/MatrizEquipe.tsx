@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { faixa, FAIXA_LABEL, fmtNota, descricaoQuadrante } from "@/lib/avaliacao";
 
 export type PontoMatriz = { id: number; nome: string; A: number; R: number; href: string; provisoria?: boolean };

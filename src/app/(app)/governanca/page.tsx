@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { scopeUnit } from "@/lib/auth";
 import { Page, Card, Stat, Table, Td, Flash, Btn } from "@/components/ui";
 import { fmtData } from "@/lib/utils";

@@ -31,7 +31,7 @@ O desempenho deixa de ser só uma nota: o sistema ajuda a deixar claro o que se 
 ## Governança de IA, Modo TV e formação exigida por cargo (v20)
 
 - **Agentes de IA** (`Governança → Agentes de IA`): inventário de cada agente que apoia a operação — função, ferramenta, área, cargo que apoia, **dono humano obrigatório**, dados que acessa, **limites**, nível de autonomia (N0 consulta · N1 rascunho revisado · N2 executa com aprovação · N3 rotina com log e auditoria) e data de revisão. Agentes com dados de estudantes, saúde ou documentos pessoais ficam em N0/N1. Os agentes aparecem no **Organograma**, ao lado do cargo que apoiam, em outra cor; revisão vencida gera alerta no Command Center.
-- **Modo TV** (`/tv`): tela cheia do Command Center para a sala da direção — saúde geral, domínios e alertas, atualizando a cada 2 minutos, só com dados agregados (valores financeiros ficam ocultos na TV). Para uma tela fixa sem login, defina `TV_TOKEN` e abra `/tv?token=SEU_TV_TOKEN` (opcional `&unidade=ID`).
+- **Modo TV** (`/tv`): tela cheia do Command Center para a sala da direção — saúde geral, domínios e alertas, atualizando a cada 5 minutos no horário escolar (6h–20h) e a cada 30 minutos fora dele, só com dados agregados (valores financeiros ficam ocultos na TV). Para uma tela fixa sem login, defina `TV_TOKEN` e abra `/tv?token=SEU_TV_TOKEN` (opcional `&unidade=ID`).
 - **Formação exigida por cargo** (`Configurações → Cargos`): informe a formação exigida e o documento que a comprova (ex.: profissional de apoio escolar). Quem ocupa o cargo sem o documento entregue e válido aparece em **Documentos** e gera alerta no Command Center.
 
 ## Módulo Operações e manutenção
@@ -231,9 +231,25 @@ Você vai criar duas contas gratuitas: **Neon** (banco de dados) e **Vercel** (s
 5. Clique em **Deploy**. Em 2–3 minutos a Vercel mostra o endereço do sistema (algo como `https://status-people.vercel.app`).
 
 ### Atualizando uma instalação que já existe
-**Para a v20:** depois do deploy, abra `/api/setup?token=SEU_SETUP_TOKEN` para criar as tabelas novas do desempenho e da governança de IA e carregar os modelos de avaliação sugeridos (em rascunho — revise e aprove em `Desempenho → Modelos` antes de abrir um ciclo). Variáveis novas, todas opcionais: `TV_TOKEN` (tela fixa do Modo TV), `AI_API_KEY` e `AI_MODEL` (apoio de IA no desempenho).
+**A partir da v20.2 a atualização do banco é automática:** ao publicar uma versão nova, na primeira vez que o servidor sobe o sistema compara o banco com o que o código precisa e aplica sozinho o que faltar (tabelas, colunas, índices e dados-base, como os modelos de avaliação sugeridos em rascunho — revise e aprove em `Desempenho → Modelos` antes de abrir um ciclo). Não é mais preciso abrir `/api/setup` a cada atualização. Para desligar: variável `AUTO_MIGRAR=0`.
+
+- **Aviso e botão:** se algo ficar pendente, Direção e RH veem no topo de qualquer tela o aviso "banco de dados desatualizado" com o botão **Atualizar banco agora**.
+- **Diagnóstico:** `Configurações → Banco de dados` compara o código com o banco real e mostra, por área, as tabelas e colunas que faltam e as instruções que não puderam ser aplicadas, com o erro.
+- **Uma falha não trava o resto:** cada instrução é aplicada separadamente. Um dado antigo incompatível (ex.: registros duplicados impedindo um índice único) vira uma pendência listada; corrigido o dado, é só aplicar de novo.
+- **Tela de erro do sistema:** em vez da página branca "Application error: a server-side exception has occurred", a tela mostra o código do erro e o caminho da correção. Variáveis novas, todas opcionais: `TV_TOKEN` (tela fixa do Modo TV), `AI_API_KEY` e `AI_MODEL` (apoio de IA no desempenho).
 
 Substitua os arquivos no GitHub (ou rode `railway up` de novo, se usou Railway) e, depois do deploy, abra mais uma vez `https://SEU-ENDERECO/api/setup?token=SEU_SETUP_TOKEN`: isso cria as tabelas novas (por exemplo, as do módulo de Matrículas) e carrega a grade 2027, sem tocar nos dados que já existem.
+
+### Se aparecer "Application error: a server-side exception has occurred" em várias telas
+Quase sempre é código novo publicado com o banco ainda no esquema antigo: as telas que usam tabelas ou colunas novas quebram e as outras funcionam. Na v20.2 isso se corrige sozinho na subida do servidor; se persistir, entre como Direção/RH e use **Configurações → Banco de dados → Aplicar atualizações do banco**. As pendências listadas ali indicam exatamente o que falta.
+
+### Se a Vercel mostrar "This Deployment is paused by the owner" (503 · DEPLOYMENT_PAUSED)
+O sistema não quebrou e **nenhum dado se perde**: os dados ficam no banco (Neon), não na Vercel. A Vercel suspendeu a hospedagem. Causas mais comuns: limite mensal do plano gratuito (Hobby) estourado, limite de gastos configurado no plano pago, pausa manual ou uso fora das regras do plano — o plano Hobby é só para uso pessoal e não comercial, e um sistema de gestão da escola é uso institucional. A Vercel manda um e-mail explicando o motivo.
+1. Abra o e-mail da Vercel e o painel do projeto em vercel.com.
+2. Se aparecer **"Paused — Upgrade to resume service"**: assine o plano **Pro** (volta na hora) ou migre para outra hospedagem. Ficar no Hobby exige esperar a janela de 30 dias baixar do limite e pedir o desbloqueio em vercel.com/help.
+3. Se o projeto foi pausado manualmente ou por limite de gastos (Pro): **Settings → Resume** ou ajuste o limite em **Spend Management**.
+4. Use **um único endereço oficial** (Vercel Pro ou Railway), apontando para o mesmo banco Neon, e remova a cópia que não for usada.
+A v20.1 desliga o carregamento antecipado de links (prefetch): antes, cada tela aberta chamava o servidor uma vez para cada link visível do menu. Isso reduz bastante o consumo de execuções e CPU em qualquer hospedagem.
 
 ### Passo 3 — Criar as tabelas e o primeiro usuário (uma vez)
 Abra no navegador:

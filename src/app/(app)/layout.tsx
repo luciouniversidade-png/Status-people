@@ -1,9 +1,12 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { NavLink } from "@/components/NavLink";
 import { redirect } from "next/navigation";
 import { requireSession, requireActiveUser, destroySession, can, ROLE_LABEL } from "@/lib/auth";
 import { getSettings } from "@/lib/utils";
 import { naoLidas } from "@/lib/comunicacao";
+import { sql } from "@/db";
+import { SCHEMA_VERSION } from "@/lib/versao";
+import { atualizarBanco } from "./configuracoes/banco/actions";
 
 async function sair() { "use server"; await destroySession(); redirect("/login"); }
 
@@ -13,6 +16,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (u.trocarSenha && !path.startsWith("/conta")) redirect("/conta?trocar=1");
   if (cfg2.seguranca.exigir2FA.includes(s.role) && !u.totpAtivo && !path.startsWith("/conta/2fa") && !u.trocarSenha) redirect("/conta/2fa");
   let nNotif = 0; try { nNotif = await naoLidas(s.id); } catch { nNotif = 0; }
+  // Banco atrás do código (atualização publicada sem aplicar o esquema): aviso só para quem pode corrigir
+  let banco: "ok" | "desatualizado" | "incompleto" = "ok";
+  if (["DIRECAO", "RH"].includes(s.role)) { try { const [b] = await sql<{ value: { versao?: string; falhas?: unknown[] } }[]>`SELECT value FROM settings WHERE key='banco'`; banco = !b || b.value?.versao !== SCHEMA_VERSION ? "desatualizado" : (b.value.falhas ?? []).length ? "incompleto" : "ok"; } catch { banco = "desatualizado"; } }
   const Sino = ({ cls }: { cls: string }) => <Link href="/notificacoes" aria-label="Notificações" className={cls}><span aria-hidden>🔔</span>{nNotif > 0 && <span className="rounded-full bg-erro px-1.5 text-[10px] font-semibold text-white">{nNotif > 99 ? "99+" : nNotif}</span>}</Link>;
   const pessoas: [string, string][] = [
     ["/", "Início"], ["/colaboradores", "Colaboradores"], ["/organograma", "Organograma"],
@@ -39,7 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const geral: [string, string][] = [
     ...(["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role) ? [["/command-center", "Command Center"] as [string, string], ["/tv", "Modo TV"] as [string, string]] : []),
     ...(can.auditoria(s) ? [["/auditoria", "Auditoria"] as [string, string]] : []),
-    ...(can.configurar(s) ? [["/configuracoes", "Configurações"] as [string, string]] : []),
+    ...(can.configurar(s) ? [["/configuracoes", "Configurações"] as [string, string]] : []), ...(["DIRECAO", "RH"].includes(s.role) ? [["/configuracoes/banco", "Banco de dados"] as [string, string]] : []),
     ["/conta", "Minha conta"],
   ];
   const grupos: [string, [string, string][]][] =
@@ -91,7 +97,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </aside>
-      <main className="min-w-0">{children}</main>
+      <main className="min-w-0">{banco !== "ok" && !path.startsWith("/configuracoes/banco") && <div role="status" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><span className="min-w-0 flex-1">{banco === "desatualizado" ? `O banco de dados está desatualizado em relação a esta versão do sistema (esquema ${SCHEMA_VERSION}). Algumas telas podem dar erro até a atualização.` : "A última atualização do banco terminou com pendências. Veja o diagnóstico."}</span>{banco === "desatualizado" && <form action={atualizarBanco}><button className="rounded-md bg-navy px-3 py-1.5 text-xs font-medium text-white">Atualizar banco agora</button></form>}<Link className="text-xs font-medium underline" href="/configuracoes/banco">Ver diagnóstico</Link></div>}{children}</main>
     </div>
   );
 }

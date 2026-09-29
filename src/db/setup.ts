@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { sql } from "./index";
 import { modeloInicial, FAMILIAS } from "../lib/avaliacao";
+import { SCHEMA_VERSION } from "../lib/versao";
 
 export const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS companies (id serial PRIMARY KEY, nome text NOT NULL, cnpj text);
@@ -136,7 +137,15 @@ CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id, lida
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_chave_idx ON notifications(user_id, chave) WHERE chave IS NOT NULL;
 ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS model_id integer; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS model_versao integer; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS criterios jsonb; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS peso_resultados integer NOT NULL DEFAULT 60; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS peso_atitudes integer NOT NULL DEFAULT 40; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS fase text NOT NULL DEFAULT 'PLANEJAMENTO'; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS prazo_avaliacao date; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS prazo_feedback date; ALTER TABLE perf_cycles ADD COLUMN IF NOT EXISTS familias jsonb;
 ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS estado text NOT NULL DEFAULT 'RASCUNHO'; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS notas_criterios jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS auto_criterios jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calc jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS notas_originais jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calibrado_por integer; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS calibracao_justificativa text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS enviada_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS publicada_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS ciencia_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS comentario_colaborador text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS contestacao text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS contestacao_em timestamp; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS resposta_contestacao text; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS snapshot jsonb; ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS versao integer NOT NULL DEFAULT 1;
-CREATE UNIQUE INDEX IF NOT EXISTS perf_reviews_unica_idx ON perf_reviews(cycle_id, employee_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'perf_reviews_unica_idx') THEN
+    IF EXISTS (SELECT 1 FROM perf_reviews GROUP BY cycle_id, employee_id HAVING count(*) > 1) THEN
+      CREATE INDEX IF NOT EXISTS perf_reviews_ciclo_colab_idx ON perf_reviews(cycle_id, employee_id);
+    ELSE
+      CREATE UNIQUE INDEX perf_reviews_unica_idx ON perf_reviews(cycle_id, employee_id);
+    END IF;
+  END IF;
+END $$;
 ALTER TABLE positions ADD COLUMN IF NOT EXISTS familia text;
 UPDATE positions SET familia = CASE WHEN familia IS NOT NULL THEN familia WHEN nome ILIKE '%professor%' OR nome ILIKE '%pedagog%' AND nome NOT ILIKE '%coordenador%' AND nome NOT ILIKE '%diretor%' THEN 'PROFESSORES' WHEN nome ILIKE '%coordenad%' THEN 'COORDENACAO' WHEN nome ILIKE '%secret%' THEN 'SECRETARIA' WHEN nome ILIKE '%atendimento%' OR nome ILIKE '%marketing%' OR nome ILIKE '%comercial%' THEN 'ATENDIMENTO_COMERCIAL' WHEN nome ILIKE '%diretor%' OR nome ILIKE '%gerente%' THEN 'GESTAO' ELSE 'APOIO_OPERACIONAL' END WHERE familia IS NULL;
 CREATE TABLE IF NOT EXISTS eval_models (id serial PRIMARY KEY, nome text NOT NULL, familia text NOT NULL, versao integer NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'RASCUNHO', peso_resultados integer NOT NULL DEFAULT 60, peso_atitudes integer NOT NULL DEFAULT 40, criterios jsonb NOT NULL, congelado_em timestamp, created_at timestamp NOT NULL DEFAULT now());
@@ -648,15 +657,38 @@ const FKS: [string, string, string, string][] = [
   ["work_orders", "unit_id", "units", "RESTRICT"], ["work_orders", "asset_id", "assets", "SET NULL"], ["work_orders", "supplier_id", "suppliers", "SET NULL"], ["work_order_events", "work_order_id", "work_orders", "CASCADE"], ["inspections", "unit_id", "units", "RESTRICT"], ["assets", "unit_id", "units", "RESTRICT"],
 ];
 
-export async function runMigrations() {
-  await sql.unsafe(MIGRATION_SQL);
+/** Divide o SQL em instruções, sem quebrar em ';' dentro de aspas simples, blocos $$ ou comentários. */
+export function dividirSql(texto: string): string[] {
+  const out: string[] = []; let atual = ""; let aspas = false; let dolar = false;
+  for (let i = 0; i < texto.length; i++) {
+    const ch = texto[i];
+    if (!aspas && !dolar && texto.startsWith("--", i)) { const fim = texto.indexOf("\n", i); const j = fim < 0 ? texto.length : fim; atual += texto.slice(i, j); i = j - 1; continue; }
+    if (!aspas && texto.startsWith("$$", i)) { dolar = !dolar; atual += "$$"; i++; continue; }
+    if (!dolar && ch === "'") { aspas = !aspas; atual += ch; continue; }
+    if (!aspas && !dolar && ch === ";") { if (atual.replace(/--[^\n]*/g, "").trim()) out.push(atual.trim()); atual = ""; continue; }
+    atual += ch;
+  }
+  if (atual.replace(/--[^\n]*/g, "").trim()) out.push(atual.trim());
+  return out;
+}
+export type RelatorioMigracao = { versao: string; em: string; aplicadas: number; falhas: { sql: string; erro: string }[] };
+/**
+ * Aplica o esquema instrução por instrução: uma falha (ex.: dado antigo incompatível com um índice novo) não impede as demais,
+ * e tudo fica registrado em settings.banco para o diagnóstico em Configurações → Banco de dados. Todas as instruções são idempotentes.
+ */
+export async function runMigrations(): Promise<RelatorioMigracao> {
+  const r: RelatorioMigracao = { versao: SCHEMA_VERSION, em: new Date().toISOString(), aplicadas: 0, falhas: [] };
+  const rodar = async (st: string) => { try { await sql.unsafe(st); r.aplicadas++; } catch (e) { r.falhas.push({ sql: st.replace(/\s+/g, " ").slice(0, 400), erro: e instanceof Error ? e.message : String(e) }); } };
+  for (const st of dividirSql(MIGRATION_SQL)) await rodar(st);
   for (const [t, c, ref, acao] of FKS) {
     const nome = `fk_${t}_${c}`;
-    await sql.unsafe(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${nome}') THEN
+    await rodar(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${nome}') THEN
       IF NOT EXISTS (SELECT 1 FROM ${t} x LEFT JOIN ${ref} r ON r.id = x.${c} WHERE x.${c} IS NOT NULL AND r.id IS NULL) THEN
         ALTER TABLE ${t} ADD CONSTRAINT ${nome} FOREIGN KEY (${c}) REFERENCES ${ref}(id) ON DELETE ${acao};
-      END IF; END IF; END $$;`);
+      END IF; END IF; END $$`);
   }
+  try { await sql`INSERT INTO settings (key, value) VALUES ('banco', ${JSON.stringify(r)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`; } catch { /* instalação muito antiga sem settings: o relatório volta na resposta */ }
+  return r;
 }
 
 export async function seedBase(adminPassword: string) {

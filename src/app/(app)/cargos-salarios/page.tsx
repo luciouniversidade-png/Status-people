@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { redirect } from "next/navigation";
 import { requireStaff, can, scopeUnit } from "@/lib/auth";
 import { Page, Card, Table, Td, Badge, Flash, Btn, Stat } from "@/components/ui";

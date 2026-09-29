@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/Link";
 import { sql } from "@/db";
 import { Card, Field, Input, Select, Textarea, Btn, Badge, Table, Td } from "@/components/ui";
 import { Modal } from "@/components/Modal";
