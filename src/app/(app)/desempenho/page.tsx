@@ -19,7 +19,7 @@ export default async function Desempenho({ searchParams }: { searchParams: Promi
     <Page title="Desempenho" sub="Expectativas claras, acompanhamento contínuo, evidências, feedback, avaliação justa e desenvolvimento verificável." actions={<div className="flex flex-wrap gap-2"><Btn kind="ghost" href="/desempenho/modelos">Modelos</Btn><Btn kind="ghost" href="/desempenho/expectativas">Expectativas</Btn><Btn kind="ghost" href="/desempenho/lideranca">Liderança</Btn><Btn kind="ghost" href="/desempenho/treinamento">Avaliadores</Btn></div>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <VisaoDesempenho s={s} sp={sp} />
-      <div className={`grid gap-4 ${can.editar(s) ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${can.editar(s) ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>
         <div className="space-y-4">
           <Table head={["Ciclo", "Período", "Unidade", "Fase", "Avaliações", "Média"]} empty="Nenhum ciclo. Crie o primeiro ao lado.">
             {ciclos.map(c => <tr key={c.id}><Td><Link className="font-medium text-acao" href={`/desempenho/ciclos/${c.id}`}>{c.nome}</Link></Td><Td className="whitespace-nowrap text-xs">{fmtData(c.inicio)} – {fmtData(c.fim)}</Td><Td>{c.unidade ?? "rede"}</Td><Td><Badge v={c.status === "ENCERRADO" ? "APROVADA" : c.status === "ABERTO" ? "EM_ADMISSAO" : c.status === "CALIBRACAO" ? "PENDENTE" : "EM_AQUISICAO"} label={CYCLE_STATUS[c.status]} /></Td><Td className="text-xs">{c.total ? `${c.avaliadas}/${c.total} avaliadas · ${c.concluidas} concluídas` : "—"}</Td><Td className="tabular-nums">{c.media ? c.media.toFixed(2) : "—"}</Td></tr>)}

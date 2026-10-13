@@ -19,7 +19,7 @@ export default async function Processos({ searchParams }: { searchParams: Promis
   return (
     <Page title="Admissões e desligamentos" sub="Checklists com prazo. O vínculo muda de situação quando o checklist é concluído.">
       <Flash ok={sp.ok} erro={sp.erro} />
-      <form className="mb-4 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[200px_200px_auto]">
+      <form className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[200px_200px_auto]">
         <Field label="Tipo"><Select name="tipo" defaultValue={tipo}><option value="">Todos</option><option value="ADMISSAO">Admissões</option><option value="DESLIGAMENTO">Desligamentos</option></Select></Field>
         <Field label="Situação"><Select name="status" defaultValue={status}><option value="ABERTO">Em andamento</option><option value="CONCLUIDO">Concluídos</option><option value="CANCELADO">Cancelados</option><option value="">Todos</option></Select></Field>
         <div className="flex items-end"><Btn kind="ghost">Filtrar</Btn></div>

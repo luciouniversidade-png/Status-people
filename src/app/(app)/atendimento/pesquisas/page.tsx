@@ -23,7 +23,7 @@ export default async function Pesquisas({ searchParams }: { searchParams: Promis
   return (
     <Page title="Pesquisas — NPS e satisfação" sub="NPS: 0–10 (promotores 9–10, detratores 0–6). CSAT: 1–5 após um atendimento. Registre respostas colhidas por WhatsApp, formulário ou presencialmente." actions={<Btn kind="ghost" href="/api/export/pesquisas">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-4">
           {!scope && <form className="flex items-end gap-2"><Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Btn kind="ghost">Filtrar</Btn></form>}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{meses.slice(0, 3).map(m => <Stat key={m.mes} label={m.mes.split("-").reverse().join("/")} value={m.nps === null ? "—" : <span className={m.nps >= 50 ? "text-ok" : m.nps >= 0 ? "text-aviso" : "text-erro"}>NPS {m.nps}</span>} hint={`${m.n} resp.${m.csat ? ` · CSAT ${m.csat}` : ""}`} />)}</div>

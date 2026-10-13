@@ -86,6 +86,7 @@ export async function getSettings(): Promise<Settings> {
   const rows = await db.select().from(schema.settings);
   const s: Record<string, unknown> = { ...DEFAULT_SETTINGS };
   for (const r of rows) {
+    if (r.key === "push_vapid") continue; // chave privada das notificações: só o módulo de push lê, nunca circula com as configurações
     // objetos de configuração recebem as chaves novas do padrão (ex.: alçadas criadas depois da instalação)
     const base = (DEFAULT_SETTINGS as Record<string, unknown>)[r.key];
     s[r.key] = base && typeof base === "object" && !Array.isArray(base) && r.value && typeof r.value === "object" && !Array.isArray(r.value) ? { ...(base as object), ...(r.value as object) } : r.value;
@@ -105,9 +106,24 @@ export async function audit(s: Session | null, acao: string, entidade: string, e
   await db.insert(schema.auditLog).values({ userId: s?.id ?? null, userNome: s?.nome ?? "sistema", acao, entidade, entidadeId, antes: mascarar(antes ?? null), depois: mascarar(depois ?? null) });
 }
 
+/** Auditoria de ação feita fora de uma sessão (família pelo link, denunciante, rotina): registra quem agiu pelo nome do canal. */
+export async function auditComo(nome: string, acao: string, entidade: string, entidadeId: number | null, antes?: unknown, depois?: unknown) {
+  await db.insert(schema.auditLog).values({ userId: null, userNome: nome, acao, entidade, entidadeId, antes: mascarar(antes ?? null), depois: mascarar(depois ?? null) });
+}
+
 // ---------- Helpers de formulário ----------
 export const str = (fd: FormData, k: string) => { const v = fd.get(k); return typeof v === "string" ? v.trim() : ""; };
 export const strOrNull = (fd: FormData, k: string) => str(fd, k) || null;
+/** "2026-10-08 10:00:00" no horário da escola (America/Campo_Grande) → mesmo instante em UTC, como o banco guarda (fmtDataHora converte de volta). */
+export function localParaUtc(local: string, tz = "America/Campo_Grande") {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(local); if (!m) throw new Error("Data e hora inválidas.");
+  const chute = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(chute)).map(x => [x.type, x.value]));
+  const desloc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - chute;
+  return new Date(chute - desloc).toISOString().slice(0, 19).replace("T", " ");
+}
+/** Destino de volta seguro: só caminhos internos ("/x"), nunca "//host" nem "/\\host". */
+export const caminhoSeguro = (v: string | null | undefined, fb: string) => (v && /^\/(?![\/\\])/.test(v) ? v : fb);
 export const num = (fd: FormData, k: string) => { const v = str(fd, k); return v === "" ? null : Number(v.replace(",", ".")); };
 export const int = (fd: FormData, k: string) => { const v = num(fd, k); return v === null ? null : Math.round(v); };
 

@@ -14,7 +14,7 @@ export default async function Fornecedores({ searchParams }: { searchParams: Pro
   return (
     <Page title="Fornecedores" sub="Prestadores de manutenção e serviços, com histórico de ordens, custo no ano e avaliação média dos atendimentos.">
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${gest ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${gest ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>
         <Table head={["Fornecedor", "Serviço", "Contato", "Contrato", "OS", "Custo no ano", "Avaliação", "Situação", ""]} empty="Nenhum fornecedor.">{rows.map(f => <tr key={f.id} className={!f.ativo ? "opacity-50" : ""}><Td className="font-medium">{f.nome}</Td><Td className="text-xs">{f.servico ?? "—"}</Td><Td className="text-xs">{f.telefone ?? ""}<br />{f.email ?? ""}</Td><Td className="text-xs">{f.contrato ?? "—"}</Td><Td>{f.os}</Td><Td className="tabular-nums">{brl(f.custo_ano)}</Td><Td>{f.avaliacao ?? "—"}</Td><Td><Badge v={f.ativo ? "ATIVO" : "CANCELADA"} label={f.ativo ? "Ativo" : "Inativo"} /></Td><Td>{gest && <Modal label={"Editar"} kind="link"><div className=""><Form f={f} /></div></Modal>}</Td></tr>)}</Table>
         {gest && <Card title="Novo fornecedor"><Form /></Card>}
       </div>

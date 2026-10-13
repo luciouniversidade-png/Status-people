@@ -9,6 +9,13 @@ import { atualizarBanco } from "./actions";
 
 export const dynamic = "force-dynamic";
 const AREAS: [RegExp, string][] = [
+  [/^(rematricula_links|contract_templates)$/, "Rematrícula por link (contratos do ano)"], [/^(teacher_slots|cover_absences|cover_assignments)$/, "Substituição de professores"],
+  [/^(spaces|space_bookings)$/, "Mapa de salas e reservas"], [/^(visits|pickup_authorizations|early_departures|brigade_members|emergency_events|emergency_checks|emergency_failures)$/, "Portaria e segurança"],
+  [/^(consent_purposes|consents|privacy_requests|privacy_incidents)$/, "Privacidade (LGPD)"], [/^(ethics_reports|ethics_messages)$/, "Canal de ética"],
+  [/^(request_types|requests|request_events)$/, "Solicitações e aprovações"], [/^(contracts|licenses)$/, "Contratos de fornecedores e licenças"], [/^push_subscriptions$/, "App no celular (notificações)"],
+  [/^(strategy_|objective_links|indicator|action_plans|ritual)/, "Gestão estratégica (identidade, mapa, indicadores, plano de ação, rituais, assistente)"],
+  [/^family_/, "Radar da família"], [/^(objectives|key_results|kr_checkins|projects|milestones|project_)/, "Estratégia (OKRs e projetos)"],
+  [/^(students|enrollments|classes|grades|waitlist)$/, "Matrículas"],
   [/^(perf_|eval_|pdi_|role_profile|dev_needs|teaching_|rater_|career_|review_raters|ai_drafts|feedbacks|behavior_profiles)/, "Desempenho e Painel do Colaborador"],
   [/^(announcement|message|notifications|attachments)/, "Comunicados, mensagens, anexos e notificações"],
   [/^ai_agents/, "Agentes de IA"], [/^(requisition|candidate|interview)/, "Recrutamento"], [/^(course|training|enroll|lesson)/, "Academy"],
@@ -34,7 +41,7 @@ export default async function Banco({ searchParams }: { searchParams: Promise<Re
     <Page title="Banco de dados" sub="Confere se o banco tem tudo o que esta versão do sistema usa e aplica as atualizações. Seguro repetir: nenhuma informação é apagada." actions={<Btn kind="ghost" href="/configuracoes">Configurações</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <Card className={`mb-4 ${emDia ? "border-emerald-200" : "border-amber-300"}`} title={<span className="flex items-center gap-2">{emDia ? <Badge v="APROVADA" label="Banco em dia" /> : <Badge v="PENDENTE" label="Atualização necessária" />}<span className="text-xs font-normal text-slate-500">Sistema {APP_VERSION} · esquema exigido {SCHEMA_VERSION}</span></span>}>
-        <dl className="grid gap-2 text-sm sm:grid-cols-3"><div><dt className="text-xs text-slate-500">Esquema registrado no banco</dt><dd className="font-medium">{reg?.versao ?? "não registrado (anterior à v20.2)"}</dd></div><div><dt className="text-xs text-slate-500">Última atualização</dt><dd className="font-medium">{reg?.em ? fmtDataHora(reg.em) : "—"}</dd></div><div><dt className="text-xs text-slate-500">Itens que faltam no banco</dt><dd className="font-medium">{faltaTabela.length} tabela(s) · {faltaColuna.length} coluna(s)</dd></div></dl>
+        <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3"><div><dt className="text-xs text-slate-500">Esquema registrado no banco</dt><dd className="font-medium">{reg?.versao ?? "não registrado (anterior à v20.2)"}</dd></div><div><dt className="text-xs text-slate-500">Última atualização</dt><dd className="font-medium">{reg?.em ? fmtDataHora(reg.em) : "—"}</dd></div><div><dt className="text-xs text-slate-500">Itens que faltam no banco</dt><dd className="font-medium">{faltaTabela.length} tabela(s) · {faltaColuna.length} coluna(s)</dd></div></dl>
         {pode ? <form action={atualizarBanco} className="mt-3"><Btn>{emDia ? "Aplicar de novo (verificação)" : "Aplicar atualizações do banco"}</Btn></form> : <p className="mt-3 text-xs text-slate-500">Somente Direção ou RH aplicam atualizações.</p>}
         {!emDia && <p className="mt-2 text-xs text-slate-600">Enquanto o banco não for atualizado, as telas das áreas abaixo mostram erro. Isso acontece quando o código novo é publicado e a atualização do banco ainda não foi aplicada.</p>}
       </Card>

@@ -17,7 +17,7 @@ def aid_near(html, marker):
 def login(sess, email, senha):
     h = sess.get(B + "/login").text; aid = re.findall(r'name="\$ACTION_ID_([0-9a-f]+)"', h)[0]; loc = post("/login", aid, {"email": email, "senha": senha}, sess=sess); assert loc.endswith("/"), loc
 
-login(S, "rh@colegiostatus", "Status2026!"); j = S.get(B + f"/api/setup?token={TOKEN}").json(); assert j["ok"] and j["versao"] == "20.2" and j["falhas"] == [] and j["aplicadas"] > 250, j; ok(f"setup aplica {j['aplicadas']} instruções, uma a uma, e registra a versão do esquema")
+login(S, "rh@colegiostatus", "Status2026!"); j = S.get(B + f"/api/setup?token={TOKEN}").json(); assert j["ok"] and j["versao"] == "22.0" and j["falhas"] == [] and j["aplicadas"] > 250, j; ok(f"setup aplica {j['aplicadas']} instruções, uma a uma, e registra a versão do esquema")
 st, h = html_of("/"); assert "banco de dados está desatualizado" not in h; st, h = html_of("/configuracoes/banco"); assert "Banco em dia" in h; ok("banco em dia: sem aviso, diagnóstico verde")
 h = S.get(B + "/colaboradores/novo").text; aid = re.findall(r'name="\$ACTION_ID_([0-9a-f]+)"', h[h.find("<main"):])[0]; car = re.search(r'<option value="(\d+)">Carandá</option>', h).group(1)
 E = re.search(r"/colaboradores/(\d+)\?", post("/colaboradores/novo", aid, {"nome": "Pessoa Teste", "admissao": "2024-02-01", "unitId": car, "vinculo": "CLT", "abrirAdmissao": "", "jornadaMinDia": 528})).group(1)
@@ -36,7 +36,7 @@ ok("telas afetadas carregam a tela de erro do sistema (mensagem, código e camin
 st, h = html_of("/configuracoes/banco"); assert "Atualização necessária" in h and "role_profiles" in h and "positions.formacao_exigida" in h and "Desempenho e Painel do Colaborador" in h and "Agentes de IA" in h; ok("diagnóstico lista o que falta, por área, comparando o código com o banco real")
 loc = post("/", aid_near(html_of("/")[1], "Atualizar banco agora"), {}, sess=SD); assert "erro=" in loc and "Só Direção ou RH" in loc, loc; ok("só Direção/RH aplicam a atualização")
 loc = post("/", aid_near(html_of("/")[1], "Atualizar banco agora"), {}); assert "ok=" in loc and "Banco atualizado" in loc, loc
-st, h = html_of("/configuracoes/banco"); assert "Banco em dia" in h and psql("SELECT value->>'versao' FROM settings WHERE key='banco'") == "20.2"
+st, h = html_of("/configuracoes/banco"); assert "Banco em dia" in h and psql("SELECT value->>'versao' FROM settings WHERE key='banco'") == "22.0"
 for p in ["/documentos", "/desempenho/expectativas", "/governanca/agentes", "/configuracoes"]:
     st, h = html_of(p); assert st == 200 and "Esta tela não pôde ser carregada" not in h, (p, st)
 assert "banco de dados está desatualizado" not in html_of("/")[1] and psql("SELECT count(*) FROM audit_log WHERE acao='atualizar banco de dados'") == "1"; ok("um toque no botão recria o que faltava; telas voltam e a ação fica auditada")

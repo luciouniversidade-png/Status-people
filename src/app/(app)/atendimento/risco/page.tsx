@@ -17,7 +17,7 @@ export default async function Risco({ searchParams }: { searchParams: Promise<Re
   return (
     <Page title="Famílias em risco de saída" sub="Pontuação por sinais objetivos: pedido de saída, reclamações, SLA vencido, NPS detrator, inadimplência, ausência de rematrícula. Cada ponto mostra o motivo." actions={<Btn kind="ghost" href="/api/export/risco">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div>
           <form className="mb-3 flex flex-wrap items-end gap-2">
             {!scope && <Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>}

@@ -12,6 +12,10 @@ import { sinaisPessoas } from "@/lib/talentos-analytics";
 import { inadimplencia, ETAPA_COB, DESC_STATUS, caixaMes } from "@/lib/financeiro";
 import { OS_TIPO, OS_STATUS, OS_PRIO, ATIVO_STATUS } from "@/lib/operacoes";
 import { portfolio, PROJ_STATUS, SAUDE } from "@/lib/estrategia";
+import { listarIndicadores, listarAcoes, TIPO_IND, ACAO_STATUS } from "@/lib/gestao-estrategica";
+import { FAROL_LABEL, FREQ_LABEL, DIRECAO_IND, ultimosPeriodos, periodoDe, SEGMENTO_LABEL } from "@/lib/gestao-calc";
+import { radarFamilias } from "@/lib/radar-familia";
+import { exportarV22 } from "@/lib/export-v22";
 import { getSettings, ENR_STATUS } from "@/lib/utils";
 import { calcularRevisao } from "@/lib/avaliacao-server";
 import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PADRAO, type Criterio, type Memoria, type Notas, type Faixas } from "@/lib/avaliacao";
@@ -119,6 +123,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
   } else if (tipo === "projetos") {
     const pf = await portfolio(u);
     rows = [["projeto", "objetivo", "dono", "unidade", "situacao", "saude", "prioridade", "inicio", "fim", "marcos_concluidos", "marcos", "marcos_atrasados", "orcamento", "gasto", "ultima_atualizacao"], ...pf.rows.map(r => [r.nome, r.objetivo, r.owner, r.unidade ?? "rede", PROJ_STATUS[r.status], SAUDE[r.saude], r.prioridade, fmtData(r.inicio), fmtData(r.fim), r.marcos_ok, r.marcos, r.marcos_atrasados, r.orcamento, r.gasto, fmtData(r.ultima_atualizacao)])];
+  } else if (tipo === "indicadores") {
+    const per = ultimosPeriodos(periodoDe(new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" })), 12); const n = (v: number | null | undefined) => v === null || v === undefined ? "" : String(v).replace(".", ",");
+    const xs = await listarIndicadores(u, { incluirInativos: true });
+    rows = [["codigo", "indicador", "perspectiva", "area", "abrangencia", "tipo", "frequencia", "direcao", "meta", "limite_atencao", "faixa_min", "faixa_max", "unidade_medida", "responsavel", "ultimo_periodo", "ultimo_valor", "farol", "medicao_em_dia", "ativo", ...per], ...xs.map(i => [i.codigo, i.nome, i.perspectiva, i.area, i.unidade ?? "rede", TIPO_IND[i.tipo], FREQ_LABEL[i.frequencia] ?? i.frequencia, DIRECAO_IND[i.direcao], n(i.meta), n(i.alerta), n(i.faixa_min), n(i.faixa_max), i.unidade_medida, i.responsavel, i.ultimoPeriodo, n(i.ultimoValor), FAROL_LABEL[i.farol], i.emDia ? "sim" : "não", i.ativo ? "sim" : "não", ...per.map(p => n(i.serie[p]))])];
+  } else if (tipo === "acoes") {
+    const xs = await listarAcoes(u, { situacao: "TODAS", limite: 5000 }); const n = (v: number | null) => v === null ? "" : String(v).replace(".", ",");
+    rows = [["acao", "por_que", "responsavel", "abrangencia", "local", "inicio", "prazo", "como", "custo_previsto", "custo_real", "situacao", "vencida", "dias_atraso", "bloqueio", "evidencia", "concluida_em", "justificativa_cancelamento", "objetivo", "indicador", "projeto", "ritual", "origem", "criada_por"], ...xs.map(a => [a.titulo, a.porque, a.responsavel, a.unidade ?? "rede", a.local, fmtData(a.inicio), fmtData(a.prazo), a.como, n(a.custo_previsto), n(a.custo_real), ACAO_STATUS[a.status], a.vencida ? "sim" : "não", a.dias_atraso, a.bloqueio, a.evidencia, fmtData(a.concluida_em), a.cancel_justificativa, a.objetivo, a.indicador, a.projeto, a.ritual ? `${a.ritual} (${fmtData(a.reuniao_data)})` : "", a.origem, a.criador])];
+  } else if (tipo === "radar") {
+    const r = await radarFamilias(u);
+    rows = [["aluno", "unidade", "serie", "responsavel", "telefone", "carteira", "segmento", "pontos_risco", "motivos_hoje", "sinais", "ultimo_contato", "dias_sem_contato", "proximo_passo_vencido", "jornada_atrasada", "proxima_etapa", "rematricula", "indicacoes"], ...r.familias.map(f => [f.nome, f.unidade, f.serie, f.responsavel, f.telefone, f.carteira ?? "sem responsável", SEGMENTO_LABEL[f.segmento], f.pontos, f.motivosHoje.join(" | "), f.fatores.map(x => x.texto).join(" | "), fmtData(f.ultimoContato), f.diasSemContato, f.passoVencido ? `${f.passoVencido.texto ?? ""} (${fmtData(f.passoVencido.em)})` : "", f.jornadaAtrasadas.map(e => e.nome).join(" | "), f.jornadaProxima ? `${f.jornadaProxima.nome}${f.jornadaProxima.prazo ? ` até ${fmtData(f.jornadaProxima.prazo)}` : ""}` : "", f.rematriculaOk ? "feita" : "pendente", f.indicacoes])];
   } else if (tipo === "avaliacoes") {
     if (!["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "LEITURA"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
     const cid = Number(new URL(req.url).searchParams.get("ciclo"));
@@ -136,6 +150,11 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
         ...crit.map(x => { const n = r.notas_criterios?.[x.id]; return !visivelNota ? "" : n?.na ? (n.naAprovado ? "N/A" : "N/A (aguarda)") : n?.naoObservado ? "não observado" : n?.nota ?? "pendente"; })]);
     }
     rows = [[`Ciclo: ${c.nome} · cálculo pelo motor oficial (pendências e não observados nunca viram zero)`], cab, ...linhas];
-  } else return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
+  } else {
+    const v22 = await exportarV22(tipo, s, u, new URL(req.url));
+    if (v22 === "negado") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
+    if (!v22) return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
+    rows = v22;
+  }
   return new NextResponse(csv(rows), { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${tipo}-${new Date().toISOString().slice(0, 10)}.csv"` } });
 }

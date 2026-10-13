@@ -32,7 +32,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
         <Stat label="Retenção no mês" value={taxa === null ? "—" : `${taxa}%`} hint={`${st.ret.retidos} retidas · ${st.ret.perdidos} perdidas · ${st.ret.abertos} em andamento`} href="/atendimento/casos?tipo=SAIDA" />
         <Stat label="Famílias em risco alto" value={<span className={altos.length ? "text-erro" : ""}>{altos.length}</span>} hint={`${risco.length} com algum sinal`} href="/atendimento/risco" />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         <Card title="Casos do mês por tipo">
           <Table head={["Tipo", "Registrados", "Ainda abertos"]} empty="Nenhum caso no mês.">{st.porTipo.map(t => <tr key={t.tipo}><Td>{CASE_TIPO_LABEL[t.tipo] ?? t.tipo}</Td><Td>{t.n}</Td><Td>{t.abertos || "—"}</Td></tr>)}</Table>
         </Card>

@@ -20,7 +20,7 @@ export default async function Jornadas({ searchParams }: { searchParams: Promise
   return (
     <Page title="Jornadas de trabalho" sub="Carga esperada por dia da semana, com vigência. Professores: soma dos minutos de aula de cada dia; administrativos: 8:48 (528 min) ou 4:24 (264 min).">
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div>
           <form className="mb-3 flex items-end gap-2"><Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Nome" /></Field><Btn kind="ghost">Filtrar</Btn></form>
           <Table head={["Colaborador", "Unidade", "Regime", "Jornada vigente", "Semanal", ""]} empty="Nenhum colaborador.">

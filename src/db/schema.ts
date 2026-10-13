@@ -187,6 +187,7 @@ export const classes = pgTable("classes", {
   nome: text("nome").notNull(),                  // ex.: "5º ano A"
   vagas: integer("vagas").notNull(),
   status: text("status").notNull().default("ABERTA"), // ABERTA · FECHADA
+  spaceId: integer("space_id"),                  // sala da turma (mapa de salas por turno, v22)
   obs: text("obs"),
 });
 
@@ -204,6 +205,8 @@ export const students = pgTable("students", {
   origem: text("origem"),                        // REMATRICULA · INDICACAO · SITE · REDES · OUTRO
   inadimplente: boolean("inadimplente").notNull().default(false), // sinal financeiro (importado do ActiveSoft)
   riscoObs: text("risco_obs"),                   // observação manual de risco de saída
+  carteiraUserId: integer("carteira_user_id"),   // responsável pelo relacionamento com a família (Radar da família)
+  indicadoPorId: integer("indicado_por_id"),     // família (aluno) que indicou este candidato
   obs: text("obs"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -467,6 +470,7 @@ export const decisions = pgTable("decisions", {
   revisarEm: date("revisar_em"),
   substituidaPor: integer("substituida_por"),
   link: text("link"),
+  ritualMeetingId: integer("ritual_meeting_id"), // decisão registrada em reunião de ritual de gestão
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -1081,6 +1085,7 @@ export const objectives = pgTable("objectives", {
   id: serial("id").primaryKey(),
   ciclo: text("ciclo").notNull(),               // ex.: "2027", "2026-S2"
   pilar: text("pilar"),
+  perspectiva: text("perspectiva"),           // perspectiva do mapa estratégico (null = sugerida pelo pilar)
   titulo: text("titulo").notNull(),
   descricao: text("descricao"),
   ownerUserId: integer("owner_user_id"),
@@ -1491,4 +1496,649 @@ export const aiAgents = pgTable("ai_agents", {
   createdBy: integer("created_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ======================= Gestão estratégica (v21) =======================
+/** Identidade institucional versionada: missão, visão, valores (com práticas observáveis), proposta de valor e posicionamento. */
+export const strategyIdentity = pgTable("strategy_identity", {
+  id: serial("id").primaryKey(),
+  versao: integer("versao").notNull().default(1),
+  status: text("status").notNull().default("RASCUNHO"),   // RASCUNHO · VIGENTE · ARQUIVADO
+  missao: text("missao"),
+  visao: text("visao"),
+  proposito: text("proposito"),
+  valores: jsonb("valores"),                              // [{ nome, pratica }]
+  propostaValor: text("proposta_valor"),
+  posicionamento: text("posicionamento"),
+  horizonte: text("horizonte"),
+  vigenciaInicio: date("vigencia_inicio"),
+  aprovadoPor: integer("aprovado_por"),
+  aprovadoEm: timestamp("aprovado_em"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Relação de causa e efeito entre objetivos no mapa estratégico (de → contribui para). */
+export const objectiveLinks = pgTable("objective_links", {
+  id: serial("id").primaryKey(),
+  deObjectiveId: integer("de_objective_id").notNull(),
+  paraObjectiveId: integer("para_objective_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Indicadores de acompanhamento contínuo (diferentes dos KRs, que são metas de um ciclo). */
+export const indicators = pgTable("indicators", {
+  id: serial("id").primaryKey(),
+  codigo: text("codigo"),
+  nome: text("nome").notNull(),
+  descricao: text("descricao"),
+  perspectiva: text("perspectiva"),
+  area: text("area"),
+  unitId: integer("unit_id"),                              // null = rede
+  unidadeMedida: text("unidade_medida"),
+  direcao: text("direcao").notNull().default("MAIOR_MELHOR"), // MAIOR_MELHOR · MENOR_MELHOR · FAIXA
+  meta: numeric("meta", { precision: 14, scale: 4 }),
+  alerta: numeric("alerta", { precision: 14, scale: 4 }),
+  faixaMin: numeric("faixa_min", { precision: 14, scale: 4 }),
+  faixaMax: numeric("faixa_max", { precision: 14, scale: 4 }),
+  tipo: text("tipo").notNull().default("MANUAL"),         // MANUAL · SISTEMA · CALCULADO
+  fonte: text("fonte"),                                     // chave da métrica do sistema (tipo SISTEMA)
+  numeradorId: integer("numerador_id"),                     // tipo CALCULADO: numerador ÷ denominador × fator
+  denominadorId: integer("denominador_id"),
+  fator: numeric("fator", { precision: 14, scale: 4 }),
+  frequencia: text("frequencia").notNull().default("MENSAL"),
+  funil: text("funil"),                                     // marketing: INVESTIMENTO (valor aplicado no mês)
+  canal: text("canal"),                                     // marketing: origem/canal (mesmas chaves da origem do aluno)
+  objectiveId: integer("objective_id"),
+  responsavelUserId: integer("responsavel_user_id"),
+  ativo: boolean("ativo").notNull().default(true),
+  ordem: integer("ordem").notNull().default(0),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Uma medição por indicador e mês ('YYYY-MM'). */
+export const indicatorValues = pgTable("indicator_values", {
+  id: serial("id").primaryKey(),
+  indicatorId: integer("indicator_id").notNull(),
+  periodo: text("periodo").notNull(),
+  valor: numeric("valor", { precision: 16, scale: 4 }),
+  origem: text("origem").notNull().default("MANUAL"),     // MANUAL · SISTEMA · IMPORTACAO
+  obs: text("obs"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Plano de ação 5W2H: o quê, por quê, onde, quando, quem, como, quanto. */
+export const actionPlans = pgTable("action_plans", {
+  id: serial("id").primaryKey(),
+  titulo: text("titulo").notNull(),                        // o quê
+  porque: text("porque"),                                   // por quê
+  unitId: integer("unit_id"),                               // onde (unidade)
+  local: text("local"),                                     // onde (detalhe)
+  inicio: date("inicio"),                                   // quando
+  prazo: date("prazo"),
+  responsavelUserId: integer("responsavel_user_id"),        // quem
+  como: text("como"),                                       // como
+  custoPrevisto: numeric("custo_previsto", { precision: 12, scale: 2 }), // quanto
+  custoReal: numeric("custo_real", { precision: 12, scale: 2 }),
+  status: text("status").notNull().default("A_FAZER"),     // A_FAZER · EM_ANDAMENTO · BLOQUEADA · CONCLUIDA · CANCELADA
+  bloqueio: text("bloqueio"),
+  bloqueioDesde: date("bloqueio_desde"),
+  evidencia: text("evidencia"),
+  concluidaEm: date("concluida_em"),
+  cancelJustificativa: text("cancel_justificativa"),
+  objectiveId: integer("objective_id"),
+  indicatorId: integer("indicator_id"),
+  projectId: integer("project_id"),
+  ritualMeetingId: integer("ritual_meeting_id"),
+  origem: text("origem"),                                   // texto livre da origem (ex.: não conformidade #12)
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Rituais de gestão: reuniões recorrentes com finalidade, pauta, participantes e indicadores revisados. */
+export const rituals = pgTable("rituals", {
+  id: serial("id").primaryKey(),
+  nome: text("nome").notNull(),
+  tipo: text("tipo").notNull().default("MENSAL"),
+  finalidade: text("finalidade"),
+  unitId: integer("unit_id"),
+  donoUserId: integer("dono_user_id"),
+  participantes: jsonb("participantes"),                  // [userId]
+  pautaPadrao: text("pauta_padrao"),
+  indicadores: jsonb("indicadores"),                      // [indicatorId]
+  objetivos: jsonb("objetivos"),                          // [objectiveId] revisados no ritual
+  duracaoMin: integer("duracao_min"),
+  proximaData: date("proxima_data"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const ritualMeetings = pgTable("ritual_meetings", {
+  id: serial("id").primaryKey(),
+  ritualId: integer("ritual_id").notNull(),
+  data: date("data").notNull(),
+  status: text("status").notNull().default("REALIZADA"),  // REALIZADA · CANCELADA
+  presentes: jsonb("presentes"),                           // [userId]
+  pauta: text("pauta"),
+  ata: text("ata"),
+  indicadoresSnapshot: jsonb("indicadores_snapshot"),     // [{ id, nome, periodo, valor, farol }]
+  cancelMotivo: text("cancel_motivo"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ======================= Radar da família (v21) =======================
+/** Interações registradas com a família (ligação, mensagem, reunião…), com próximo passo combinado. */
+export const familyContacts = pgTable("family_contacts", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  data: date("data").notNull(),
+  canal: text("canal"),
+  tipo: text("tipo").notNull().default("CONTATO"),
+  etapa: text("etapa"),                                    // etapa da jornada concluída nesta interação (opcional)
+  resumo: text("resumo").notNull(),
+  percepcao: text("percepcao"),                            // POSITIVA · NEUTRA · NEGATIVA (registrada por quem atendeu)
+  proximoPasso: text("proximo_passo"),
+  proximoEm: date("proximo_em"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Etapas da jornada da família cumpridas no ano letivo. */
+/** Rascunhos do assistente estratégico (IA como apoio: fatos citados, revisão humana obrigatória). */
+export const strategyAiDrafts = pgTable("strategy_ai_drafts", {
+  id: serial("id").primaryKey(),
+  tarefa: text("tarefa").notNull(),
+  unitId: integer("unit_id"),
+  modelo: text("modelo"),
+  configVersao: text("config_versao"),
+  fontes: jsonb("fontes"),
+  texto: text("texto").notNull(),
+  alertas: jsonb("alertas"),
+  status: text("status").notNull().default("RASCUNHO"), // RASCUNHO · APROVADO · DESCARTADO
+  aprovadoPor: integer("aprovado_por"),
+  aprovadoEm: timestamp("aprovado_em"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const familyJourney = pgTable("family_journey", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  ano: integer("ano").notNull(),
+  etapa: text("etapa").notNull(),
+  concluidaEm: date("concluida_em").notNull(),
+  contactId: integer("contact_id"),
+  userId: integer("user_id"),
+  obs: text("obs"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v22: rematrícula por link =======================
+/** Link individual de rematrícula: a família confere os dados, escolhe o turno dentro das vagas e aceita o contrato (evidência guardada). */
+export const rematriculaLinks = pgTable("rematricula_links", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  ano: integer("ano").notNull(),
+  unitId: integer("unit_id"),                              // unidade do aluno quando o link foi gerado (escopo)
+  gradeId: integer("grade_id"),                            // série prevista para o ano (definida pela escola)
+  token: text("token").notNull().unique(),
+  status: text("status").notNull().default("PENDENTE"),   // PENDENTE · CONCLUIDA · RECUSADA · CANCELADA · EXPIRADA
+  expiraEm: date("expira_em").notNull(),
+  enviadoEm: timestamp("enviado_em"),
+  enviadoPor: integer("enviado_por"),
+  abertoEm: timestamp("aberto_em"),
+  concluidoEm: timestamp("concluido_em"),
+  classId: integer("class_id"),
+  integralClassId: integer("integral_class_id"),
+  enrollmentId: integer("enrollment_id"),
+  integralEnrollmentId: integer("integral_enrollment_id"),
+  contratoId: integer("contrato_id"),
+  contratoVersao: integer("contrato_versao"),
+  contratoHash: text("contrato_hash"),                     // SHA-256 do texto exibido e aceito
+  contratoTexto: text("contrato_texto"),                   // texto exato aceito (com as variáveis preenchidas)
+  aceite: jsonb("aceite"),                                 // { nome, cpfFinal, ip, userAgent, em }
+  dadosAtualizados: jsonb("dados_atualizados"),            // { campo: { de, para } }
+  rascunho: jsonb("rascunho"),                             // escolha da etapa 1 (turma, Integral e dados) até o aceite
+  recusaMotivo: text("recusa_motivo"),
+  recusaObs: text("recusa_obs"),
+  caseId: integer("case_id"),
+  cancelMotivo: text("cancel_motivo"),
+  criadoPor: integer("criado_por"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Modelo de contrato do ano letivo, versionado: só uma versão vigente por ano; o aceite guarda a versão e o texto exato. */
+export const contractTemplates = pgTable("contract_templates", {
+  id: serial("id").primaryKey(),
+  ano: integer("ano").notNull(),
+  titulo: text("titulo").notNull(),
+  versao: integer("versao").notNull().default(1),
+  texto: text("texto").notNull(),
+  status: text("status").notNull().default("RASCUNHO"),   // RASCUNHO · VIGENTE · ARQUIVADO
+  publicadoEm: timestamp("publicado_em"),
+  publicadoPor: integer("publicado_por"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ======================= v22: substituição de professor =======================
+/** Grade horária dos professores (aula = professor × dia da semana × horário × turma). */
+export const teacherSlots = pgTable("teacher_slots", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  unitId: integer("unit_id").notNull(),
+  diaSemana: integer("dia_semana").notNull(),              // 1 = segunda … 6 = sábado
+  inicio: text("inicio").notNull(),                        // HH:MM
+  fim: text("fim").notNull(),
+  turno: text("turno").notNull(),                          // Matutino · Vespertino · Noturno
+  turma: text("turma").notNull(),
+  disciplina: text("disciplina"),
+  spaceId: integer("space_id"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Ausência de professor num dia (falta, atestado, afastamento aprovado, formação…), que gera as aulas a cobrir. */
+export const coverAbsences = pgTable("cover_absences", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  unitId: integer("unit_id"),
+  data: date("data").notNull(),
+  inicio: text("inicio"),                                  // período parcial (vazio = dia todo)
+  fim: text("fim"),
+  motivo: text("motivo").notNull(),                        // FALTA · ATESTADO · AFASTAMENTO · FERIAS · LICENCA · FORMACAO · OUTRO
+  origem: text("origem").notNull().default("COORDENACAO"), // COORDENACAO · PROFESSOR · AFASTAMENTO
+  leaveRequestId: integer("leave_request_id"),
+  status: text("status").notNull().default("ATIVA"),      // ATIVA · CANCELADA
+  obs: text("obs"),
+  registradoPor: integer("registrado_por"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Aula a cobrir numa data: quem cobre, aceite, realização e crédito no banco de horas. Guarda um retrato da aula (turma, horário). */
+export const coverAssignments = pgTable("cover_assignments", {
+  id: serial("id").primaryKey(),
+  absenceId: integer("absence_id").notNull(),
+  slotId: integer("slot_id"),
+  data: date("data").notNull(),
+  unitId: integer("unit_id").notNull(),
+  turma: text("turma").notNull(),
+  disciplina: text("disciplina"),
+  inicio: text("inicio").notNull(),
+  fim: text("fim").notNull(),
+  turno: text("turno"),
+  ausenteEmployeeId: integer("ausente_employee_id").notNull(),
+  coberturaEmployeeId: integer("cobertura_employee_id"),
+  status: text("status").notNull().default("ABERTA"),     // ABERTA · CONVIDADO · CONFIRMADA · REALIZADA · SEM_PROFESSOR · CANCELADA
+  solucao: text("solucao"),                                // sem professor: ATIVIDADE_ORIENTADA · JUNCAO · DISPENSA · OUTRA
+  minutos: integer("minutos").notNull().default(0),
+  hourEntryId: integer("hour_entry_id"),
+  recusas: jsonb("recusas"),                               // [{ employeeId, nome, em, motivo }]
+  convidadoPor: integer("convidado_por"),
+  convidadoEm: timestamp("convidado_em"),
+  respondidoEm: timestamp("respondido_em"),
+  realizadaEm: timestamp("realizada_em"),
+  obs: text("obs"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ======================= v22: espaços (mapa de salas e reservas) =======================
+export const spaces = pgTable("spaces", {
+  id: serial("id").primaryKey(),
+  unitId: integer("unit_id").notNull(),
+  nome: text("nome").notNull(),
+  tipo: text("tipo").notNull().default("SALA"),            // SALA · LABORATORIO · QUADRA · AUDITORIO · BIBLIOTECA · BRINQUEDOTECA · EQUIPAMENTO · OUTRO
+  capacidade: integer("capacidade"),                       // pessoas (equipamento: unidades)
+  areaM2: numeric("area_m2", { precision: 8, scale: 2 }),
+  reservavel: boolean("reservavel").notNull().default(false),
+  ativo: boolean("ativo").notNull().default(true),
+  obs: text("obs"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const spaceBookings = pgTable("space_bookings", {
+  id: serial("id").primaryKey(),
+  spaceId: integer("space_id").notNull(),
+  unitId: integer("unit_id").notNull(),
+  data: date("data").notNull(),
+  inicio: text("inicio").notNull(),
+  fim: text("fim").notNull(),
+  titulo: text("titulo").notNull(),
+  turma: text("turma"),
+  grupo: text("grupo"),                                    // reservas repetidas (mesma série semanal)
+  status: text("status").notNull().default("CONFIRMADA"), // CONFIRMADA · CANCELADA
+  solicitanteUserId: integer("solicitante_user_id"),
+  solicitanteNome: text("solicitante_nome"),
+  cancelMotivo: text("cancel_motivo"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v22: portaria e segurança =======================
+export const visits = pgTable("visits", {
+  id: serial("id").primaryKey(),
+  unitId: integer("unit_id").notNull(),
+  tipo: text("tipo").notNull().default("VISITANTE"),      // VISITANTE · PRESTADOR · ENTREGA · FAMILIA · OUTRO
+  nome: text("nome").notNull(),
+  documento: text("documento"),
+  empresa: text("empresa"),
+  motivo: text("motivo"),
+  visitado: text("visitado"),                              // pessoa ou setor visitado
+  cracha: text("cracha"),
+  entrada: timestamp("entrada").notNull().defaultNow(),
+  saida: timestamp("saida"),
+  registradoPor: integer("registrado_por"),
+  saidaPor: integer("saida_por"),
+  anonimizadoEm: timestamp("anonimizado_em"),
+  obs: text("obs"),
+});
+/** Quem pode (ou não pode) buscar o aluno. PROIBIDO bloqueia a entrega; o detalhe da restrição só a gestão vê. */
+export const pickupAuthorizations = pgTable("pickup_authorizations", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  nome: text("nome").notNull(),
+  parentesco: text("parentesco"),
+  documento: text("documento"),
+  telefone: text("telefone"),
+  tipo: text("tipo").notNull().default("AUTORIZADO"),     // AUTORIZADO · PROIBIDO
+  validade: date("validade"),
+  restricaoObs: text("restricao_obs"),
+  ativo: boolean("ativo").notNull().default(true),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Saída antecipada (e entrega à família numa emergência) com conferência de quem retira. */
+export const earlyDepartures = pgTable("early_departures", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  unitId: integer("unit_id").notNull(),
+  data: date("data").notNull(),
+  hora: text("hora").notNull(),
+  retiradoPor: text("retirado_por").notNull(),
+  documento: text("documento"),
+  authorizationId: integer("authorization_id"),
+  status: text("status").notNull().default("LIBERADA"),   // LIBERADA · BLOQUEADA
+  motivo: text("motivo"),
+  excecaoJustificativa: text("excecao_justificativa"),
+  autorizadoPor: integer("autorizado_por"),
+  registradoPor: integer("registrado_por"),
+  registradoNome: text("registrado_nome"),
+  responsavelAvisado: boolean("responsavel_avisado").notNull().default(false),
+  emergencyEventId: integer("emergency_event_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const brigadeMembers = pgTable("brigade_members", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull(),
+  unitId: integer("unit_id").notNull(),
+  funcao: text("funcao").notNull().default("BRIGADISTA"), // BRIGADISTA · LIDER · SOCORRISTA
+  turno: text("turno"),
+  treinamentoEm: date("treinamento_em"),
+  validade: date("validade"),
+  ativo: boolean("ativo").notNull().default(true),
+  obs: text("obs"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+/** Simulado de abandono ou emergência real: chamada por grupo, tempo de evacuação, falhas e entrega às famílias. */
+export const emergencyEvents = pgTable("emergency_events", {
+  id: serial("id").primaryKey(),
+  unitId: integer("unit_id").notNull(),
+  tipo: text("tipo").notNull().default("SIMULADO"),       // SIMULADO · REAL
+  cenario: text("cenario").notNull(),
+  status: text("status").notNull().default("EM_ANDAMENTO"), // EM_ANDAMENTO · ENCERRADO
+  inicio: timestamp("inicio").notNull().defaultNow(),
+  evacuacaoEm: timestamp("evacuacao_em"),
+  encerradoEm: timestamp("encerrado_em"),
+  tempoEvacuacaoSeg: integer("tempo_evacuacao_seg"),
+  metaSeg: integer("meta_seg"),
+  pontosEncontro: text("pontos_encontro"),
+  observacoes: text("observacoes"),
+  coordenadorUserId: integer("coordenador_user_id"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const emergencyChecks = pgTable("emergency_checks", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").notNull(),
+  grupo: text("grupo").notNull(),
+  ordem: integer("ordem").notNull().default(0),
+  esperado: integer("esperado"),
+  presentes: integer("presentes"),
+  feridos: integer("feridos").notNull().default(0),
+  naoLocalizados: integer("nao_localizados").notNull().default(0),
+  status: text("status").notNull().default("PENDENTE"),   // PENDENTE · SEGURO · OCORRENCIA
+  responsavel: text("responsavel"),
+  checadoEm: timestamp("checado_em"),
+  checadoPor: text("checado_por"),
+  obs: text("obs"),
+});
+export const emergencyFailures = pgTable("emergency_failures", {
+  id: serial("id").primaryKey(),
+  eventId: integer("event_id").notNull(),
+  descricao: text("descricao").notNull(),
+  gravidade: text("gravidade").notNull().default("MEDIA"), // BAIXA · MEDIA · ALTA
+  actionPlanId: integer("action_plan_id"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v22: privacidade (LGPD) =======================
+export const consentPurposes = pgTable("consent_purposes", {
+  id: serial("id").primaryKey(),
+  codigo: text("codigo").notNull().unique(),
+  titulo: text("titulo").notNull(),
+  texto: text("texto").notNull(),                          // texto exibido em destaque para o responsável
+  versao: integer("versao").notNull().default(1),
+  ativo: boolean("ativo").notNull().default(true),
+  naRematricula: boolean("na_rematricula").notNull().default(true),
+  ordem: integer("ordem").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Histórico de consentimentos (só acrescenta): a situação vigente é o registro mais recente por aluno e finalidade. */
+export const consents = pgTable("consents", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  purposeId: integer("purpose_id").notNull(),
+  versao: integer("versao").notNull(),
+  status: text("status").notNull(),                        // CONCEDIDO · NEGADO · REVOGADO
+  titularNome: text("titular_nome"),
+  origem: text("origem").notNull(),                        // REMATRICULA_LINK · SECRETARIA · PEDIDO_TITULAR
+  evidencia: jsonb("evidencia"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const privacyRequests = pgTable("privacy_requests", {
+  id: serial("id").primaryKey(),
+  protocolo: text("protocolo").notNull().unique(),
+  codigoHash: text("codigo_hash"),
+  tipo: text("tipo").notNull(),
+  titularNome: text("titular_nome").notNull(),
+  titularTipo: text("titular_tipo"),
+  alunoNome: text("aluno_nome"),
+  contatoEmail: text("contato_email"),
+  contatoTelefone: text("contato_telefone"),
+  descricao: text("descricao"),
+  canal: text("canal").notNull().default("PORTAL"),
+  studentId: integer("student_id"),
+  employeeId: integer("employee_id"),
+  status: text("status").notNull().default("RECEBIDA"),   // RECEBIDA · EM_ANALISE · AGUARDANDO_TITULAR · RESPONDIDA · INDEFERIDA
+  prazo: date("prazo").notNull(),
+  identidadeVerificada: boolean("identidade_verificada").notNull().default(false),
+  responsavelUserId: integer("responsavel_user_id"),
+  resposta: text("resposta"),
+  respondidaEm: timestamp("respondida_em"),
+  historico: jsonb("historico"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+/** Incidentes de segurança com dados pessoais: registro obrigatório (mantido por 5 anos), prazo de comunicação à ANPD em dias úteis. */
+export const privacyIncidents = pgTable("privacy_incidents", {
+  id: serial("id").primaryKey(),
+  codigo: text("codigo").notNull().unique(),
+  titulo: text("titulo").notNull(),
+  descricao: text("descricao"),
+  unitId: integer("unit_id"),
+  detectadoEm: timestamp("detectado_em"),
+  cienciaEm: timestamp("ciencia_em").notNull(),
+  categoriasDados: jsonb("categorias_dados"),
+  titularesEstimados: integer("titulares_estimados"),
+  envolveCriancas: boolean("envolve_criancas").notNull().default(false),
+  dadosSensiveis: boolean("dados_sensiveis").notNull().default(false),
+  risco: text("risco").notNull().default("EM_AVALIACAO"), // EM_AVALIACAO · BAIXO · RELEVANTE
+  prazoAnpd: date("prazo_anpd"),
+  comunicar: boolean("comunicar"),
+  justificativaNaoComunicar: text("justificativa_nao_comunicar"),
+  comunicadoAnpdEm: timestamp("comunicado_anpd_em"),
+  comunicadoTitularesEm: timestamp("comunicado_titulares_em"),
+  medidas: text("medidas"),
+  causa: text("causa"),
+  status: text("status").notNull().default("ABERTO"),     // ABERTO · CONTIDO · ENCERRADO
+  responsavelUserId: integer("responsavel_user_id"),
+  historico: jsonb("historico"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  encerradoEm: timestamp("encerrado_em"),
+});
+
+// ======================= v22: canal de ética =======================
+export const ethicsReports = pgTable("ethics_reports", {
+  id: serial("id").primaryKey(),
+  protocolo: text("protocolo").notNull().unique(),
+  codigoHash: text("codigo_hash").notNull(),
+  categoria: text("categoria").notNull(),
+  relato: text("relato").notNull(),
+  envolvidos: text("envolvidos"),
+  local: text("local"),
+  quando: text("quando"),
+  testemunhas: text("testemunhas"),
+  unitId: integer("unit_id"),
+  relacao: text("relacao"),
+  anonimo: boolean("anonimo").notNull().default(true),
+  contato: jsonb("contato"),                               // só quando a pessoa escolhe se identificar
+  status: text("status").notNull().default("RECEBIDA"),   // RECEBIDA · EM_APURACAO · CONCLUIDA · ARQUIVADA
+  gravidade: integer("gravidade"),
+  prazoTriagem: date("prazo_triagem"),
+  prazoConclusao: date("prazo_conclusao"),
+  responsavelUserId: integer("responsavel_user_id"),
+  impedidos: jsonb("impedidos"),                           // ids do comitê que não podem ver este relato
+  liberados: jsonb("liberados"),                           // ids que a Direção liberou de impedimento automático (homônimo)
+  resultado: text("resultado"),                            // PROCEDENTE · PARCIAL · IMPROCEDENTE · INCONCLUSIVO
+  conclusao: text("conclusao"),
+  medidas: text("medidas"),
+  concluidaEm: timestamp("concluida_em"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const ethicsMessages = pgTable("ethics_messages", {
+  id: serial("id").primaryKey(),
+  reportId: integer("report_id").notNull(),
+  autor: text("autor").notNull(),                          // DENUNCIANTE · COMITE · NOTA_INTERNA
+  texto: text("texto").notNull(),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v22: central de solicitações =======================
+export const requestTypes = pgTable("request_types", {
+  id: serial("id").primaryKey(),
+  codigo: text("codigo").notNull().unique(),
+  nome: text("nome").notNull(),
+  descricao: text("descricao"),
+  campos: jsonb("campos").notNull(),                       // [{ id, rotulo, tipo, obrigatorio, opcoes }]
+  etapas: jsonb("etapas").notNull(),                       // [{ nome, perfis, usuarios, acimaDe }]
+  prazoDias: integer("prazo_dias").notNull().default(2),
+  perfis: jsonb("perfis"),                                 // quem pode abrir (vazio = todos)
+  ativo: boolean("ativo").notNull().default(true),
+  ordem: integer("ordem").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const requests = pgTable("requests", {
+  id: serial("id").primaryKey(),
+  numero: text("numero").notNull().unique(),
+  typeId: integer("type_id").notNull(),
+  titulo: text("titulo").notNull(),
+  dados: jsonb("dados").notNull(),
+  valor: numeric("valor", { precision: 12, scale: 2 }),
+  unitId: integer("unit_id"),
+  solicitanteUserId: integer("solicitante_user_id").notNull(),
+  solicitanteNome: text("solicitante_nome"),
+  status: text("status").notNull().default("EM_APROVACAO"), // EM_APROVACAO · DEVOLVIDA · APROVADA · REJEITADA · CANCELADA
+  etapaAtual: integer("etapa_atual").notNull().default(0),
+  etapas: jsonb("etapas").notNull(),                       // retrato das etapas aplicáveis: [{ nome, aprovadores, decisao, por, porNome, em, obs }]
+  prazoEtapa: date("prazo_etapa"),
+  concluidaEm: timestamp("concluida_em"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const requestEvents = pgTable("request_events", {
+  id: serial("id").primaryKey(),
+  requestId: integer("request_id").notNull(),
+  etapa: integer("etapa"),
+  tipo: text("tipo").notNull(),                            // CRIADA · APROVADA · REJEITADA · DEVOLVIDA · REENVIADA · CANCELADA · COMENTARIO
+  texto: text("texto"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v22: contratos de fornecedores e licenças =======================
+export const contracts = pgTable("contracts", {
+  id: serial("id").primaryKey(),
+  supplierId: integer("supplier_id").notNull(),
+  unitId: integer("unit_id"),
+  objeto: text("objeto").notNull(),
+  numero: text("numero"),
+  valorMensal: numeric("valor_mensal", { precision: 12, scale: 2 }),
+  valorTotal: numeric("valor_total", { precision: 14, scale: 2 }),
+  inicio: date("inicio").notNull(),
+  fim: date("fim"),
+  renovacao: text("renovacao").notNull().default("MANUAL"), // AUTOMATICA · MANUAL · SEM_RENOVACAO
+  avisoPrevioDias: integer("aviso_previo_dias").notNull().default(30),
+  reajusteIndice: text("reajuste_indice"),
+  proximoReajuste: date("proximo_reajuste"),
+  responsavelUserId: integer("responsavel_user_id"),
+  status: text("status").notNull().default("VIGENTE"),    // VIGENTE · ENCERRADO · CANCELADO
+  renovadoDe: integer("renovado_de"),
+  obs: text("obs"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const licenses = pgTable("licenses", {
+  id: serial("id").primaryKey(),
+  unitId: integer("unit_id").notNull(),
+  tipo: text("tipo").notNull(),
+  nome: text("nome"),
+  orgao: text("orgao"),
+  numero: text("numero"),
+  emissao: date("emissao"),
+  validade: date("validade"),
+  antecedenciaDias: integer("antecedencia_dias").notNull().default(60),
+  responsavelUserId: integer("responsavel_user_id"),
+  status: text("status").notNull().default("ATIVA"),      // ATIVA · SUBSTITUIDA · DISPENSADA
+  renovadoDe: integer("renovado_de"),
+  obs: text("obs"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ======================= v22: app no celular (notificações push) =======================
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull(),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  userAgent: text("user_agent"),
+  tipos: text("tipos").notNull().default("ACAO_ALERTA"),  // TODOS · ACAO_ALERTA
+  falhas: integer("falhas").notNull().default(0),
+  ultimoEnvio: timestamp("ultimo_envio"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });

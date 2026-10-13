@@ -45,7 +45,7 @@ export default async function Organograma() {
 
   return (
     <Page title="Organograma" sub={`Estrutura de cargos com ocupação atual${u === null ? " — rede" : ""}. Os cargos são editados em Configurações.`}>
-      <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <ul>{children(null).map(p => <Node key={p.id} p={p} depth={0} />)}</ul>
         <Card title="Resumo">
           <dl className="space-y-2 text-sm">

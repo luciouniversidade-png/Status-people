@@ -71,8 +71,11 @@ html = page("/academy/matriz"); assert "Prof. Um" in html and "TR-001" in html a
 row = html[html.find("Prof. Um"):html.find("Prof. Um") + 1500]; assert row.count("pend.") == 2 and "·" in row; print("matriz por regra ok")
 # conclusão em lote com validade
 html = page(f"/academy/cursos/{c2}"); aid = find_form_aid(html, "Registrar conclusão / andamento")
-loc = post(f"/academy/cursos/{c2}", aid, {"courseId": c2, "status": "CONCLUIDO", "concluidoEm": "2025-10-01", "evidencia": "certificado"}, multi=[("employeeId", p1), ("employeeId", p2)]); assert "2 registro(s)" in unq(loc), unq(loc)
-html = page(f"/academy/cursos/{c2}"); assert "01/10/2026" in html and "Concluído" in html; print("conclusão em lote com validade 12 meses ok")
+# datas relativas a hoje: conclusão há ~11 meses → validade de 12 meses vence em ~1 mês (dentro da janela de 60 dias)
+import datetime as _dt
+_conc = _dt.date.today() - _dt.timedelta(days=330); _venc = _conc.replace(year=_conc.year + 1) if not (_conc.month == 2 and _conc.day == 29) else _dt.date(_conc.year + 1, 3, 1)
+loc = post(f"/academy/cursos/{c2}", aid, {"courseId": c2, "status": "CONCLUIDO", "concluidoEm": _conc.isoformat(), "evidencia": "certificado"}, multi=[("employeeId", p1), ("employeeId", p2)]); assert "2 registro(s)" in unq(loc), unq(loc)
+html = page(f"/academy/cursos/{c2}"); assert _venc.strftime("%d/%m/%Y") in html and "Concluído" in html; print("conclusão em lote com validade 12 meses ok")
 html = page("/academy"); assert "Vencendo em 60 dias" in html and re.search(r'Vencendo em 60 dias</div><div class="[^"]*">2<', html); print("alerta de vencimento ok (2 vencendo)")
 # turma presencial + presença
 html = page(f"/academy/cursos/{c1}"); aid = find_form_aid(html, "Agendar turma")

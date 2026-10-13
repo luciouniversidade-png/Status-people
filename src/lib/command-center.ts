@@ -6,6 +6,7 @@ import { ocupacao } from "./matriculas";
 import { estatisticas as estatAtend, riscoFamilias } from "./atendimento";
 import { inadimplencia, caixaMes, orcamentoAno } from "./financeiro";
 import { mesRef } from "./relatorio";
+import { alertasV22 } from "./alertas-v22";
 
 export type Fator = { peso: number; texto: string };
 export type Dominio = { chave: string; nome: string; score: number; fatores: Fator[]; kpis: { label: string; valor: string; hint?: string }[]; href: string };
@@ -13,7 +14,8 @@ export type Alerta = { nivel: "ALTO" | "MEDIO"; texto: string; href: string };
 
 const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
 
-export async function healthGeral(unitId: number | null) {
+/** Saúde geral e alertas. `sensiveis`: inclui contagens de privacidade e canal de ética (só para Direção/RH; nunca na TV). */
+export async function healthGeral(unitId: number | null, ver: { sensiveis?: boolean; licencas?: boolean } = {}) {
   const cfg = await getSettings(); const h = hoje(); const m = mesRef(h.slice(0, 7)); const ano = cfg.matriculas.anoLetivo;
   const [ph, gov, oc, at, risco, inad, cx, orc] = await Promise.all([peopleHealth(unitId), estatisticasGov(unitId), ocupacao(ano, unitId, "REGULAR"), estatAtend(unitId, m.ini, m.fim), riscoFamilias(unitId), inadimplencia(unitId), caixaMes(h.slice(0, 7), unitId), orcamentoAno(Number(h.slice(0, 4)), unitId)]);
   const alertas: Alerta[] = [];
@@ -54,11 +56,12 @@ export async function healthGeral(unitId: number | null) {
   const dom = [pessoas, processos, matriculas, atendimento, financeiro]; const pesos = cfg.commandCenter.pesos as Record<string, number>;
   const totalPeso = dom.reduce((a, d) => a + (pesos[d.chave] ?? 0), 0);
   const geral = totalPeso ? Math.round(dom.reduce((a, d) => a + d.score * (pesos[d.chave] ?? 0), 0) / totalPeso) : 0;
-  alertas.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "ALTO" ? -1 : 1));
   const [ia] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM ai_agents WHERE status IN ('ATIVO','PILOTO') AND (revisao_em IS NULL OR revisao_em < ${h}) ${unitId === null ? sql`` : sql`AND (unit_id IS NULL OR unit_id=${unitId})`}`.catch(() => [{ n: 0 }]);
   const [fx] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM employees e JOIN positions p ON p.id=e.position_id WHERE e.situacao='ATIVO' AND p.formacao_exigida IS NOT NULL ${unitId === null ? sql`` : sql`AND e.unit_id=${unitId}`} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.employee_id=e.id AND d.recebido_em IS NOT NULL AND (d.validade IS NULL OR d.validade >= ${h}) AND (d.tipo ILIKE '%' || coalesce(p.documento_formacao, '§') || '%' OR d.nome ILIKE '%' || coalesce(p.documento_formacao, '§') || '%'))`.catch(() => [{ n: 0 }]);
   if (fx?.n) alertas.push({ nivel: "ALTO", texto: `Pessoas: ${fx.n} colaborador(es) sem comprovante da formação exigida pelo cargo`, href: "/documentos" });
   if (ia?.n) alertas.push({ nivel: "MEDIO", texto: `Governança de IA: ${ia.n} agente(s) com revisão vencida`, href: "/governanca/agentes" });
+  alertas.push(...await alertasV22(unitId, !!ver.sensiveis, ver.licencas ?? true).catch(() => []));
+  alertas.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "ALTO" ? -1 : 1));
   return { geral, dominios: dom, alertas, pesos };
 }
 

@@ -11,6 +11,7 @@ import { redefinir2FA, gerarSenhaTemp } from "./actions";
 import { salvarParamAtendimento } from "../atendimento/actions";
 import { salvarParamGovernanca } from "../governanca/actions";
 import { salvarParamAnalytics } from "../talentos/actions";
+import { salvarParamEstrategia } from "../estrategia/gestao-actions";
 
 export const dynamic = "force-dynamic";
 const ROLES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES", "LEITURA", "COLABORADOR"];
@@ -37,23 +38,23 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       <nav className="mb-4 flex flex-wrap gap-2 text-sm">{nav.map(([id, l]) => <a key={id} href={`#${id}`} className="rounded border border-line bg-white px-2.5 py-1 text-navy hover:bg-mist">{l}</a>)}</nav>
 
       <Card title="Unidades" className="mb-4"><div id="unidades" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
           <Table head={["Nome", "Código", ""]}>{units.map(u => <tr key={u.id}><Td>{u.nome}</Td><Td>{u.codigo}</Td><Td><Modal label={"Editar"} kind="link"><form action={salvarUnidade} className="flex flex-wrap items-end gap-2"><input type="hidden" name="id" value={u.id} /><Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="Código"><Input name="codigo" defaultValue={u.codigo} className="w-24" /></Field><Btn small>Salvar</Btn></form></Modal></Td></tr>)}</Table>
           <form action={salvarUnidade} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Nova unidade</div><Field label="Nome"><Input name="nome" required /></Field><Field label="Código"><Input name="codigo" required placeholder="Ex.: CAR" /></Field><Btn small>Adicionar</Btn></form>
         </div>
       </Card>
 
       <Card title="Empresas (CNPJs empregadores)" className="mb-4"><div id="empresas" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
           <Table head={["Nome", "CNPJ", ""]}>{companies.map(c => <tr key={c.id}><Td>{c.nome}</Td><Td>{c.cnpj ?? "—"}</Td><Td><Modal label={"Editar"} kind="link"><form action={salvarEmpresa} className="flex flex-wrap items-end gap-2"><input type="hidden" name="id" value={c.id} /><Field label="Nome"><Input name="nome" defaultValue={c.nome} /></Field><Field label="CNPJ"><Input name="cnpj" defaultValue={c.cnpj ?? ""} /></Field><Btn small>Salvar</Btn></form></Modal></Td></tr>)}</Table>
           <form action={salvarEmpresa} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Nova empresa</div><Field label="Nome"><Input name="nome" required /></Field><Field label="CNPJ"><Input name="cnpj" /></Field><Btn small>Adicionar</Btn></form>
         </div>
       </Card>
 
       <Card title="Cargos e organograma" className="mb-4"><div id="cargos" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Table head={["Ordem", "Cargo", "Área", "Reporta a", "", ""]}>{positions.map(p => <tr key={p.id}><Td>{p.ordem}</Td><Td>{p.nome}{p.regulamentado && <span className="ml-1 text-xs text-slate-400">regulamentado</span>}</Td><Td>{p.area}</Td><Td>{nomePos(p.parentId)}</Td>
-            <Td><Modal label={"Editar"} kind="link"><form action={salvarCargo} className="grid gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={p.id} />
+            <Td><Modal label={"Editar"} kind="link"><form action={salvarCargo} className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={p.id} />
               <Field label="Nome"><Input name="nome" defaultValue={p.nome} /></Field><Field label="Área"><Select name="area" defaultValue={p.area}>{AREAS.map(a => <option key={a}>{a}</option>)}</Select></Field>
               <Field label="Reporta a"><Select name="parentId" defaultValue={p.parentId ?? ""}><option value="">— (topo)</option>{positions.filter(x => x.id !== p.id).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Ordem"><Input name="ordem" type="number" defaultValue={p.ordem} /></Field>
               <label className="flex items-center gap-2 text-xs"><input type="checkbox" name="regulamentado" value="1" defaultChecked={p.regulamentado} /> Profissão regulamentada</label><Field label="Formação exigida (se houver)"><Input name="formacaoExigida" defaultValue={p.formacaoExigida ?? ""} placeholder="Ex.: formação em educação especial" /></Field><Field label="Documento que comprova"><Input name="documentoFormacao" defaultValue={p.documentoFormacao ?? ""} placeholder="Diploma, Certificado…" /></Field><div><Btn small>Salvar</Btn></div></form></Modal></Td>
@@ -66,9 +67,9 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       </Card>
 
       <Card title="Usuários e acessos" className="mb-4"><div id="usuarios" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Table head={["Nome", "E-mail", "Perfil", "Unidade", "Situação", ""]}>{users.map(u => <tr key={u.id}><Td>{u.nome}</Td><Td>{u.email}</Td><Td>{ROLE_LABEL[u.role as Role] ?? u.role}</Td><Td>{units.find(x => x.id === u.unitId)?.nome ?? "rede"}</Td><Td><Badge v={u.ativo ? "ATIVO" : "DESLIGADO"} label={u.ativo ? "Ativo" : "Inativo"} />{u.totpAtivo && <Badge v="APROVADA" label="2FA" />}{pediu.has(u.id) && <div className="mt-1"><Badge v="PENDENTE" label="pediu nova senha" /><form action={gerarSenhaTemp} className="mt-1"><input type="hidden" name="id" value={u.id} /><Btn small>Gerar senha temporária</Btn></form></div>}{u.trocarSenha && <div className="text-xs text-aviso">senha temporária ativa</div>}</Td>
-            <Td><Modal label={"Editar"} kind="link"><form action={salvarUsuario} className="grid gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={u.id} />
+            <Td><Modal label={"Editar"} kind="link"><form action={salvarUsuario} className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={u.id} />
               <Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="E-mail"><Input name="email" defaultValue={u.email} /></Field>
               <Field label="Perfil"><Select name="role" defaultValue={u.role}>{ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</Select></Field><Field label="Unidade (escopo)"><Select name="unitId" defaultValue={u.unitId ?? ""}><option value="">Rede</option>{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field>
               <Field label="Colaborador vinculado"><Select name="employeeId" defaultValue={u.employeeId ?? ""}><option value="">—</option>{emps.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}</Select></Field><Field label="Nova senha (opcional)"><Input name="senha" type="password" autoComplete="new-password" /></Field>
@@ -84,7 +85,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       </Card>
 
       <Card title="Alçadas de aprovação" className="mb-4"><div id="alcadas" />
-        <form action={salvarAlcadas} className="grid gap-4 sm:grid-cols-3">
+        <form action={salvarAlcadas} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {([["ferias", "Férias e afastamentos"], ["banco", "Banco de horas"], ["processos", "Concluir admissão/desligamento"], ["matricula", "Confirmar matrícula (contrato + financeiro)"], ["excecaoCapacidade", "Matrícula acima da capacidade"], ["excecao", "Aprovar exceções a POPs e regras"], ["pops", "Publicar POPs e registrar decisões"], ["vagas", "Aprovar requisição de vaga"], ["remuneracao", "Alterar faixas e salários"], ["calibracao", "Calibrar e encerrar ciclos de desempenho"], ["financeiro", "Importar títulos e caixa, orçamento, preços"]] as const).map(([k, label]) => (
             <fieldset key={k} className="rounded-md border border-line p-3"><legend className="px-1 text-sm font-medium text-navy">{label}</legend>
               {ROLES.filter(r => r !== "LEITURA" && r !== "COLABORADOR").map(r => <label key={r} className="flex items-center gap-2 py-0.5 text-sm"><input type="checkbox" name={k} value={r} defaultChecked={cfg.alcadas[k].includes(r)} /> {ROLE_LABEL[r]}</label>)}
@@ -95,7 +96,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       </Card>
 
       <Card title="Checklists e documentos padrão" className="mb-4"><div id="checklists" />
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <form action={salvarChecklist} className="space-y-2"><input type="hidden" name="key" value="admissao" /><Field label="Checklist de admissão (um item por linha)"><Textarea name="itens" className="min-h-[220px]" defaultValue={cfg.admissao.join("\n")} /></Field><Btn small>Salvar</Btn></form>
           <form action={salvarChecklist} className="space-y-2"><input type="hidden" name="key" value="desligamento" /><Field label="Checklist de desligamento"><Textarea name="itens" className="min-h-[220px]" defaultValue={cfg.desligamento.join("\n")} /></Field><Btn small>Salvar</Btn></form>
           <form action={salvarDocsPadrao} className="space-y-2"><Field label="Documentos padrão" hint="Escreva (opcional) no fim da linha para não exigir."><Textarea name="itens" className="min-h-[220px]" defaultValue={cfg.documentos.map(([t, o]) => `${t}${o ? "" : " (opcional)"}`).join("\n")} /></Field><Btn small>Salvar</Btn></form>
@@ -103,7 +104,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       </Card>
 
       <Card title="Matrículas — séries, ano letivo e prazos" className="mb-4"><div id="matriculas" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Table head={["Ordem", "Série", "Segmento", ""]}>{grades.map(g => <tr key={g.id}><Td>{g.ordem}</Td><Td>{g.nome}</Td><Td>{g.segmento}</Td><Td><Modal label={"Editar"} kind="link"><form action={salvarSerie} className="flex flex-wrap items-end gap-2"><input type="hidden" name="id" value={g.id} /><Field label="Nome"><Input name="nome" defaultValue={g.nome} /></Field><Field label="Segmento"><Input name="segmento" defaultValue={g.segmento} /></Field><Field label="Ordem"><Input name="ordem" type="number" defaultValue={g.ordem} className="w-20" /></Field><Btn small>Salvar</Btn></form></Modal></Td></tr>)}</Table>
           <div className="space-y-4">
             <form action={salvarParamMatriculas} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Parâmetros</div>
@@ -116,7 +117,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
         </div>
       </Card>
       <Card title="Atendimento — SLA, categorias e protocolos" className="mb-4"><div id="atendimento" />
-        <form action={salvarParamAtendimento} className="grid gap-4 lg:grid-cols-3">
+        <form action={salvarParamAtendimento} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="space-y-2">
             <div className="text-sm font-semibold text-navy">Prazo de resposta (horas)</div>
             {(["URGENTE", "ALTA", "NORMAL", "BAIXA"] as const).map(k => <Field key={k} label={k.charAt(0) + k.slice(1).toLowerCase()}><Input name={`sla_${k}`} type="number" min={1} defaultValue={(cfg.atendimento.slaHoras as Record<string, number>)[k]} /></Field>)}
@@ -129,15 +130,39 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
         </form>
       </Card>
       <Card title="Governança — áreas, motivos de exceção e prazos" className="mb-4"><div id="governanca" />
-        <form action={salvarParamGovernanca} className="grid gap-4 lg:grid-cols-3">
+        <form action={salvarParamGovernanca} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <Field label="Áreas de processo (uma por linha)"><Textarea name="areas" className="min-h-[200px]" defaultValue={cfg.governanca.areas.join("\n")} /></Field>
           <Field label="Motivos padronizados de exceção"><Textarea name="motivosExcecao" className="min-h-[200px]" defaultValue={cfg.governanca.motivosExcecao.join("\n")} /></Field>
           <div className="space-y-2"><Field label="Revisão de POP a cada (meses)"><Input name="revisaoPopMeses" type="number" min={1} defaultValue={cfg.governanca.revisaoPopMeses} /></Field><Field label="Validade padrão de exceção (dias)"><Input name="excecaoValidadeDias" type="number" min={1} defaultValue={cfg.governanca.excecaoValidadeDias} /></Field></div>
           <div className="lg:col-span-3"><Btn>Salvar parâmetros de governança</Btn></div>
         </form>
       </Card>
+      <Card title="Estratégia — ciclo, perspectivas, saúde estratégica e rituais" className="mb-4"><div id="estrategia" />
+        <form action={salvarParamEstrategia} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="space-y-2">
+            <Field label="Ciclo atual"><Input name="cicloAtual" defaultValue={cfg.estrategia.cicloAtual} /></Field>
+            <Field label="Pilares (um por linha)"><Textarea name="pilares" className="min-h-[130px]" defaultValue={(cfg.estrategia.pilares as string[]).join("\n")} /></Field>
+            <Field label="Projeto sem status report vira alerta após (dias)"><Input name="atualizacaoProjetoDias" type="number" min={1} max={120} defaultValue={cfg.estrategia.atualizacaoProjetoDias} /></Field>
+            <Field label="Áreas dos indicadores (uma por linha)"><Textarea name="areasIndicador" className="min-h-[120px]" defaultValue={(cfg.estrategia.areasIndicador as string[]).join("\n")} /></Field>
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-navy">Perspectivas do mapa (de cima para baixo)</div>
+            {(cfg.estrategia.perspectivas as { chave: string; nome: string; descricao: string }[]).map(p => <div key={p.chave} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-1.5"><Input name={`persp_nome_${p.chave}`} defaultValue={p.nome} aria-label={`Nome da perspectiva ${p.chave}`} /><Input name={`persp_desc_${p.chave}`} defaultValue={p.descricao} aria-label={`Descrição da perspectiva ${p.chave}`} /></div>)}
+            <div className="pt-2 text-sm font-semibold text-navy">Perspectiva sugerida para cada pilar</div>
+            {(cfg.estrategia.pilares as string[]).map((pl, i) => <div key={pl} className="grid grid-cols-[minmax(0,1fr)_10rem] items-center gap-1.5 text-xs"><span>{pl}<input type="hidden" name={`mapaPilar_${i}`} value={pl} /></span><Select name={`mapa_${i}`} defaultValue={(cfg.estrategia.perspectivaDoPilar as Record<string, string>)[pl] ?? ""}><option value="">—</option>{(cfg.estrategia.perspectivas as { chave: string; nome: string }[]).map(p => <option key={p.chave} value={p.chave}>{p.nome}</option>)}</Select></div>)}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-navy">Saúde estratégica — pesos</div>
+            <div className="grid grid-cols-2 gap-2">{([["okrs", "Progresso dos OKRs"], ["indicadores", "Indicadores no alvo"], ["projetos", "Projetos sem risco"], ["acoes", "Ações em dia"], ["rituais", "Rituais em dia"]] as const).map(([k, l]) => <Field key={k} label={l}><Input name={`peso_${k}`} type="number" min={0} max={100} defaultValue={(cfg.estrategia.pesosSaude as Record<string, number>)[k] ?? 0} /></Field>)}</div>
+            <div className="grid grid-cols-2 gap-2"><Field label="Atenção a partir de"><Input name="faixaAtencao" type="number" min={1} max={99} defaultValue={(cfg.estrategia.faixasSaude as number[])[0]} /></Field><Field label="Boa a partir de"><Input name="faixaBoa" type="number" min={2} max={100} defaultValue={(cfg.estrategia.faixasSaude as number[])[1]} /></Field></div>
+            <div className="grid grid-cols-2 gap-2"><Field label="Ritual atrasado após (dias)"><Input name="toleranciaRitualDias" type="number" min={0} max={30} defaultValue={cfg.estrategia.toleranciaRitualDias} /></Field><Field label="Ata pendente após (dias)"><Input name="ataPendenteDias" type="number" min={0} max={30} defaultValue={cfg.estrategia.ataPendenteDias} /></Field></div>
+            <p className="text-xs text-slate-500">Componente sem base de cálculo sai da conta e o peso é redistribuído entre os demais.</p>
+          </div>
+          <div className="lg:col-span-3"><Btn>Salvar parâmetros da estratégia</Btn></div>
+        </form>
+      </Card>
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
-        <form action={salvarParamAnalytics} className="grid gap-4 lg:grid-cols-2">
+        <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div><div className="mb-1 text-sm font-semibold text-navy">Pesos (somam até 100)</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.pesos).map(([k, v]) => <Field key={k} label={k}><Input name={`peso_${k}`} type="number" min={0} max={40} defaultValue={v as number} /></Field>)}</div></div>
           <div><div className="mb-1 text-sm font-semibold text-navy">Metas</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.metas).map(([k, v]) => <Field key={k} label={k}><Input name={`meta_${k}`} type="number" step="0.1" defaultValue={v as number} /></Field>)}<Field label="custoReposicaoSalarios"><Input name="custoReposicaoSalarios" type="number" step="0.5" defaultValue={cfg.analytics.custoReposicaoSalarios} /></Field></div></div>
           <div className="lg:col-span-2"><Btn>Salvar pesos e metas</Btn></div>

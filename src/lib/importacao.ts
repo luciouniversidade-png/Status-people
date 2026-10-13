@@ -27,6 +27,8 @@ export function planilhaParaTexto(buf: Buffer): string {
     for (let c = range.s.c; c <= range.e.c; c++) {
       const cell = ws[XLSX.utils.encode_cell({ r, c })]; if (!cell || cell.v === undefined || cell.v === null) { cels.push(""); continue; }
       if (cell.t === "d" && cell.v instanceof Date) { const d = cell.v; cels.push(`${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`); continue; }
+      // horário puro (formato h:mm, sem dia/mês/ano): vira HH:MM — usado na grade horária dos professores
+      if (cell.t === "n" && cell.z && XLSX.SSF.is_date(String(cell.z)) && !/[dy]/i.test(String(cell.z).replace(/\[[^\]]*\]/g, "")) && (cell.v as number) < 1) { const tot = Math.round((cell.v as number) * 1440); cels.push(`${String(Math.floor(tot / 60)).padStart(2, "0")}:${String(tot % 60).padStart(2, "0")}`); continue; }
       if (cell.t === "n" && cell.z && XLSX.SSF.is_date(String(cell.z))) { const p = XLSX.SSF.parse_date_code(cell.v as number); if (p) { cels.push(`${String(p.d).padStart(2, "0")}/${String(p.m).padStart(2, "0")}/${p.y}`); continue; } }
       if (cell.t === "n") { const v = cell.v as number; cels.push(Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100).replace(".", ",")); continue; }
       cels.push(String(cell.w ?? cell.v).replace(/[\t\r\n]+/g, " ").trim());

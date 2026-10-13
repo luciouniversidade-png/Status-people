@@ -23,7 +23,7 @@ export default async function Clima({ searchParams }: { searchParams: Promise<Re
         <Stat label="Pesquisas abertas" value={rows.filter(r => r.status === "ABERTA").length} />
         <Stat label="Participação da última" value={rows[0] && rows[0].ativos ? `${Math.round(100 * rows[0].respostas / rows[0].ativos)}%` : "—"} hint={rows[0] ? `${rows[0].respostas} de ${rows[0].ativos} ativos` : undefined} />
       </div>
-      <div className={`grid gap-4 ${can.editar(s) ? "lg:grid-cols-[1fr_360px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${can.editar(s) ? "lg:grid-cols-[minmax(0,1fr)_360px]" : ""} lg:items-start`}>
         <Table head={["Pesquisa", "Tipo", "Período", "Abrangência", "Situação", "Respostas", "Participação", "eNPS"]} empty="Nenhuma pesquisa. Crie a primeira ao lado.">
           {rows.map(r => <tr key={r.id}><Td><Link className="font-medium text-acao" href={`/clima/${r.id}`}>{r.nome}</Link></Td><Td className="text-xs">{SURVEY_TIPO[r.tipo]}</Td><Td className="whitespace-nowrap text-xs">{fmtData(r.inicio)} – {fmtData(r.fim)}</Td><Td>{r.unidade ?? "rede"}</Td><Td><Badge v={r.status === "ABERTA" ? "EM_ADMISSAO" : r.status === "ENCERRADA" ? "APROVADA" : "EM_AQUISICAO"} label={SURVEY_STATUS[r.status]} /></Td><Td>{r.respostas}</Td><Td>{r.ativos ? `${Math.round(100 * r.respostas / r.ativos)}%` : "—"}</Td><Td className={`font-medium ${r.enps === null ? "text-slate-400" : r.enps >= 50 ? "text-ok" : r.enps >= 0 ? "text-aviso" : "text-erro"}`}>{r.enps ?? "—"}</Td></tr>)}
         </Table>

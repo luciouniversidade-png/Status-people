@@ -20,13 +20,13 @@ export default async function Recrutamento({ searchParams }: { searchParams: Pro
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <Stat label="Vagas abertas" value={funil.v.abertas} /><Stat label="Aguardando aprovação" value={<span className={funil.v.solicitadas ? "text-aviso" : ""}>{funil.v.solicitadas}</span>} /><Stat label="Candidatos em processo" value={funil.v.candidatos_ativos} /><Stat label="Preenchidas (90 dias)" value={funil.v.preenchidas_90} /><Stat label="Tempo médio para preencher" value={funil.tempoMedio ? `${Math.round(funil.tempoMedio)} dias` : "—"} />
       </div>
-      <div className={`grid gap-4 ${gestao ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${gestao ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>
         <div className="space-y-4">
           <form className="flex items-end gap-2"><Field label="Situação"><Select name="status" defaultValue={status}><option value="ATIVAS">Ativas</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}<option value="">Todas</option></Select></Field><Btn kind="ghost">Filtrar</Btn></form>
           <Table head={["Vaga", "Cargo", "Unidade", "Qtd", "Tipo", "Situação", "Candidatos", "Prazo"]} empty="Nenhuma vaga neste filtro.">
             {rows.map(r => <tr key={r.id}><Td><Link className="font-medium text-acao" href={`/recrutamento/vagas/${r.id}`}>{r.titulo}</Link><div className="text-xs text-slate-500">por {r.solicitante ?? "—"} · {fmtData(String(r.created_at).slice(0, 10))}</div></Td><Td className="text-xs">{r.cargo ?? "—"}</Td><Td>{r.unidade}</Td><Td>{r.quantidade}</Td><Td className="text-xs">{REQ_TIPO[r.tipo]}</Td><Td><Badge v={r.status === "ABERTA" ? "EM_ADMISSAO" : r.status === "SOLICITADA" ? "PENDENTE" : r.status === "PREENCHIDA" ? "APROVADA" : "CANCELADA"} label={REQ_STATUS[r.status]} /></Td><Td>{r.candidatos}{r.contratados ? <span className="text-xs text-ok"> · {r.contratados} contratado(s)</span> : ""}</Td><Td className="text-xs">{fmtData(r.prazo)}</Td></tr>)}
           </Table>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Card title="Funil por etapa (vagas abertas e preenchidas)"><Table head={["Etapa", "Candidaturas"]} empty="Sem candidaturas.">{[...cfg.recrutamento.etapas, "REPROVADO", "DESISTIU"].map(et => { const n = funil.etapas.find(x => x.etapa === et)?.n ?? 0; return n ? <tr key={et}><Td>{ETAPA_LABEL[et] ?? et}</Td><Td>{n}</Td></tr> : null; })}</Table></Card>
             <Card title="Origem dos candidatos"><Table head={["Origem", "Candidaturas", "Contratados"]} empty="Sem dados.">{funil.origens.map(o => <tr key={o.origem}><Td>{ORIGEM_CAND[o.origem] ?? o.origem}</Td><Td>{o.n}</Td><Td>{o.contratados}</Td></tr>)}</Table></Card>
           </div>

@@ -253,6 +253,79 @@ CREATE TABLE IF NOT EXISTS career_interests (id serial PRIMARY KEY, employee_id 
 CREATE TABLE IF NOT EXISTS review_raters (id serial PRIMARY KEY, review_id integer NOT NULL, user_id integer NOT NULL, grupo text NOT NULL, motivo text, status text NOT NULL DEFAULT 'CONVIDADO', notas jsonb, comentario text, respondido_em timestamp, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (review_id, user_id));
 CREATE TABLE IF NOT EXISTS ai_drafts (id serial PRIMARY KEY, employee_id integer NOT NULL, review_id integer, tipo text NOT NULL, modelo text, config_versao text, fontes jsonb, texto text NOT NULL, alertas jsonb, status text NOT NULL DEFAULT 'RASCUNHO', aprovado_por integer, aprovado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS dev_needs_emp_idx ON dev_needs(employee_id, status); CREATE INDEX IF NOT EXISTS eval_evid_emp_idx ON eval_evidences(employee_id, cycle_id); CREATE INDEX IF NOT EXISTS teach_obs_emp_idx ON teaching_observations(employee_id);
+ALTER TABLE students ADD COLUMN IF NOT EXISTS carteira_user_id integer;
+ALTER TABLE students ADD COLUMN IF NOT EXISTS indicado_por_id integer;
+ALTER TABLE objectives ADD COLUMN IF NOT EXISTS perspectiva text;
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS ritual_meeting_id integer;
+CREATE TABLE IF NOT EXISTS strategy_identity (id serial PRIMARY KEY, versao integer NOT NULL DEFAULT 1, status text NOT NULL DEFAULT 'RASCUNHO', missao text, visao text, proposito text, valores jsonb, proposta_valor text, posicionamento text, horizonte text, vigencia_inicio date, aprovado_por integer, aprovado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS objective_links (id serial PRIMARY KEY, de_objective_id integer NOT NULL, para_objective_id integer NOT NULL, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS objective_links_par_idx ON objective_links(de_objective_id, para_objective_id);
+CREATE TABLE IF NOT EXISTS indicators (id serial PRIMARY KEY, codigo text, nome text NOT NULL, descricao text, perspectiva text, area text, unit_id integer, unidade_medida text, direcao text NOT NULL DEFAULT 'MAIOR_MELHOR', meta numeric(14,4), alerta numeric(14,4), faixa_min numeric(14,4), faixa_max numeric(14,4), tipo text NOT NULL DEFAULT 'MANUAL', fonte text, numerador_id integer, denominador_id integer, fator numeric(14,4), frequencia text NOT NULL DEFAULT 'MENSAL', funil text, canal text, objective_id integer, responsavel_user_id integer, ativo boolean NOT NULL DEFAULT true, ordem integer NOT NULL DEFAULT 0, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS indicators_unit_idx ON indicators(unit_id, ativo);
+CREATE TABLE IF NOT EXISTS indicator_values (id serial PRIMARY KEY, indicator_id integer NOT NULL, periodo text NOT NULL, valor numeric(16,4), origem text NOT NULL DEFAULT 'MANUAL', obs text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS indicator_values_periodo_idx ON indicator_values(indicator_id, periodo);
+CREATE TABLE IF NOT EXISTS action_plans (id serial PRIMARY KEY, titulo text NOT NULL, porque text, unit_id integer, local text, inicio date, prazo date, responsavel_user_id integer, como text, custo_previsto numeric(12,2), custo_real numeric(12,2), status text NOT NULL DEFAULT 'A_FAZER', bloqueio text, bloqueio_desde date, evidencia text, concluida_em date, cancel_justificativa text, objective_id integer, indicator_id integer, project_id integer, ritual_meeting_id integer, origem text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS action_plans_status_idx ON action_plans(status, prazo);
+CREATE INDEX IF NOT EXISTS action_plans_resp_idx ON action_plans(responsavel_user_id);
+CREATE TABLE IF NOT EXISTS rituals (id serial PRIMARY KEY, nome text NOT NULL, tipo text NOT NULL DEFAULT 'MENSAL', finalidade text, unit_id integer, dono_user_id integer, participantes jsonb, pauta_padrao text, indicadores jsonb, objetivos jsonb, duracao_min integer, proxima_data date, ativo boolean NOT NULL DEFAULT true, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS ritual_meetings (id serial PRIMARY KEY, ritual_id integer NOT NULL, data date NOT NULL, status text NOT NULL DEFAULT 'REALIZADA', presentes jsonb, pauta text, ata text, indicadores_snapshot jsonb, cancel_motivo text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS ritual_meetings_ritual_idx ON ritual_meetings(ritual_id, data);
+CREATE TABLE IF NOT EXISTS family_contacts (id serial PRIMARY KEY, student_id integer NOT NULL, data date NOT NULL, canal text, tipo text NOT NULL DEFAULT 'CONTATO', etapa text, resumo text NOT NULL, percepcao text, proximo_passo text, proximo_em date, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS family_contacts_student_idx ON family_contacts(student_id, data);
+CREATE TABLE IF NOT EXISTS family_journey (id serial PRIMARY KEY, student_id integer NOT NULL, ano integer NOT NULL, etapa text NOT NULL, concluida_em date NOT NULL, contact_id integer, user_id integer, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS family_journey_etapa_idx ON family_journey(student_id, ano, etapa);
+CREATE TABLE IF NOT EXISTS strategy_ai_drafts (id serial PRIMARY KEY, tarefa text NOT NULL, unit_id integer, modelo text, config_versao text, fontes jsonb, texto text NOT NULL, alertas jsonb, status text NOT NULL DEFAULT 'RASCUNHO', aprovado_por integer, aprovado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS students_carteira_idx ON students(carteira_user_id);
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS space_id integer;
+CREATE TABLE IF NOT EXISTS rematricula_links (id serial PRIMARY KEY, student_id integer NOT NULL, ano integer NOT NULL, unit_id integer, grade_id integer, token text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'PENDENTE', expira_em date NOT NULL, enviado_em timestamp, enviado_por integer, aberto_em timestamp, concluido_em timestamp, class_id integer, integral_class_id integer, enrollment_id integer, integral_enrollment_id integer, contrato_id integer, contrato_versao integer, contrato_hash text, contrato_texto text, aceite jsonb, dados_atualizados jsonb, rascunho jsonb, recusa_motivo text, recusa_obs text, case_id integer, cancel_motivo text, criado_por integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+ALTER TABLE rematricula_links ADD COLUMN IF NOT EXISTS rascunho jsonb;
+CREATE UNIQUE INDEX IF NOT EXISTS rematricula_links_pendente_idx ON rematricula_links(student_id, ano) WHERE status='PENDENTE';
+CREATE INDEX IF NOT EXISTS rematricula_links_ano_idx ON rematricula_links(ano, status);
+CREATE TABLE IF NOT EXISTS contract_templates (id serial PRIMARY KEY, ano integer NOT NULL, titulo text NOT NULL, versao integer NOT NULL DEFAULT 1, texto text NOT NULL, status text NOT NULL DEFAULT 'RASCUNHO', publicado_em timestamp, publicado_por integer, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS contract_templates_vigente_idx ON contract_templates(ano) WHERE status='VIGENTE';
+CREATE TABLE IF NOT EXISTS teacher_slots (id serial PRIMARY KEY, employee_id integer NOT NULL, unit_id integer NOT NULL, dia_semana integer NOT NULL, inicio text NOT NULL, fim text NOT NULL, turno text NOT NULL, turma text NOT NULL, disciplina text, space_id integer, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS teacher_slots_emp_idx ON teacher_slots(employee_id, dia_semana);
+CREATE INDEX IF NOT EXISTS teacher_slots_unit_idx ON teacher_slots(unit_id, dia_semana);
+CREATE TABLE IF NOT EXISTS cover_absences (id serial PRIMARY KEY, employee_id integer NOT NULL, unit_id integer, data date NOT NULL, inicio text, fim text, motivo text NOT NULL, origem text NOT NULL DEFAULT 'COORDENACAO', leave_request_id integer, status text NOT NULL DEFAULT 'ATIVA', obs text, registrado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS cover_absences_dia_idx ON cover_absences(employee_id, data) WHERE status='ATIVA';
+CREATE TABLE IF NOT EXISTS cover_assignments (id serial PRIMARY KEY, absence_id integer NOT NULL, slot_id integer, data date NOT NULL, unit_id integer NOT NULL, turma text NOT NULL, disciplina text, inicio text NOT NULL, fim text NOT NULL, turno text, ausente_employee_id integer NOT NULL, cobertura_employee_id integer, status text NOT NULL DEFAULT 'ABERTA', solucao text, minutos integer NOT NULL DEFAULT 0, hour_entry_id integer, recusas jsonb, convidado_por integer, convidado_em timestamp, respondido_em timestamp, realizada_em timestamp, obs text, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS cover_assign_slot_dia_idx ON cover_assignments(slot_id, data) WHERE status <> 'CANCELADA';
+CREATE INDEX IF NOT EXISTS cover_assign_dia_idx ON cover_assignments(data, unit_id);
+CREATE INDEX IF NOT EXISTS cover_assign_cob_idx ON cover_assignments(cobertura_employee_id, data);
+CREATE TABLE IF NOT EXISTS spaces (id serial PRIMARY KEY, unit_id integer NOT NULL, nome text NOT NULL, tipo text NOT NULL DEFAULT 'SALA', capacidade integer, area_m2 numeric(8,2), reservavel boolean NOT NULL DEFAULT false, ativo boolean NOT NULL DEFAULT true, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS space_bookings (id serial PRIMARY KEY, space_id integer NOT NULL, unit_id integer NOT NULL, data date NOT NULL, inicio text NOT NULL, fim text NOT NULL, titulo text NOT NULL, turma text, grupo text, status text NOT NULL DEFAULT 'CONFIRMADA', solicitante_user_id integer, solicitante_nome text, cancel_motivo text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS space_bookings_dia_idx ON space_bookings(space_id, data);
+CREATE TABLE IF NOT EXISTS visits (id serial PRIMARY KEY, unit_id integer NOT NULL, tipo text NOT NULL DEFAULT 'VISITANTE', nome text NOT NULL, documento text, empresa text, motivo text, visitado text, cracha text, entrada timestamp NOT NULL DEFAULT now(), saida timestamp, registrado_por integer, saida_por integer, anonimizado_em timestamp, obs text);
+CREATE INDEX IF NOT EXISTS visits_unit_idx ON visits(unit_id, entrada);
+CREATE TABLE IF NOT EXISTS pickup_authorizations (id serial PRIMARY KEY, student_id integer NOT NULL, nome text NOT NULL, parentesco text, documento text, telefone text, tipo text NOT NULL DEFAULT 'AUTORIZADO', validade date, restricao_obs text, ativo boolean NOT NULL DEFAULT true, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS pickup_student_idx ON pickup_authorizations(student_id);
+CREATE TABLE IF NOT EXISTS early_departures (id serial PRIMARY KEY, student_id integer NOT NULL, unit_id integer NOT NULL, data date NOT NULL, hora text NOT NULL, retirado_por text NOT NULL, documento text, authorization_id integer, status text NOT NULL DEFAULT 'LIBERADA', motivo text, excecao_justificativa text, autorizado_por integer, registrado_por integer, registrado_nome text, responsavel_avisado boolean NOT NULL DEFAULT false, emergency_event_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS early_dep_idx ON early_departures(unit_id, data);
+CREATE TABLE IF NOT EXISTS brigade_members (id serial PRIMARY KEY, employee_id integer NOT NULL, unit_id integer NOT NULL, funcao text NOT NULL DEFAULT 'BRIGADISTA', turno text, treinamento_em date, validade date, ativo boolean NOT NULL DEFAULT true, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS emergency_events (id serial PRIMARY KEY, unit_id integer NOT NULL, tipo text NOT NULL DEFAULT 'SIMULADO', cenario text NOT NULL, status text NOT NULL DEFAULT 'EM_ANDAMENTO', inicio timestamp NOT NULL DEFAULT now(), evacuacao_em timestamp, encerrado_em timestamp, tempo_evacuacao_seg integer, meta_seg integer, pontos_encontro text, observacoes text, coordenador_user_id integer, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS emergency_checks (id serial PRIMARY KEY, event_id integer NOT NULL, grupo text NOT NULL, ordem integer NOT NULL DEFAULT 0, esperado integer, presentes integer, feridos integer NOT NULL DEFAULT 0, nao_localizados integer NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'PENDENTE', responsavel text, checado_em timestamp, checado_por text, obs text);
+CREATE TABLE IF NOT EXISTS emergency_failures (id serial PRIMARY KEY, event_id integer NOT NULL, descricao text NOT NULL, gravidade text NOT NULL DEFAULT 'MEDIA', action_plan_id integer, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS consent_purposes (id serial PRIMARY KEY, codigo text NOT NULL UNIQUE, titulo text NOT NULL, texto text NOT NULL, versao integer NOT NULL DEFAULT 1, ativo boolean NOT NULL DEFAULT true, na_rematricula boolean NOT NULL DEFAULT true, ordem integer NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS consents (id serial PRIMARY KEY, student_id integer NOT NULL, purpose_id integer NOT NULL, versao integer NOT NULL, status text NOT NULL, titular_nome text, origem text NOT NULL, evidencia jsonb, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS consents_student_idx ON consents(student_id, purpose_id, id);
+CREATE TABLE IF NOT EXISTS privacy_requests (id serial PRIMARY KEY, protocolo text NOT NULL UNIQUE, codigo_hash text, tipo text NOT NULL, titular_nome text NOT NULL, titular_tipo text, aluno_nome text, contato_email text, contato_telefone text, descricao text, canal text NOT NULL DEFAULT 'PORTAL', student_id integer, employee_id integer, status text NOT NULL DEFAULT 'RECEBIDA', prazo date NOT NULL, identidade_verificada boolean NOT NULL DEFAULT false, responsavel_user_id integer, resposta text, respondida_em timestamp, historico jsonb, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS privacy_incidents (id serial PRIMARY KEY, codigo text NOT NULL UNIQUE, titulo text NOT NULL, descricao text, unit_id integer, detectado_em timestamp, ciencia_em timestamp NOT NULL, categorias_dados jsonb, titulares_estimados integer, envolve_criancas boolean NOT NULL DEFAULT false, dados_sensiveis boolean NOT NULL DEFAULT false, risco text NOT NULL DEFAULT 'EM_AVALIACAO', prazo_anpd date, comunicar boolean, justificativa_nao_comunicar text, comunicado_anpd_em timestamp, comunicado_titulares_em timestamp, medidas text, causa text, status text NOT NULL DEFAULT 'ABERTO', responsavel_user_id integer, historico jsonb, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(), encerrado_em timestamp);
+CREATE TABLE IF NOT EXISTS ethics_reports (id serial PRIMARY KEY, protocolo text NOT NULL UNIQUE, codigo_hash text NOT NULL, categoria text NOT NULL, relato text NOT NULL, envolvidos text, local text, quando text, testemunhas text, unit_id integer, relacao text, anonimo boolean NOT NULL DEFAULT true, contato jsonb, status text NOT NULL DEFAULT 'RECEBIDA', gravidade integer, prazo_triagem date, prazo_conclusao date, responsavel_user_id integer, impedidos jsonb, resultado text, conclusao text, medidas text, concluida_em timestamp, liberados jsonb, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+ALTER TABLE ethics_reports ADD COLUMN IF NOT EXISTS liberados jsonb;
+CREATE TABLE IF NOT EXISTS ethics_messages (id serial PRIMARY KEY, report_id integer NOT NULL, autor text NOT NULL, texto text NOT NULL, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS ethics_messages_report_idx ON ethics_messages(report_id, id);
+CREATE TABLE IF NOT EXISTS request_types (id serial PRIMARY KEY, codigo text NOT NULL UNIQUE, nome text NOT NULL, descricao text, campos jsonb NOT NULL, etapas jsonb NOT NULL, prazo_dias integer NOT NULL DEFAULT 2, perfis jsonb, ativo boolean NOT NULL DEFAULT true, ordem integer NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS requests (id serial PRIMARY KEY, numero text NOT NULL UNIQUE, type_id integer NOT NULL, titulo text NOT NULL, dados jsonb NOT NULL, valor numeric(12,2), unit_id integer, solicitante_user_id integer NOT NULL, solicitante_nome text, status text NOT NULL DEFAULT 'EM_APROVACAO', etapa_atual integer NOT NULL DEFAULT 0, etapas jsonb NOT NULL, prazo_etapa date, concluida_em timestamp, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS requests_status_idx ON requests(status, prazo_etapa);
+CREATE TABLE IF NOT EXISTS request_events (id serial PRIMARY KEY, request_id integer NOT NULL, etapa integer, tipo text NOT NULL, texto text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS contracts (id serial PRIMARY KEY, supplier_id integer NOT NULL, unit_id integer, objeto text NOT NULL, numero text, valor_mensal numeric(12,2), valor_total numeric(14,2), inicio date NOT NULL, fim date, renovacao text NOT NULL DEFAULT 'MANUAL', aviso_previo_dias integer NOT NULL DEFAULT 30, reajuste_indice text, proximo_reajuste date, responsavel_user_id integer, status text NOT NULL DEFAULT 'VIGENTE', renovado_de integer, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS licenses (id serial PRIMARY KEY, unit_id integer NOT NULL, tipo text NOT NULL, nome text, orgao text, numero text, emissao date, validade date, antecedencia_dias integer NOT NULL DEFAULT 60, responsavel_user_id integer, status text NOT NULL DEFAULT 'ATIVA', renovado_de integer, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS push_subscriptions (id serial PRIMARY KEY, user_id integer NOT NULL, endpoint text NOT NULL UNIQUE, p256dh text NOT NULL, auth text NOT NULL, user_agent text, tipos text NOT NULL DEFAULT 'ACAO_ALERTA', falhas integer NOT NULL DEFAULT 0, ultimo_envio timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE OR REPLACE FUNCTION registro_sem_exclusao() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'Registro protegido: não pode ser apagado (guarda obrigatória)'; END; $$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS privacy_incidents_no_delete ON privacy_incidents;
+CREATE TRIGGER privacy_incidents_no_delete BEFORE DELETE ON privacy_incidents FOR EACH ROW EXECUTE FUNCTION registro_sem_exclusao();
+DROP TRIGGER IF EXISTS ethics_reports_no_delete ON ethics_reports;
+CREATE TRIGGER ethics_reports_no_delete BEFORE DELETE ON ethics_reports FOR EACH ROW EXECUTE FUNCTION registro_sem_exclusao();
 CREATE TABLE IF NOT EXISTS login_attempts (id serial PRIMARY KEY, email text NOT NULL, ip text, ok boolean NOT NULL, at timestamp NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS login_attempts_email_idx ON login_attempts(email, at);
 CREATE INDEX IF NOT EXISTS employees_unit_idx ON employees(unit_id);
@@ -313,6 +386,28 @@ export const DEFAULT_SETTINGS = {
     cicloAtual: "2027",
     pilares: ["Pedagógico", "Comercial e Marca", "Pessoas e Cultura", "Financeiro", "Operações e Infraestrutura", "Governança e Tecnologia"],
     atualizacaoProjetoDias: 14, // projeto sem status report há mais de N dias vira alerta
+    // Mapa estratégico: perspectivas (de cima para baixo) e perspectiva sugerida para cada pilar (o objetivo pode definir a sua)
+    perspectivas: [
+      { chave: "FINANCEIRA", nome: "Financeira", descricao: "Sustentabilidade: receita, inadimplência, custos e investimento" },
+      { chave: "FAMILIAS", nome: "Famílias e alunos", descricao: "Valor percebido: aprendizagem, experiência, satisfação e permanência" },
+      { chave: "PROCESSOS", nome: "Processos internos", descricao: "Como a escola opera: pedagógico, atendimento, matrículas e operações" },
+      { chave: "PESSOAS", nome: "Pessoas e cultura", descricao: "Equipe, liderança, clima e desenvolvimento" },
+      { chave: "APRENDIZADO", nome: "Aprendizado e inovação", descricao: "Tecnologia, dados, inovação e melhoria contínua" },
+    ],
+    perspectivaDoPilar: { "Financeiro": "FINANCEIRA", "Comercial e Marca": "FAMILIAS", "Pedagógico": "FAMILIAS", "Pessoas e Cultura": "PESSOAS", "Operações e Infraestrutura": "PROCESSOS", "Governança e Tecnologia": "PROCESSOS" } as Record<string, string>,
+    // Saúde estratégica: pesos dos componentes (componente sem base sai do cálculo e o peso é redistribuído) e faixas [crítica < a ≤ atenção < b ≤ boa]
+    pesosSaude: { okrs: 25, indicadores: 25, projetos: 15, acoes: 20, rituais: 15 } as Record<string, number>,
+    faixasSaude: [50, 75] as [number, number],
+    toleranciaRitualDias: 2,      // ritual atrasado = passou da data prevista há mais de N dias
+    ataPendenteDias: 2,           // reunião realizada sem ata há mais de N dias vira alerta
+    areasIndicador: ["Pedagógico", "Matrículas e marketing", "Atendimento às famílias", "Financeiro", "Pessoas", "Operações", "Governança"],
+    modelosRituais: [
+      { chave: "DIARIA_UNIDADE", nome: "Reunião de abertura do dia (unidade)", tipo: "DIARIO", duracaoMin: 15, finalidade: "Alinhar o dia: ocorrências, ausências e prioridades.", pauta: "Ocorrências do dia anterior\nAusências e substituições\nPrioridades do dia" },
+      { chave: "SEMANAL_COORDENACAO", nome: "Reunião semanal de coordenação", tipo: "SEMANAL", duracaoMin: 60, finalidade: "Acompanhar a rotina pedagógica e os encaminhamentos da unidade.", pauta: "Encaminhamentos da semana anterior\nIndicadores da unidade\nFamílias que pedem atenção\nAgenda da semana" },
+      { chave: "MENSAL_COMITE", nome: "Comitê mensal de gestão da rede", tipo: "MENSAL", duracaoMin: 120, finalidade: "Revisar indicadores, decidir prioridades e destravar bloqueios da rede.", pauta: "Saúde estratégica e indicadores fora do alvo\nMatrículas, rematrículas e retenção\nFinanceiro: inadimplência e caixa\nPessoas: movimentações e clima\nDecisões pendentes da Direção\nEncaminhamentos" },
+      { chave: "TRIMESTRAL_ESTRATEGIA", nome: "Revisão trimestral da estratégia", tipo: "TRIMESTRAL", duracaoMin: 180, finalidade: "Revisar OKRs, projetos e prioridades do trimestre.", pauta: "Progresso e confiança dos OKRs\nProjetos em risco\nAjustes de prioridade\nDecisões e encaminhamentos" },
+      { chave: "ANUAL_PLANEJAMENTO", nome: "Planejamento estratégico anual", tipo: "ANUAL", duracaoMin: 480, finalidade: "Revisar identidade, mapa estratégico e definir os OKRs do próximo ciclo.", pauta: "Leitura do ano: resultados e aprendizados\nIdentidade e posicionamento\nMapa estratégico e objetivos\nOKRs e projetos do próximo ciclo" },
+    ],
   },
   comunicacao: {
     categoriasTemplate: ["COBRANCA", "MATRICULA", "ATENDIMENTO", "PEDAGOGICO", "RH", "GERAL"],
@@ -401,6 +496,53 @@ export const DEFAULT_SETTINGS = {
     excecaoValidadeDias: 30,
   },
   matriculas: { anoLetivo: 2027, reservaDias: 3, ofertaFilaDias: 2 },
+  // Rematrícula por link (v22): validade do link, prazo da reserva criada pelo aceite (até o financeiro confirmar) e texto do convite
+  rematricula: {
+    validadeLinkDias: 30,
+    reservaDias: 30,
+    integralContraturno: true,  // o Integral acontece no contraturno: só oferece grupos em turno diferente do regular escolhido
+    lembreteAbertoDias: 2,      // família abriu o link e não concluiu há N dias: avisa quem cuida da família
+    convite: "Olá, {responsavel}! A rematrícula de {aluno} para {ano} já está aberta. Pelo link abaixo você confere os dados, escolhe o turno e aceita o contrato em poucos minutos:\n{link}\nO link vale até {prazo}. Qualquer dúvida, fale com a secretaria da unidade {unidade}.",
+  },
+  // Substituição de professor (v22)
+  substituicao: {
+    creditarBanco: true,        // aula coberta e realizada vira crédito no banco de horas de quem cobriu
+    creditoAprovado: false,     // false = o crédito entra pendente e segue o fluxo normal de aprovação do banco
+    maxSugestoes: 6,
+    janelaHistoricoDias: 30,    // equilíbrio: quem cobriu menos nos últimos N dias aparece antes
+  },
+  // Espaços (v22): parâmetro de área por aluno para a capacidade física sugerida das salas
+  espacos: { m2PorAluno: 1.2 },
+  // Portaria e segurança (v22)
+  portaria: {
+    perfis: ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "OPERACOES", "COMERCIAL"], // quem opera a portaria e as saídas antecipadas
+    retencaoVisitasDias: 180,   // depois disso nome e documento do visitante são anonimizados
+    cenarios: ["Incêndio", "Vazamento de gás", "Ameaça externa (abrigo no local)", "Temporal ou alagamento", "Pane elétrica", "Outro"],
+    metaEvacuacaoMin: 5,
+    simuladoMeses: 6,           // unidade sem simulado de abandono há mais de N meses vira alerta
+    brigadaMinimaPorUnidade: 2,
+  },
+  // Privacidade e LGPD (v22)
+  privacidade: {
+    perfis: ["DIRECAO", "RH"],  // quem trata pedidos de titulares, consentimentos e incidentes (além do encarregado)
+    dpoUserId: null as number | null,
+    encarregadoNome: "",
+    encarregadoEmail: "",
+    encarregadoTelefone: "",
+    prazoPedidoDias: 15,        // LGPD art. 19, II: resposta completa em até 15 dias
+    prazoIncidenteDiasUteis: 3, // Res. CD/ANPD nº 15/2024: comunicação em 3 dias úteis
+    pequenoPorte: false,        // agente de pequeno porte tem prazo em dobro (Res. CD/ANPD nº 2/2022), salvo tratamento de alto risco
+  },
+  // Canal de ética (v22): comitê de triagem, prazos e textos do canal
+  etica: {
+    comite: [] as number[],     // usuários do comitê (vazio = Direção)
+    prazoTriagemDias: 5,
+    prazoConclusaoDias: 60,
+    comunicadoId: null as number | null,
+    cursoId: null as number | null,
+  },
+  // Contratos e licenças (v22): avisos antes do fim do contrato
+  contratos: { avisos: [60, 30] as number[] },
   atendimento: {
     slaHoras: { URGENTE: 4, ALTA: 24, NORMAL: 48, BAIXA: 120 },
     categorias: ["Pedagógico", "Atendimento e comunicação", "Financeiro", "Infraestrutura e limpeza", "Segurança", "Alimentação", "Transporte", "Convivência e disciplina", "Outro"],
@@ -423,6 +565,17 @@ export const DEFAULT_SETTINGS = {
       "Retornar em até 48 h e registrar o desfecho: retida ou perdida, com motivo",
     ],
     riscoRematriculaApos: "2026-11-30", // a partir desta data, aluno atual sem reserva/matrícula 2027 conta como sinal de risco
+    // Radar da família: jornada do ano (prazo DD/MM opcional), dias sem contato que pedem atenção e antecedência do aviso de etapa
+    jornada: [
+      { chave: "BOAS_VINDAS", nome: "Boas-vindas", ate: "02-28" },
+      { chave: "CONVERSA_DE_ADAPTACAO", nome: "Conversa de adaptação", ate: "03-31" },
+      { chave: "REUNIAO_DE_PAIS_1O_BIMESTRE", nome: "Reunião de pais do 1º bimestre", ate: "05-15" },
+      { chave: "PESQUISA_DO_1O_SEMESTRE", nome: "Pesquisa de satisfação do 1º semestre", ate: "06-30" },
+      { chave: "CONVERSA_DE_REMATRICULA", nome: "Conversa de rematrícula", ate: "09-30" },
+      { chave: "PESQUISA_DO_2O_SEMESTRE", nome: "Pesquisa de satisfação do 2º semestre", ate: "11-30" },
+    ] as { chave: string; nome: string; ate: string | null }[],
+    semContatoDias: 60,
+    avisoEtapaDias: 15,
   },
   admissao: [
     "Documentos pessoais recebidos (RG, CPF, comprovante de residência, CTPS digital)",
@@ -586,6 +739,88 @@ export async function seedDesempenho() {
   }
   return [`${Object.keys(FAMILIAS).length} modelos de avaliação sugeridos (rascunho, aguardando aprovação do RH)`];
 }
+/** Identidade institucional em rascunho com os valores da escola (sem inventar missão/visão: a Direção completa e publica). */
+/** Biblioteca inicial de indicadores (v21): todos lidos do próprio sistema, um conjunto por perspectiva. Metas são sugestões editáveis. */
+const INDICADORES_SUGERIDOS: [string, string, string, string, string, string, "MAIOR_MELHOR" | "MENOR_MELHOR", number, number][] = [
+  ["FIN-01", "Inadimplência 90 dias", "financeiro.inadimplencia", "FINANCEIRA", "Financeiro", "%", "MENOR_MELHOR", 4, 6],
+  ["FIN-02", "Ocupação das vagas regulares", "matriculas.ocupacao", "FINANCEIRA", "Matrículas e marketing", "%", "MAIOR_MELHOR", 90, 80],
+  ["FAM-01", "NPS das famílias (mês)", "atendimento.nps", "FAMILIAS", "Atendimento às famílias", "pontos", "MAIOR_MELHOR", 70, 50],
+  ["FAM-02", "Rematrícula para o próximo ano letivo", "matriculas.rematricula", "FAMILIAS", "Matrículas e marketing", "%", "MAIOR_MELHOR", 90, 80],
+  ["FAM-03", "Retenção nos pedidos de saída (mês)", "atendimento.retencao", "FAMILIAS", "Atendimento às famílias", "%", "MAIOR_MELHOR", 50, 30],
+  ["FAM-04", "Famílias com contato recente", "atendimento.contato_recente", "FAMILIAS", "Atendimento às famílias", "%", "MAIOR_MELHOR", 80, 60],
+  ["PRO-01", "Jornada da família em dia", "atendimento.jornada", "PROCESSOS", "Atendimento às famílias", "%", "MAIOR_MELHOR", 90, 75],
+  ["PRO-02", "Chamados dentro do SLA (90 dias)", "operacoes.sla", "PROCESSOS", "Operações", "%", "MAIOR_MELHOR", 90, 80],
+  ["PRO-03", "Ações do plano em dia", "estrategia.acoes_em_dia", "PROCESSOS", "Governança", "%", "MAIOR_MELHOR", 85, 70],
+  ["PRO-04", "Rituais de gestão em dia", "estrategia.rituais_em_dia", "PROCESSOS", "Governança", "%", "MAIOR_MELHOR", 90, 75],
+  ["PES-01", "Turnover 12 meses", "pessoas.turnover", "PESSOAS", "Pessoas", "%", "MENOR_MELHOR", 12, 18],
+  ["PES-02", "eNPS da equipe", "pessoas.enps", "PESSOAS", "Pessoas", "pontos", "MAIOR_MELHOR", 30, 10],
+  ["PES-03", "Absenteísmo 90 dias", "pessoas.absenteismo", "PESSOAS", "Pessoas", "%", "MENOR_MELHOR", 3, 5],
+  ["APR-01", "Treinamentos obrigatórios em dia", "academy.conformidade", "APRENDIZADO", "Pessoas", "%", "MAIOR_MELHOR", 95, 85],
+  ["APR-02", "POPs vigentes com ciência de toda a equipe", "governanca.ciencia", "APRENDIZADO", "Governança", "%", "MAIOR_MELHOR", 90, 75],
+  ["APR-03", "Posições críticas com sucessor pronto", "sucessao.bench", "APRENDIZADO", "Pessoas", "%", "MAIOR_MELHOR", 70, 50],
+];
+export async function seedGestao() {
+  const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM strategy_identity`; if (n) return [] as string[];
+  const valores = ["Verdade", "Afetividade", "Motivação", "Criatividade", "Segurança", "Aprendizagem", "Confiança"].map(nome => ({ nome, pratica: "" }));
+  await sql`INSERT INTO strategy_identity (versao, status, valores) VALUES (1, 'RASCUNHO', ${JSON.stringify(valores)}::jsonb)`;
+  const log = ["Identidade institucional criada em rascunho com os 7 valores (complete missão, visão e práticas e publique)."];
+  // Só na primeira vez (junto com a identidade): quem apagar indicadores não os vê voltar.
+  const [{ k }] = await sql<{ k: number }[]>`SELECT count(*)::int AS k FROM indicators`;
+  if (!k) { let ordem = 0; for (const [codigo, nome, fonte, perspectiva, area, unidade, direcao, meta, alerta] of INDICADORES_SUGERIDOS) await sql`INSERT INTO indicators (codigo, nome, descricao, perspectiva, area, unidade_medida, direcao, meta, alerta, tipo, fonte, frequencia, ordem) VALUES (${codigo}, ${nome}, 'Lido automaticamente do sistema. Meta sugerida na instalação — ajuste à realidade da escola.', ${perspectiva}, ${area}, ${unidade}, ${direcao}, ${meta}, ${alerta}, 'SISTEMA', ${fonte}, 'MENSAL', ${ordem++})`;
+    log.push(`${INDICADORES_SUGERIDOS.length} indicadores sugeridos, lidos do próprio sistema (um conjunto por perspectiva do mapa).`); }
+  // Governança de IA: o assistente estratégico entra no inventário de agentes como piloto N1 (rascunho revisado pela Direção).
+  const [ag] = await sql`SELECT 1 FROM ai_agents WHERE nome='Assistente estratégico'`;
+  if (!ag) { await sql`INSERT INTO ai_agents (nome, funcao, area, nivel, ferramenta, dados, limites, revisao_humana, status) VALUES ('Assistente estratégico', 'Rascunhos de leitura executiva, pauta do comitê, prioridades da semana e lacunas de medição a partir do painel estratégico', 'Direção e Governança', 'N1', 'API de IA configurada em AI_API_KEY (sem a chave, nada é gerado nem simulado)', 'Fatos agregados do painel: indicadores, OKRs, projetos, ações, rituais, totais de famílias e de captação — sem nomes de famílias ou colaboradores', 'Não decide, não altera dados, não trata de pessoas; toda afirmação cita o fato de origem e as citações são conferidas', 'Rascunho; a Direção revisa e aprova (ou descarta) antes de qualquer uso', 'PILOTO')`; log.push("Assistente estratégico registrado no inventário de agentes de IA (piloto, N1)."); }
+  return log;
+}
+// ======================= v22: cargas iniciais (só na primeira vez de cada tabela) =======================
+/** Finalidades de consentimento (LGPD art. 14 §1º: específico e em destaque, por um dos pais ou responsável). Textos editáveis em Privacidade. */
+const FINALIDADES: [string, string, string][] = [
+  ["IMAGEM_REDES", "Imagem e voz nas redes sociais e no site", "Autorizo o Colégio Status a publicar fotos e vídeos com a imagem e a voz do(a) aluno(a), registrados em atividades escolares, no site e nas redes sociais oficiais da escola, sem finalidade comercial e sem cessão a terceiros. Posso revogar esta autorização a qualquer momento, sem nenhum prejuízo à matrícula."],
+  ["IMAGEM_MATERIAIS", "Imagem em materiais impressos, murais e eventos", "Autorizo o uso da imagem do(a) aluno(a) em murais, materiais impressos, apresentações e eventos da escola. Posso revogar esta autorização a qualquer momento, sem nenhum prejuízo à matrícula."],
+  ["DIVULGACAO_RESULTADOS", "Divulgação de conquistas e resultados", "Autorizo a divulgação do nome e de conquistas do(a) aluno(a) — premiações, olimpíadas, aprovações — nos canais institucionais da escola. Posso revogar esta autorização a qualquer momento, sem nenhum prejuízo à matrícula."],
+];
+type CampoSeed = { id: string; rotulo: string; tipo: string; obrigatorio: boolean; opcoes?: string[] };
+type EtapaSeed = { nome: string; perfis: string[]; acimaDe?: number };
+const c = (id: string, rotulo: string, tipo: string, obrigatorio = true, opcoes?: string[]): CampoSeed => ({ id, rotulo, tipo, obrigatorio, ...(opcoes ? { opcoes } : {}) });
+const TIPOS_SOLICITACAO: [string, string, string, number, CampoSeed[], EtapaSeed[]][] = [
+  ["REEMBOLSO", "Reembolso de despesa", "Despesa paga do próprio bolso a serviço da escola. Anexe o comprovante na solicitação.", 2,
+    [c("descricao", "O que foi pago e por quê", "TEXTO_LONGO"), c("data", "Data da despesa", "DATA"), c("valor", "Valor (R$)", "VALOR"), c("forma", "Como prefere receber", "SELECAO", true, ["PIX", "Depósito em conta", "Junto do pagamento"])],
+    [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "Financeiro", perfis: ["FINANCEIRO"] }, { nome: "Direção (acima de R$ 1.000)", perfis: ["DIRECAO"], acimaDe: 1000 }]],
+  ["COMPRA", "Pedido de compra", "Itens ou serviços a comprar. A aprovação libera a compra; pagamento e nota seguem no financeiro.", 3,
+    [c("item", "Item ou serviço", "TEXTO"), c("quantidade", "Quantidade", "NUMERO"), c("valor", "Valor estimado (R$)", "VALOR"), c("fornecedor", "Fornecedor sugerido", "TEXTO", false), c("justificativa", "Justificativa", "TEXTO_LONGO"), c("prazo", "Precisa até", "DATA", false)],
+    [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "Direção (acima de R$ 2.000)", perfis: ["DIRECAO"], acimaDe: 2000 }]],
+  ["PASSEIO", "Passeio ou evento", "Atividade fora da rotina. A autorização de cada família é feita na Agenda Eletrônica.", 3,
+    [c("turmas", "Turmas", "TEXTO"), c("destino", "Destino ou atividade", "TEXTO"), c("data", "Data", "DATA"), c("horario", "Saída e retorno", "TEXTO"), c("alunos", "Número de alunos", "NUMERO"), c("valor", "Custo total estimado (R$)", "VALOR", false), c("transporte", "Transporte", "SELECAO", true, ["Ônibus contratado", "A pé", "Não se aplica"]), c("responsaveis", "Professores e acompanhantes", "TEXTO_LONGO")],
+    [{ nome: "Coordenação", perfis: ["GESTOR"] }, { nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "Direção", perfis: ["DIRECAO"] }]],
+  ["DECLARACAO", "Declaração", "Declaração para colaborador (vínculo) ou para família (matrícula, frequência).", 2,
+    [c("tipo", "Tipo de declaração", "SELECAO", true, ["Vínculo empregatício", "Matrícula de aluno", "Frequência de aluno", "Outra"]), c("finalidade", "Para quem e para quê", "TEXTO"), c("detalhes", "Detalhes", "TEXTO_LONGO", false), c("prazo", "Precisa até", "DATA")],
+    [{ nome: "Secretaria / RH", perfis: ["RH", "COMERCIAL"] }]],
+  ["MATERIAL", "Material pedagógico ou de expediente", "Pedido de material para turma ou setor.", 2,
+    [c("itens", "Itens e quantidades", "TEXTO_LONGO"), c("destino", "Turma ou setor", "TEXTO"), c("prazo", "Precisa até", "DATA"), c("valor", "Valor estimado (R$)", "VALOR", false)],
+    [{ nome: "Coordenação ou direção da unidade", perfis: ["GESTOR", "DIRETOR_UNIDADE"] }, { nome: "Direção (acima de R$ 500)", perfis: ["DIRECAO"], acimaDe: 500 }]],
+];
+export const MARCA_RASCUNHO_CONTRATO = "[RASCUNHO";
+const CONTRATO_RASCUNHO = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS EDUCACIONAIS — ANO LETIVO {ano}
+
+[RASCUNHO — substitua todo este texto pelo contrato oficial revisado pela assessoria jurídica antes de publicar. Enquanto este aviso estiver no texto, a publicação é bloqueada.]
+
+CONTRATANTE: {responsavel}, responsável financeiro pelo(a) aluno(a) {aluno}.
+CONTRATADA: Colégio Status — unidade {unidade}.
+
+OBJETO: prestação de serviços educacionais ao(à) aluno(a) {aluno} no ano letivo de {ano}, na série {serie}, turma {turma}, turno {turno}{integral}.
+
+Variáveis disponíveis: {aluno} {responsavel} {serie} {turma} {turno} {unidade} {ano} {integral} {data}.`;
+export async function seedV22() {
+  const log: string[] = [];
+  const [{ f }] = await sql<{ f: number }[]>`SELECT count(*)::int AS f FROM consent_purposes`;
+  if (!f) { let ordem = 0; for (const [codigo, titulo, texto] of FINALIDADES) await sql`INSERT INTO consent_purposes (codigo, titulo, texto, ordem) VALUES (${codigo}, ${titulo}, ${texto}, ${ordem++})`; log.push("Finalidades de consentimento de imagem e divulgação cadastradas (edite os textos em Governança → Privacidade)."); }
+  const [{ t }] = await sql<{ t: number }[]>`SELECT count(*)::int AS t FROM request_types`;
+  if (!t) { let ordem = 0; for (const [codigo, nome, descricao, prazo, campos, etapas] of TIPOS_SOLICITACAO) await sql`INSERT INTO request_types (codigo, nome, descricao, campos, etapas, prazo_dias, ordem) VALUES (${codigo}, ${nome}, ${descricao}, ${JSON.stringify(campos)}::jsonb, ${JSON.stringify(etapas)}::jsonb, ${prazo}, ${ordem++})`; log.push("Tipos de solicitação com aprovação cadastrados (reembolso, compra, passeio, declaração, material)."); }
+  const [{ k }] = await sql<{ k: number }[]>`SELECT count(*)::int AS k FROM contract_templates`;
+  if (!k) { const [cfg] = await sql<{ value: { anoLetivo?: number } }[]>`SELECT value FROM settings WHERE key='matriculas'`; const ano = cfg?.value?.anoLetivo ?? DEFAULT_SETTINGS.matriculas.anoLetivo; await sql`INSERT INTO contract_templates (ano, titulo, versao, texto) VALUES (${ano}, ${`Contrato de prestação de serviços educacionais ${ano}`}, 1, ${CONTRATO_RASCUNHO})`; log.push(`Contrato ${ano} criado em rascunho (cole o texto oficial e publique antes de enviar os links de rematrícula).`); }
+  return log;
+}
 export async function seedComunicacao() {
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM message_templates`;
   if (n > 0) return [];
@@ -642,6 +877,13 @@ export async function seedMatriculas() {
 const FKS: [string, string, string, string][] = [
   ["eval_evidences", "review_id", "perf_reviews", "CASCADE"], ["eval_evidences", "employee_id", "employees", "CASCADE"], ["feedbacks", "employee_id", "employees", "CASCADE"], ["pdi_plans", "employee_id", "employees", "CASCADE"], ["pdi_actions", "plan_id", "pdi_plans", "CASCADE"], ["pdi_checkins", "action_id", "pdi_actions", "CASCADE"], ["behavior_profiles", "employee_id", "employees", "CASCADE"], ["perf_cycles", "model_id", "eval_models", "SET NULL"],
   ["role_profile_acks", "profile_id", "role_profiles", "CASCADE"], ["role_profile_acks", "employee_id", "employees", "CASCADE"], ["dev_needs", "employee_id", "employees", "CASCADE"], ["teaching_observations", "employee_id", "employees", "CASCADE"], ["rater_training_responses", "training_id", "rater_trainings", "CASCADE"], ["career_interests", "employee_id", "employees", "CASCADE"], ["review_raters", "review_id", "perf_reviews", "CASCADE"], ["ai_drafts", "employee_id", "employees", "CASCADE"],
+  ["objective_links", "de_objective_id", "objectives", "CASCADE"], ["objective_links", "para_objective_id", "objectives", "CASCADE"], ["indicator_values", "indicator_id", "indicators", "CASCADE"], ["indicators", "objective_id", "objectives", "SET NULL"], ["indicators", "numerador_id", "indicators", "SET NULL"], ["indicators", "denominador_id", "indicators", "SET NULL"], ["indicators", "responsavel_user_id", "users", "SET NULL"],
+  ["action_plans", "objective_id", "objectives", "SET NULL"], ["action_plans", "indicator_id", "indicators", "SET NULL"], ["action_plans", "project_id", "projects", "SET NULL"], ["action_plans", "ritual_meeting_id", "ritual_meetings", "SET NULL"], ["action_plans", "responsavel_user_id", "users", "SET NULL"], ["rituals", "dono_user_id", "users", "SET NULL"], ["ritual_meetings", "ritual_id", "rituals", "CASCADE"], ["decisions", "ritual_meeting_id", "ritual_meetings", "SET NULL"],
+  ["family_contacts", "student_id", "students", "CASCADE"], ["family_journey", "student_id", "students", "CASCADE"], ["strategy_ai_drafts", "unit_id", "units", "SET NULL"], ["strategy_ai_drafts", "aprovado_por", "users", "SET NULL"], ["strategy_ai_drafts", "created_by", "users", "SET NULL"], ["students", "carteira_user_id", "users", "SET NULL"], ["students", "indicado_por_id", "students", "SET NULL"],
+  ["rematricula_links", "student_id", "students", "CASCADE"], ["rematricula_links", "grade_id", "grades", "SET NULL"], ["rematricula_links", "unit_id", "units", "SET NULL"], ["rematricula_links", "class_id", "classes", "SET NULL"], ["rematricula_links", "integral_class_id", "classes", "SET NULL"], ["rematricula_links", "enrollment_id", "enrollments", "SET NULL"], ["rematricula_links", "integral_enrollment_id", "enrollments", "SET NULL"], ["rematricula_links", "contrato_id", "contract_templates", "SET NULL"], ["rematricula_links", "case_id", "cases", "SET NULL"],
+  ["teacher_slots", "employee_id", "employees", "CASCADE"], ["teacher_slots", "unit_id", "units", "RESTRICT"], ["teacher_slots", "space_id", "spaces", "SET NULL"], ["cover_absences", "employee_id", "employees", "CASCADE"], ["cover_absences", "leave_request_id", "leave_requests", "SET NULL"], ["cover_assignments", "absence_id", "cover_absences", "CASCADE"], ["cover_assignments", "slot_id", "teacher_slots", "SET NULL"], ["cover_assignments", "ausente_employee_id", "employees", "CASCADE"], ["cover_assignments", "cobertura_employee_id", "employees", "SET NULL"], ["cover_assignments", "hour_entry_id", "hour_entries", "SET NULL"],
+  ["spaces", "unit_id", "units", "RESTRICT"], ["classes", "space_id", "spaces", "SET NULL"], ["space_bookings", "space_id", "spaces", "CASCADE"], ["visits", "unit_id", "units", "RESTRICT"], ["pickup_authorizations", "student_id", "students", "CASCADE"], ["early_departures", "student_id", "students", "CASCADE"], ["early_departures", "authorization_id", "pickup_authorizations", "SET NULL"], ["early_departures", "emergency_event_id", "emergency_events", "SET NULL"], ["brigade_members", "employee_id", "employees", "CASCADE"], ["emergency_events", "unit_id", "units", "RESTRICT"], ["emergency_checks", "event_id", "emergency_events", "CASCADE"], ["emergency_failures", "event_id", "emergency_events", "CASCADE"], ["emergency_failures", "action_plan_id", "action_plans", "SET NULL"],
+  ["consents", "student_id", "students", "CASCADE"], ["consents", "purpose_id", "consent_purposes", "RESTRICT"], ["privacy_requests", "student_id", "students", "SET NULL"], ["privacy_requests", "employee_id", "employees", "SET NULL"], ["ethics_messages", "report_id", "ethics_reports", "CASCADE"], ["requests", "type_id", "request_types", "RESTRICT"], ["request_events", "request_id", "requests", "CASCADE"], ["contracts", "supplier_id", "suppliers", "RESTRICT"], ["licenses", "unit_id", "units", "RESTRICT"], ["push_subscriptions", "user_id", "users", "CASCADE"],
   // tabela, coluna, tabela referenciada, ação
   ["employees", "unit_id", "units", "RESTRICT"], ["employees", "position_id", "positions", "SET NULL"], ["employees", "company_id", "companies", "SET NULL"], ["employees", "gestor_id", "employees", "SET NULL"],
   ["users", "unit_id", "units", "SET NULL"], ["password_resets", "user_id", "users", "CASCADE"], ["announcement_acks", "announcement_id", "announcements", "CASCADE"], ["announcement_acks", "user_id", "users", "CASCADE"], ["notifications", "user_id", "users", "CASCADE"], ["messages", "template_id", "message_templates", "SET NULL"], ["users", "employee_id", "employees", "SET NULL"],
@@ -721,6 +963,8 @@ export async function seedBase(adminPassword: string) {
   log.push(...(await seedEstrategia()));
   log.push(...(await seedComunicacao()));
   log.push(...(await seedDesempenho()));
+  log.push(...(await seedGestao()));
+  log.push(...(await seedV22()));
   const [{ u }] = await sql`SELECT count(*)::int AS u FROM users`;
   if (u === 0) {
     const hash = await bcrypt.hash(adminPassword, 10);

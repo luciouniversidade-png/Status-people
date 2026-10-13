@@ -24,7 +24,7 @@ export default async function Processo({ params, searchParams }: { params: Promi
     <Page title={`${PROC_LABEL[p.tipo]} — ${e?.nome ?? "?"}`}
       sub={<span className="flex flex-wrap items-center gap-2"><Badge v={p.status} label={PROC_STATUS[p.status]} /> Início {fmtData(p.inicio)} · Prazo <span className={aberto && p.prazo && p.prazo < h ? "font-medium text-erro" : ""}>{fmtData(p.prazo)}</span> · {feitos}/{itens.length} itens{e && <> · <Link className="text-acao" href={`/colaboradores/${e.id}`}>ver ficha</Link></>}</span>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <Card title="Checklist">
           <ul className="divide-y divide-line">
             {itens.map(i => (

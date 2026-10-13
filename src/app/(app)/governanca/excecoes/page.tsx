@@ -24,7 +24,7 @@ export default async function Excecoes({ searchParams }: { searchParams: Promise
   return (
     <Page title="Exceções a regras e POPs" sub="Toda exceção tem motivo padronizado, aprovador, validade e revisão. Três exceções iguais em 90 dias = a regra precisa mudar." actions={<Btn kind="ghost" href="/api/export/excecoes">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div>
           <form className="mb-3 flex items-end gap-2"><Field label="Situação"><Select name="status" defaultValue={status}><option value="ATIVAS">Pendentes, vigentes e expiradas</option>{Object.entries(EXC_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}<option value="">Todas</option></Select></Field><Btn kind="ghost">Filtrar</Btn></form>
           <Table head={["#", "Regra / POP", "Motivo", "Referência", "Solicitante", "Situação", "Validade", ""]} empty="Nenhuma exceção neste filtro.">

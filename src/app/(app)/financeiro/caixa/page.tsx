@@ -17,9 +17,9 @@ export default async function Caixa({ searchParams }: { searchParams: Promise<Re
       <Flash ok={sp.ok} erro={sp.erro} />
       <form className="mb-4 flex flex-wrap items-end gap-2">{!scope && <Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Consolidado</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>}<Field label="Mês"><Input type="month" name="mes" defaultValue={mes} /></Field><Btn kind="ghost">Ver</Btn></form>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5"><Stat label="Saldo inicial" value={cx.saldoInicial === null ? "—" : brl(cx.saldoInicial)} hint={cx.temSaldo ? undefined : "não informado"} /><Stat label="Entradas" value={<span className="text-ok">{brl(cx.tot.entradas)}</span>} /><Stat label="Saídas" value={<span className="text-erro">{brl(cx.tot.saidas)}</span>} /><Stat label="Transferências internas" value={brl(cx.tot.transf)} hint="não entram no resultado" /><Stat label="Saldo final" value={cx.saldoFinal === null ? brl(cx.tot.entradas - cx.tot.saidas) : <span className={cx.saldoFinal < 0 ? "text-erro" : ""}>{brl(cx.saldoFinal)}</span>} hint={cx.saldoFinal === null ? "movimento do mês (sem saldo inicial)" : undefined} /></div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Card title="Entradas por categoria"><Table head={["Categoria", "Lanç.", "Valor"]} empty="Sem entradas.">{cx.porCat.filter(c => c.tipo === "ENTRADA").map(c => <tr key={c.categoria}><Td>{c.categoria}</Td><Td>{c.n}</Td><Td className="tabular-nums">{brl(c.valor)}</Td></tr>)}</Table><div className="mt-2 text-xs text-slate-500">Por forma: {cx.porForma.map(f => `${f.forma} ${brl(f.valor)}`).join(" · ") || "—"}</div></Card>
             <Card title="Saídas por categoria"><Table head={["Categoria", "Lanç.", "Valor"]} empty="Sem saídas.">{cx.porCat.filter(c => c.tipo === "SAIDA").map(c => <tr key={c.categoria}><Td>{c.categoria}</Td><Td>{c.n}</Td><Td className="tabular-nums">{brl(c.valor)}</Td></tr>)}</Table></Card>
           </div>

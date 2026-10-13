@@ -20,20 +20,20 @@ export default async function Decisoes({ searchParams }: { searchParams: Promise
   return (
     <Page title="Registro de decisões" sub="Decision Log da Direção: o que foi decidido, em que contexto, quais alternativas foram descartadas e quando revisar." actions={<Btn kind="ghost" href="/api/export/decisoes">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${podeRegistrar ? "lg:grid-cols-[1fr_360px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${podeRegistrar ? "lg:grid-cols-[minmax(0,1fr)_360px]" : ""} lg:items-start`}>
         <div>
           <form className="mb-3 flex flex-wrap items-end gap-2"><Field label="Buscar"><Input name="q" defaultValue={q} /></Field><Field label="Situação"><Select name="status" defaultValue={status}>{Object.entries(DEC_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}<option value="">Todas</option></Select></Field><Btn kind="ghost">Filtrar</Btn></form>
           <div className="space-y-3">{rows.length === 0 && <Card><p className="text-sm text-slate-500">Nenhuma decisão neste filtro.</p></Card>}
             {rows.map(d => <Card key={d.id} title={<span>{fmtData(d.data)} · {d.titulo} <span className="ml-2 font-normal text-slate-500">{d.area}{d.unidade ? ` · ${d.unidade}` : ""}</span></span>} actions={<span className="flex items-center gap-2"><Badge v={d.status === "VIGENTE" ? "APROVADA" : "CANCELADA"} label={DEC_STATUS[d.status]} />{d.status === "VIGENTE" && d.revisar_em && d.revisar_em <= h && <Badge v="PENDENTE" label="revisar" />}</span>}>
               <p className="text-sm font-medium text-ink">{d.decisao}</p>
-              <dl className="mt-2 grid gap-2 text-xs text-slate-700 sm:grid-cols-3">{d.contexto && <div><dt className="font-medium text-slate-500">Contexto</dt><dd>{d.contexto}</dd></div>}{d.alternativas && <div><dt className="font-medium text-slate-500">Alternativas descartadas</dt><dd>{d.alternativas}</dd></div>}{d.consequencias && <div><dt className="font-medium text-slate-500">Consequências / custos</dt><dd>{d.consequencias}</dd></div>}</dl>
+              <dl className="mt-2 grid grid-cols-1 gap-2 text-xs text-slate-700 sm:grid-cols-3">{d.contexto && <div><dt className="font-medium text-slate-500">Contexto</dt><dd>{d.contexto}</dd></div>}{d.alternativas && <div><dt className="font-medium text-slate-500">Alternativas descartadas</dt><dd>{d.alternativas}</dd></div>}{d.consequencias && <div><dt className="font-medium text-slate-500">Consequências / custos</dt><dd>{d.consequencias}</dd></div>}</dl>
               <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500"><span>Responsável: {d.responsavel ?? "—"}</span>{d.revisar_em && <span>Revisar em {fmtData(d.revisar_em)}</span>}{d.link && <a className="text-acao" href={d.link} target="_blank" rel="noreferrer">documento</a>}{d.substituida_por && <span>substituída pela decisão #{d.substituida_por}</span>}
                 {podeRegistrar && d.status === "VIGENTE" && <form action={encerrarDecisao} className="ml-auto flex items-center gap-1"><input type="hidden" name="id" value={d.id} /><Input name="substituidaPor" placeholder="# nova" className="!w-20 !py-0.5 !text-xs" /><Btn small kind="ghost" name="status" value="SUBSTITUIDA">Substituir</Btn><Btn small danger name="status" value="REVOGADA">Revogar</Btn></form>}</div>
             </Card>)}
           </div>
         </div>
         {podeRegistrar && <Card title="Registrar decisão"><form action={salvarDecisao} className="space-y-2">
-          <div className="grid grid-cols-[130px_1fr] gap-2"><Field label="Data"><Input name="data" type="date" defaultValue={h} /></Field><Field label="Título"><Input name="titulo" required /></Field></div>
+          <div className="grid grid-cols-[130px_minmax(0,1fr)] gap-2"><Field label="Data"><Input name="data" type="date" defaultValue={h} /></Field><Field label="Título"><Input name="titulo" required /></Field></div>
           <div className="grid grid-cols-2 gap-2"><Field label="Área"><Select name="area" defaultValue={cfg.governanca.areas[cfg.governanca.areas.length - 1]}>{cfg.governanca.areas.map(a => <option key={a}>{a}</option>)}</Select></Field><Field label="Unidade"><Select name="unitId" defaultValue=""><option value="">Rede</option>{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field></div>
           <Field label="Contexto (problema, restrições)"><Textarea name="contexto" className="min-h-[60px]" /></Field>
           <Field label="Decisão"><Textarea name="decisao" className="min-h-[60px]" required /></Field>

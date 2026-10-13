@@ -23,7 +23,7 @@ export default async function Documentos() {
         <Stat label="Obrigatórios não entregues" value={tot.pend} />
       </div>
       {formacao.length > 0 && <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/60 p-3"><h2 className="mb-2 text-sm font-semibold text-navy">Formação exigida pelo cargo sem comprovante ({formacao.length})</h2><Table head={["Colaborador", "Unidade", "Cargo", "Formação exigida", "Documento esperado"]}>{formacao.map(f => <tr key={f.employee_id}><Td><Link className="text-acao" href={`/colaboradores/${f.employee_id}#documentos`}>{f.nome}</Link></Td><Td>{f.unidade}</Td><Td>{f.cargo}</Td><Td className="text-xs">{f.formacao}</Td><Td className="text-xs">{f.documento}</Td></tr>)}</Table><p className="mt-1 text-[11px] text-slate-600">Configure a formação exigida em Configurações → Cargos (ex.: profissional de apoio escolar). O registro do documento entregue resolve a pendência.</p></div>}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
           <h2 className="mb-2 text-sm font-semibold text-navy">Validade próxima ou vencida</h2>
           <Table head={["Colaborador", "Unidade", "Documento", "Validade"]} empty="Nenhum documento com validade próxima.">

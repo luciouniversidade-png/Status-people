@@ -32,7 +32,7 @@ export default async function Ferias({ searchParams }: { searchParams: Promise<R
           </Table>
         </Card>
       )}
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
           <form className="mb-3 flex flex-wrap items-end gap-2">
             <Field label="Situação"><Select name="status" defaultValue={status}><option value="SOLICITADA">Aguardando aprovação</option><option value="APROVADA">Aprovadas</option><option value="REJEITADA">Rejeitadas</option><option value="CANCELADA">Canceladas</option><option value="">Todas</option></Select></Field>

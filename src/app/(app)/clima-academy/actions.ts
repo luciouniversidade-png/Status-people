@@ -7,6 +7,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, num, hoje, getSettings } from "@/lib/utils";
 import { perguntasPadrao, validadeFinal, type Pergunta } from "@/lib/clima-academy";
+import { erroAssinado } from "@/lib/aviso";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
@@ -42,7 +43,7 @@ export async function responderPesquisa(fd: FormData) {
     const comentario = perguntas.filter(q => q.tipo === "TEXTO").map(q => respostas[q.id]).filter(Boolean).join("\n") || null;
     await db.insert(schema.climateResponses).values({ surveyId: sv.id, unitId: int(fd, "unitId"), regime: strOrNull(fd, "regime"), respostas, comentario });
     jar.set(`clima_${sv.id}`, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 120 }); ok = true;
-  } catch (e) { redirect(`/pesquisa/${token}?erro=${encodeURIComponent(e instanceof Error ? e.message : "Erro")}`); }
+  } catch (e) { redirect(`/pesquisa/${token}?${erroAssinado(e instanceof Error ? e.message : "Erro")}`); }
   if (ok) redirect(`/pesquisa/${token}?obrigado=1`);
 }
 export async function salvarAcaoClima(fd: FormData) {

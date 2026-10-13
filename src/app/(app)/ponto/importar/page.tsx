@@ -44,7 +44,7 @@ export default async function Importar({ searchParams }: { searchParams: Promise
   return (
     <Page title="Importar planilhas de ponto" sub="Lê as planilhas de banco de horas (abas JANEIRO…DEZEMBRO) e mostra uma prévia antes de gravar.">
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <form action={importarPlanilhas} className="space-y-3" encType="multipart/form-data">
           <Field label="Ano das planilhas"><Input name="ano" type="number" defaultValue={Number(hoje().slice(0, 4))} className="w-28" /></Field>
           <Field label="Arquivos .xlsx (até 40 por vez)"><input type="file" name="arquivos" accept=".xlsx,.xlsm" multiple required className="block text-sm" /></Field>

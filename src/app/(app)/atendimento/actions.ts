@@ -126,7 +126,8 @@ export async function importarPesquisas(fd: FormData) {
 // ---------- Sinais de risco manuais / financeiros ----------
 export async function atualizarSinais(fd: FormData) {
   const s = await requireSession(); const studentId = Number(fd.get("studentId")); const b = str(fd, "voltar") || `/matriculas/alunos/${studentId}`;
-  try { assert(podeAtender(s.role)); await db.update(schema.students).set({ inadimplente: str(fd, "inadimplente") === "1", riscoObs: strOrNull(fd, "riscoObs") }).where(eq(schema.students.id, studentId)); await audit(s, "sinais de risco", "students", studentId, null, { inadimplente: str(fd, "inadimplente") === "1", riscoObs: strOrNull(fd, "riscoObs") }); }
+  try { assert(podeAtender(s.role)); const [st] = await db.select({ unitAtualId: schema.students.unitAtualId }).from(schema.students).where(eq(schema.students.id, studentId)); if (!st) throw new Error("Aluno não encontrado."); if (st.unitAtualId) assertScope(s, st.unitAtualId);
+    await db.update(schema.students).set({ inadimplente: str(fd, "inadimplente") === "1", riscoObs: strOrNull(fd, "riscoObs") }).where(eq(schema.students.id, studentId)); await audit(s, "sinais de risco", "students", studentId, null, { inadimplente: str(fd, "inadimplente") === "1", riscoObs: strOrNull(fd, "riscoObs") }); }
   catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Sinais atualizados."));
 }

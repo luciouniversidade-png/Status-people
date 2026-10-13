@@ -28,7 +28,7 @@ export default async function Colaboradores({ searchParams }: { searchParams: Pr
     <Page title="Colaboradores" sub={`${rows.length} registro(s)`}
       actions={<><Btn kind="ghost" href="/api/export/colaboradores">Exportar CSV</Btn>{can.editar(s) && <><Btn kind="ghost" href="/colaboradores/importar">Importar planilha</Btn><Btn href="/colaboradores/novo">Novo colaborador</Btn></>}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <form className="mb-4 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[1fr_180px_180px_auto]">
+      <form className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
         <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Nome ou cargo" /></Field>
         {!scope && <Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>}
         <Field label="Situação"><Select name="situacao" defaultValue={sit}><option value="ATIVOS">Ativos e em admissão</option><option value="ATIVO">Somente ativos</option><option value="EM_ADMISSAO">Em admissão</option><option value="DESLIGADO">Desligados</option><option value="TODOS">Todos</option></Select></Field>

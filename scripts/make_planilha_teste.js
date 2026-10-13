@@ -1,3 +1,4 @@
+// Uso: node scripts/make_planilha_teste.js  (gera em /tmp as planilhas usadas por e2e.py e e2e_ponto.py)
 // Gera uma planilha no formato das REVISADO_2026 (abas GERAL + meses) para testar o importador.
 const XLSX = require("xlsx"); const fs = require("fs");
 const MESES = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"];
@@ -28,3 +29,14 @@ function build(nome, chSemana, out) {
 const s1 = build("MARIA TESTE DA SILVA", { 1: 528, 2: 528, 3: 528, 4: 528, 5: 528 }, "/tmp/MARIA TESTE DA SILVA_REVISADO_2026.xlsx");
 const s2 = build("ARCIRLEY TESTE", { 1: 555, 2: 400, 3: 485, 4: 350, 5: 140 }, "/tmp/ARCIRLEY TESTE_REVISADO_2026.xlsx");
 console.log(JSON.stringify({ maria: s1, arcirley: s2 }));
+
+// Planilha de colaboradores para o teste de upload .xlsx (cabeçalhos com acento e admissão como célula de data)
+// A data vai como número de série do Excel (dias desde 30/12/1899), como o Excel grava — independe do fuso do computador.
+{
+  const serie = (y, m, d) => (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000;
+  const linhas = [["Nome", "Unidade", "Admissão", "Cargo", "Vínculo", "Jornada (min/dia)"],
+    ["BRUNA XLSX TESTE", "Carandá", serie(2024, 9, 2), "Auxiliar Pedagógico", "CLT", 528],
+    ["CAIO XLSX TESTE", "Cultura", serie(2025, 2, 3), "Inspetor de Alunos", "CLT", 440]];
+  const ws = XLSX.utils.aoa_to_sheet(linhas); for (const c of ["C2", "C3"]) ws[c].z = "dd/mm/yyyy";
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Colaboradores"); XLSX.writeFile(wb, "/tmp/colaboradores_teste.xlsx");
+}

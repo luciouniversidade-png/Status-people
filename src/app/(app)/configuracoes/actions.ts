@@ -53,6 +53,7 @@ export async function salvarUsuario(fd: FormData) {
   const s = await requireSession();
   try { assert(can.configurar(s)); const id = int(fd, "id"); const email = str(fd, "email").toLowerCase(); const nome = str(fd, "nome"); const role = str(fd, "role"); const senha = str(fd, "senha");
     if (!email || !nome || !role) throw new Error("Informe e-mail, nome e perfil.");
+    if (/[\s:]/.test(email) || email.length > 200) throw new Error("Login inválido: use um e-mail (sem espaços nem “:”).");
     let unitId = int(fd, "unitId"); const employeeId = int(fd, "employeeId"); const ativo = str(fd, "ativo") !== "0";
     if ((role === "DIRETOR_UNIDADE" || role === "GESTOR") && !unitId) throw new Error("Diretor de unidade e Gestor precisam de uma unidade.");
     if (role === "COLABORADOR") {

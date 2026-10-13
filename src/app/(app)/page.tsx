@@ -36,7 +36,7 @@ export default async function Dashboard() {
   ]);
   return (
     <Page title="Início" sub={u === null ? "Rede — quatro unidades" : porUnidade[0]?.nome}>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Stat label="Colaboradores ativos" value={tot.ativos} hint={`${tot.ferias} em férias · ${tot.afastados} afastados`} href="/colaboradores" />
         <Stat label="Admissões em andamento" value={adm[0].n} href="/processos?tipo=ADMISSAO" />
         <Stat label="Desligamentos em andamento" value={desl[0].n} href="/processos?tipo=DESLIGAMENTO" />
@@ -44,7 +44,7 @@ export default async function Dashboard() {
         <Stat label="Documentos vencendo em 30 dias" value={docs[0].n} href="/documentos" />
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         <Card title="Por unidade">
           <Table head={["Unidade", "Ativos", "Em admissão"]}>
             {porUnidade.map(r => <tr key={r.nome}><Td>{r.nome}</Td><Td>{r.ativos}</Td><Td>{r.em_admissao}</Td></tr>)}
@@ -61,7 +61,7 @@ export default async function Dashboard() {
           </Table>
         </Card>
         <Card title="Datas do mês" >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <div className="mb-1 text-xs font-medium text-slate-600">Aniversariantes</div>
               {aniversariantes.length === 0 ? <div className="text-sm text-slate-500">Nenhum aniversário cadastrado neste mês.</div> : <ul className="space-y-0.5 text-sm">{aniversariantes.map(a => <li key={a.id}><span className="inline-block w-7 tabular-nums text-slate-500">{String(a.dia).padStart(2, "0")}</span><Link className="text-acao" href={`/colaboradores/${a.id}`}>{a.nome}</Link> <span className="text-xs text-slate-500">· {a.unidade}</span></li>)}</ul>}

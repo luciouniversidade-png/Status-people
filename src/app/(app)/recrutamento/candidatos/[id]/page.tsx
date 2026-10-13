@@ -18,7 +18,7 @@ export default async function Candidato({ params, searchParams }: { params: Prom
   return (
     <Page title={c.nome} sub={<span>{c.origem ? ORIGEM_CAND[c.origem] ?? c.origem : ""}{c.cidade ? ` · ${c.cidade}` : ""}{c.formacao ? ` · ${c.formacao}` : ""} · <Link className="text-acao" href="/recrutamento/candidatos">banco de talentos</Link></span>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <Card title="Candidaturas">
           <Table head={["Vaga", "Situação da vaga", "Etapa", "Scorecard", "Anotações", "Atualizada"]} empty="Sem candidaturas.">{apps.map(a => <tr key={a.id}><Td><Link className="text-acao" href={`/recrutamento/vagas/${a.requisition_id}`}>{a.vaga}</Link>{a.employee_id && <div className="text-xs"><Link className="text-ok" href={`/colaboradores/${a.employee_id}`}>contratado → ficha</Link></div>}</Td><Td className="text-xs">{REQ_STATUS[a.rstatus]}</Td><Td><Badge v={a.etapa === "CONTRATADO" ? "APROVADA" : a.etapa === "REPROVADO" ? "REJEITADA" : a.etapa === "DESISTIU" ? "CANCELADA" : "EM_ADMISSAO"} label={ETAPA_LABEL[a.etapa] ?? a.etapa} />{a.motivo && <div className="text-xs text-slate-500">{a.motivo}</div>}</Td><Td className="text-xs">{a.scorecard ? Object.entries(a.scorecard).map(([k, v]) => `${k}: ${v}`).join(" · ") : "—"}</Td><Td className="text-xs">{a.notas ?? "—"}</Td><Td className="text-xs">{fmtDataHora(a.updated_at)}</Td></tr>)}</Table>
         </Card>

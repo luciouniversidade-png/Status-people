@@ -23,7 +23,7 @@ export default async function Faixas({ searchParams }: { searchParams: Promise<R
   return (
     <Page title="Faixas salariais" sub="Estrutura de grades: mínimo, médio e máximo por faixa, e o intervalo de pontos da avaliação de cargos que leva a cada uma.">
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
         <Table head={["Faixa", "Nome", "Mínimo", "Médio", "Máximo", "Amplitude", "Pontos", "Cargos · pessoas", "Vigência", ""]} empty="Nenhuma faixa. Crie a estrutura ao lado (ex.: G1 a G8).">
           {grades.map(g => { const u = uso.find(x => x.grade_id === g.id); return <tr key={g.id}><Td className="font-medium">{g.codigo}</Td><Td>{g.nome ?? "—"}</Td><Td className="tabular-nums">{fmtBRL(g.minimo)}</Td><Td className="tabular-nums">{fmtBRL(g.medio)}</Td><Td className="tabular-nums">{fmtBRL(g.maximo)}</Td><Td>{Math.round(100 * (Number(g.maximo) - Number(g.minimo)) / Number(g.minimo))}%</Td><Td className="text-xs">{g.pontosMin !== null ? `${g.pontosMin}–${g.pontosMax}` : "—"}</Td><Td className="text-xs">{u ? `${u.cargos} · ${u.pessoas}` : "—"}</Td><Td className="text-xs">{fmtData(g.vigenciaInicio)}</Td>
             <Td>{pode && <div className="flex gap-1"><Modal label={"Editar"} kind="link"><div className=""><Form g={g} /></div></Modal><form action={excluirFaixa}><input type="hidden" name="id" value={g.id} /><button className="text-xs text-erro">excluir</button></form></div>}</Td></tr>; })}

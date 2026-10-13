@@ -15,7 +15,7 @@ export default async function Vistorias({ searchParams }: { searchParams: Promis
   return (
     <Page title="Vistorias" sub="Checklists por tipo de ambiente. Item não conforme pode virar chamado automaticamente." actions={gest ? <Btn kind="ghost" href="/api/export/vistorias">Exportar CSV</Btn> : undefined}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${gest ? "lg:grid-cols-[1fr_380px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${gest ? "lg:grid-cols-[minmax(0,1fr)_380px]" : ""} lg:items-start`}>
         <div className="space-y-4">
           {!scope && <form className="flex items-end gap-2"><Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Btn kind="ghost">Filtrar</Btn></form>}
           <Card title="Situação por ambiente (última vistoria)"><Table head={["Unidade", "Ambiente", "Checklist", "Última", "Conformidade", "Inspetor"]} empty="Nenhuma vistoria registrada.">{[...ultimaPorAmbiente.values()].map(r => { const pct = Math.round(100 * r.conformes / (r.total || 1)); return <tr key={r.id}><Td>{r.unidade}</Td><Td className="font-medium">{r.ambiente}</Td><Td className="text-xs">{r.tipo}</Td><Td>{fmtData(r.data)}</Td><Td><Badge v={pct === 100 ? "APROVADA" : pct >= 80 ? "PENDENTE" : "REJEITADA"} label={`${pct}% · ${r.conformes}/${r.total}`} /></Td><Td className="text-xs">{r.inspetor ?? "—"}</Td></tr>; })}</Table></Card>

@@ -31,7 +31,7 @@ export default async function Banco({ searchParams }: { searchParams: Promise<Re
         <Stat label="Crédito total" value={<span className="text-ok">{fmtMin(tot.pos)}</span>} />
         <Stat label="Lançamentos aguardando aprovação" value={pendentes.length} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-4">
           {pendentes.length > 0 && (
             <Card title="Aguardando aprovação">

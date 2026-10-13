@@ -15,7 +15,7 @@ export default async function Candidatos({ searchParams }: { searchParams: Promi
   return (
     <Page title="Banco de talentos" sub="Candidatos de todas as vagas. Busque por nome, formação, tags ou cidade." actions={<Btn kind="ghost" href="/recrutamento">Vagas</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${gestao ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${gestao ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>
         <div>
           <form className="mb-3 flex items-end gap-2"><Field label="Buscar"><Input name="q" defaultValue={q} /></Field><Btn kind="ghost">Filtrar</Btn></form>
           <Table head={["Candidato", "Contato", "Cidade", "Origem", "Formação / tags", "Última etapa", "Cadastro"]} empty="Nenhum candidato.">

@@ -23,7 +23,7 @@ export default async function Alunos({ searchParams }: { searchParams: Promise<R
     <Page title="Alunos e candidatos" sub={`${rows.length} registro(s) · situação em ${ano} (Regular)`}
       actions={<><Btn kind="ghost" href={`/api/export/matriculas?ano=${ano}`}>Exportar CSV</Btn>{can.reservar(s) && <><Btn kind="ghost" href="/matriculas/importar">Importar planilha</Btn><Btn href="/matriculas/alunos/novo">Novo aluno / candidato</Btn></>}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <form className="mb-4 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[1fr_220px_auto]">
+      <form className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_220px_auto]">
         <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Aluno, responsável ou telefone" /></Field>
         <Field label={`Situação ${ano}`}><Select name="situacao" defaultValue={sit}><option value="">Todas</option><option value="CONFIRMADA">Matriculados</option><option value="RESERVADA">Com reserva</option><option value="SEM">Sem vaga (candidatos / fila)</option><option value="CANCELADA">Cancelados</option></Select></Field>
         <div className="flex items-end"><Btn kind="ghost">Filtrar</Btn></div>

@@ -12,7 +12,7 @@ export default async function Importar({ searchParams }: { searchParams: Promise
   return (
     <Page title="Importar saldos do banco de horas" sub="Traz o saldo atual de cada colaborador da planilha para o sistema, como um ajuste aprovado na data do fechamento.">
       <Flash erro={erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form action={importarSaldos} className="space-y-3">
           <Field label="Data do fechamento (vale para as linhas sem coluna data)"><Input name="data" type="date" defaultValue={hoje()} className="max-w-[200px]" /></Field>
           <Field label="Conteúdo CSV"><Textarea name="csv" className="min-h-[300px] font-mono text-xs" placeholder={"nome;saldo;unidade\nAdrielly ...;-4215;Carandá\nLetícia ...;228\nKawan ...;16:05"} /></Field><Field label="Ou envie o arquivo (.xlsx/.xls/.csv)"><input type="file" name="arquivo" accept=".xlsx,.xls,.xlsm,.csv,.txt" className="block w-full rounded-md border border-line bg-white px-2 py-1.5 text-xs file:mr-2 file:rounded file:border-0 file:bg-acao file:px-2 file:py-1 file:text-xs file:text-white" /></Field>

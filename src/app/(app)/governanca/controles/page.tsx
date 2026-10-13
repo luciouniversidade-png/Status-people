@@ -42,7 +42,7 @@ export default async function Controles({ searchParams }: { searchParams: Promis
   return (
     <Page title="Controles e não conformidades" sub="Verificações periódicas com evidência; o que falha vira não conformidade com causa raiz, ação corretiva e verificação de eficácia." actions={<Btn kind="ghost" href="/api/export/ncs">Exportar NCs (CSV)</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-6">
           <div>
             <h2 className="mb-2 text-sm font-semibold text-navy">Controles</h2>

@@ -24,9 +24,9 @@ export default async function Casos({ searchParams }: { searchParams: Promise<Re
   return (
     <Page title="Casos de atendimento" sub="Solicitações, dúvidas, reclamações, elogios e pedidos de saída — com responsável e prazo (SLA)." actions={<Btn kind="ghost" href="/api/export/casos">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div>
-          <form className="mb-3 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[1fr_170px_170px_150px_auto]">
+          <form className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_170px_170px_150px_auto]">
             <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Assunto, aluno ou contato" /></Field>
             <Field label="Situação"><Select name="filtro" defaultValue={filtro}><option value="ABERTOS">Abertos</option><option value="ATRASADOS">SLA vencido</option><option value="MEUS">Meus casos</option><option value="FECHADOS">Resolvidos/fechados</option><option value="TODOS">Todos</option></Select></Field>
             <Field label="Tipo"><Select name="tipo" defaultValue={tipo}><option value="">Todos</option>{CASE_TIPOS.map(t => <option key={t} value={t}>{CASE_TIPO_LABEL[t]}</option>)}</Select></Field>

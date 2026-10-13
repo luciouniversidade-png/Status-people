@@ -44,7 +44,7 @@ export default async function Painel({ searchParams }: { searchParams: Promise<R
         <Stat label="Lista de espera" value={fila.n} href="/matriculas/fila" />
       </div>
       {(vencendo.length > 0 || comFilaEVaga.length > 0) && (
-        <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
           {vencendo.length > 0 && <Card title="Reservas vencendo hoje ou amanhã" className="border-amber-200">
             <Table head={["Aluno", "Turma", "Unidade", "Vence em"]}>{vencendo.map(v => <tr key={v.id}><Td><Link className="text-acao" href="/matriculas/reservas">{v.aluno}</Link></Td><Td>{v.turma}</Td><Td>{v.unidade}</Td><Td className={v.reserva_ate <= h ? "font-medium text-erro" : "text-aviso"}>{fmtData(v.reserva_ate)}</Td></tr>)}</Table>
           </Card>}

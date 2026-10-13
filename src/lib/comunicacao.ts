@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { sql } from "@/db";
 import { enviarEmail } from "./notify";
 
@@ -24,11 +25,20 @@ export async function enviarWhatsApp(fone: string, texto: string): Promise<{ ok:
   } catch (e) { return { ok: false, via: "api", erro: e instanceof Error ? e.message : "falha de rede" }; }
 }
 
+/** Aviso no sistema (sino) e, para quem ativou no celular, notificação push — só para avisos novos (a chave evita repetir). */
 export async function notificar(userIds: number[], titulo: string, texto: string | null, link: string | null, tipo: "INFO" | "ACAO" | "ALERTA" = "INFO", chave: string | null = null) {
+  const novos: number[] = [];
   for (const uid of new Set(userIds.filter(Boolean))) {
-    if (chave) await sql`INSERT INTO notifications (user_id, tipo, titulo, texto, link, chave) VALUES (${uid}, ${tipo}, ${titulo}, ${texto}, ${link}, ${chave}) ON CONFLICT (user_id, chave) WHERE chave IS NOT NULL DO NOTHING`;
-    else await sql`INSERT INTO notifications (user_id, tipo, titulo, texto, link) VALUES (${uid}, ${tipo}, ${titulo}, ${texto}, ${link})`;
+    const r = chave ? await sql`INSERT INTO notifications (user_id, tipo, titulo, texto, link, chave) VALUES (${uid}, ${tipo}, ${titulo}, ${texto}, ${link}, ${chave}) ON CONFLICT (user_id, chave) WHERE chave IS NOT NULL DO NOTHING RETURNING id`
+      : await sql`INSERT INTO notifications (user_id, tipo, titulo, texto, link) VALUES (${uid}, ${tipo}, ${titulo}, ${texto}, ${link}) RETURNING id`;
+    if (r.length) novos.push(uid);
   }
+  if (novos.length) dispararPush(novos, { titulo, texto, link, tipo, tag: chave ?? undefined });
+}
+/** Push depois da resposta (não atrasa quem clicou); fora de uma requisição, envia na hora. Falha de push nunca afeta o aviso no sistema. */
+function dispararPush(ids: number[], p: { titulo: string; texto: string | null; link: string | null; tipo: string; tag?: string }) {
+  const job = async () => { try { const { enviarPush } = await import("./push"); await enviarPush(ids, p); } catch { /* complemento */ } };
+  try { after(job); } catch { void job(); }
 }
 export async function usuariosPorPerfil(roles: string[], unitId: number | null = null) { const r = await sql<{ id: number }[]>`SELECT id FROM users WHERE ativo AND role = ANY(${roles}) ${unitId === null ? sql`` : sql`AND (unit_id IS NULL OR unit_id=${unitId})`}`; return r.map(x => x.id); }
 export async function naoLidas(userId: number) { const [r] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM notifications WHERE user_id=${userId} AND lida_em IS NULL`; return r.n; }

@@ -17,7 +17,7 @@ export default async function Turmas({ searchParams }: { searchParams: Promise<R
   const [rows, units, grades] = await Promise.all([ocupacao(ano, unitId), db.select().from(schema.units).orderBy(asc(schema.units.nome)), db.select().from(schema.grades).orderBy(asc(schema.grades.ordem))]);
   const editar = can.gradeTurmas(s);
   const Form = ({ t }: { t?: typeof rows[number] }) => (
-    <form action={salvarTurma} className="grid gap-2 sm:grid-cols-2">
+    <form action={salvarTurma} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {t && <input type="hidden" name="id" value={t.class_id} />}<input type="hidden" name="ano" value={ano} />
       <Field label="Unidade"><Select name="unitId" defaultValue={t?.unit_id ?? scope ?? ""} required>{units.filter(u => !scope || u.id === scope).map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>
       <Field label="Modalidade"><Select name="modalidade" defaultValue={t?.modalidade ?? "REGULAR"}><option value="REGULAR">Regular</option><option value="INTEGRAL">Integral</option></Select></Field>
@@ -39,7 +39,7 @@ export default async function Turmas({ searchParams }: { searchParams: Promise<R
         <Field label="Ano"><Input name="ano" type="number" defaultValue={ano} className="w-28" /></Field>
         <Btn kind="ghost">Filtrar</Btn>
       </form>
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Table head={["Turma", "Unidade", "Modalidade", "Série", "Turno", "Vagas", "Ocupação", "Situação", ""]} empty={`Nenhuma turma em ${ano}.`}>
           {rows.map(t => <tr key={t.class_id}>
             <Td><Link className="font-medium text-acao" href={`/matriculas/turmas/${t.class_id}`}>{t.nome}</Link></Td><Td>{t.unidade}</Td><Td>{t.modalidade === "REGULAR" ? "Regular" : "Integral"}</Td><Td>{t.serie ?? t.series_texto ?? "—"}</Td><Td>{t.turno}</Td><Td>{t.vagas}</Td>

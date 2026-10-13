@@ -19,7 +19,7 @@ export default async function Calendario({ searchParams }: { searchParams: Promi
     <Page title={`Calendário institucional ${ano}`} sub="Feriados, dias não letivos, recesso, férias coletivas e dispensas. Define a carga esperada de cada dia na folha de ponto.">
       <Flash ok={sp.ok} erro={sp.erro} />
       <form className="mb-4 flex items-end gap-2"><Field label="Ano"><Input name="ano" type="number" defaultValue={ano} className="w-28" /></Field><Btn kind="ghost">Ver</Btn></form>
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Table head={["Período", "Tipo", "Descrição", "Aplica-se a", "Unidade", ""]} empty={`Nenhum dia cadastrado em ${ano}.`}>
           {grupos.map((g, i) => <tr key={i}><Td className="whitespace-nowrap">{g.ini === g.fim ? fmtData(g.ini) : `${fmtData(g.ini)} – ${fmtData(g.fim)}`}</Td><Td>{CAL_TIPOS[g.tipo] ?? g.tipo}</Td><Td>{g.descricao ?? "—"}</Td><Td className="text-xs">{g.publico === "TODOS" ? "Todos" : g.publico === "DOCENTE" ? "Docentes" : "Administrativos"}</Td><Td>{g.unidade ?? "rede"}</Td>
             <Td>{can.configurar(s) && <form action={excluirDiaCalendario} className="flex gap-1">{g.ids.slice(0, 1).map(id => <input key={id} type="hidden" name="id" value={id} />)}{g.ids.length === 1 ? <Btn small danger>Excluir</Btn> : <span className="text-xs text-slate-400">{g.ids.length} dias — exclua por dia em Configurações avançadas ou recadastre o período</span>}</form>}</Td></tr>)}

@@ -1,14 +1,19 @@
 import Link from "@/components/Link";
 import { NavLink } from "@/components/NavLink";
+import { RegistrarSW } from "@/components/RegistrarSW";
 import { redirect } from "next/navigation";
-import { requireSession, requireActiveUser, destroySession, can, ROLE_LABEL } from "@/lib/auth";
+import { requireSession, requireActiveUser, destroySession, getSession, can, ROLE_LABEL } from "@/lib/auth";
+import { esquecerAparelho } from "@/lib/push";
 import { getSettings } from "@/lib/utils";
 import { naoLidas } from "@/lib/comunicacao";
 import { sql } from "@/db";
 import { SCHEMA_VERSION } from "@/lib/versao";
 import { atualizarBanco } from "./configuracoes/banco/actions";
+import { ehComite } from "@/lib/etica";
+import { podePrivacidade } from "@/lib/privacidade";
+import { veContratos, veLicencas } from "@/lib/contratos";
 
-async function sair() { "use server"; await destroySession(); redirect("/login"); }
+async function sair() { "use server"; const atual = await getSession(); await esquecerAparelho(atual?.id ?? null); await destroySession(); redirect("/login"); }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const s = await requireSession(); const u = await requireActiveUser(s);
@@ -22,38 +27,41 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const Sino = ({ cls }: { cls: string }) => <Link href="/notificacoes" aria-label="Notificações" className={cls}><span aria-hidden>🔔</span>{nNotif > 0 && <span className="rounded-full bg-erro px-1.5 text-[10px] font-semibold text-white">{nNotif > 99 ? "99+" : nNotif}</span>}</Link>;
   const pessoas: [string, string][] = [
     ["/", "Início"], ["/colaboradores", "Colaboradores"], ["/organograma", "Organograma"],
-    ["/processos", "Admissões e desligamentos"], ["/ferias", "Férias e afastamentos"], ["/banco-de-horas", "Banco de horas"], ["/ponto", "Ponto e jornada"], ["/documentos", "Documentos"], ["/relatorios", "Relatório mensal"],
+    ["/processos", "Admissões e desligamentos"], ["/ferias", "Férias e afastamentos"], ["/banco-de-horas", "Banco de horas"], ["/ponto", "Ponto e jornada"], ["/cobertura", "Substituição de professores"], ["/documentos", "Documentos"], ["/relatorios", "Relatório mensal"],
     ["/desempenho", "Desempenho"], ...(["RH", "DIRECAO"].includes(s.role) ? [["/desempenho/modelos", "Modelos de avaliação"] as [string, string], ["/desempenho/expectativas", "Expectativas por cargo"] as [string, string]] : []), ["/desempenho/lideranca", "Liderança e encaminhamentos"], ["/recrutamento", "Recrutamento"], ["/academy", "Academy"], ["/clima", "Clima e eNPS"], ["/sucessao", "Sucessão e talentos"], ...(["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(s.role) ? [["/analytics", "People Analytics"] as [string, string]] : []), ...(can.verSalario(s) ? [["/cargos-salarios", "Cargos e salários"] as [string, string]] : []),
   ];
   const matriculas: [string, string][] = [
-    ["/matriculas", "Painel de vagas"], ["/matriculas/turmas", "Turmas 2027"], ["/matriculas/alunos", "Alunos e candidatos"], ["/matriculas/reservas", "Reservas"], ["/matriculas/fila", "Lista de espera"],
+    ["/matriculas", "Painel de vagas"], ["/matriculas/turmas", "Turmas 2027"], ["/matriculas/alunos", "Alunos e candidatos"], ["/matriculas/reservas", "Reservas"], ["/matriculas/fila", "Lista de espera"], ["/matriculas/rematricula", "Rematrícula"],
   ];
   const atendimento: [string, string][] = [
-    ["/atendimento", "Painel de atendimento"], ["/atendimento/casos", "Casos"], ["/atendimento/risco", "Famílias em risco"], ["/atendimento/pesquisas", "Pesquisas NPS"],
+    ["/atendimento", "Painel de atendimento"], ["/atendimento/radar", "Radar da família"], ["/atendimento/casos", "Casos"], ["/atendimento/risco", "Famílias em risco"], ["/atendimento/pesquisas", "Pesquisas NPS"],
   ];
+  // v22: canal de ética só para o comitê (e Direção/RH); privacidade para Direção/RH/encarregado; autorizações de imagem para quem atende famílias
+  let membroEtica = false, gestorPriv = false; try { membroEtica = await ehComite(s); gestorPriv = await podePrivacidade(s); } catch { /* banco antigo */ }
+  const v22gov: [string, string][] = [...(gestorPriv ? [["/governanca/privacidade", "Privacidade (LGPD)"] as [string, string]] : []), ...(can.reservar(s) || gestorPriv || s.role === "LEITURA" ? [["/governanca/privacidade/consentimentos", "Autorizações de imagem"] as [string, string]] : []), ...(membroEtica || ["DIRECAO", "RH"].includes(s.role) ? [["/governanca/etica", "Canal de ética"] as [string, string]] : [])];
   const governanca: [string, string][] = [
-    ["/governanca", "Painel de governança"], ["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"], ["/governanca/decisoes", "Decisões"], ["/governanca/agentes", "Agentes de IA"],
+    ["/governanca", "Painel de governança"], ["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"], ["/governanca/decisoes", "Decisões"], ["/governanca/agentes", "Agentes de IA"], ...v22gov,
   ];
   const financeiro: [string, string][] = [
     ["/financeiro", "Painel financeiro"], ["/financeiro/inadimplencia", "Inadimplência e cobrança"], ["/financeiro/descontos", "Descontos e bolsas"], ["/financeiro/receita", "Receita"], ["/financeiro/caixa", "Fluxo de caixa"], ["/financeiro/orcamento", "Orçamento e DRE"],
   ];
   const operacoes: [string, string][] = [
-    ["/operacoes", "Painel de operações"], ["/operacoes/chamados", "Chamados"], ["/operacoes/ativos", "Ativos e patrimônio"], ["/operacoes/vistorias", "Vistorias"], ["/operacoes/fornecedores", "Fornecedores"],
+    ["/operacoes", "Painel de operações"], ["/operacoes/chamados", "Chamados"], ["/operacoes/ativos", "Ativos e patrimônio"], ["/operacoes/vistorias", "Vistorias"], ["/operacoes/fornecedores", "Fornecedores"], ["/operacoes/espacos", "Mapa de salas e reservas"], ["/operacoes/seguranca", "Portaria e segurança"], ...(veContratos(s) ? [["/operacoes/contratos", "Contratos de fornecedores"] as [string, string]] : []), ...(veLicencas(s) ? [["/operacoes/licencas", "Licenças e alvarás"] as [string, string]] : []),
   ];
-  const estrategia: [string, string][] = [["/estrategia", "Painel estratégico"], ["/estrategia/okrs", "OKRs"], ["/estrategia/projetos", "Projetos"]];
+  const estrategia: [string, string][] = [["/estrategia", "Painel estratégico"], ["/estrategia/identidade", "Identidade"], ["/estrategia/mapa", "Mapa estratégico"], ["/estrategia/indicadores", "Indicadores"], ["/estrategia/okrs", "OKRs"], ["/estrategia/projetos", "Projetos"], ["/estrategia/acoes", "Plano de ação"], ["/estrategia/rituais", "Rituais de gestão"], ["/estrategia/marketing", "Marketing e captação"], ["/estrategia/relatorio", "Relatório executivo"], ["/estrategia/assistente", "Assistente IA"]];
   const comunicacao: [string, string][] = [["/comunicacao/comunicados", "Comunicados"], ["/comunicacao/mensagens", "Mensagens"], ["/comunicacao/modelos", "Modelos de mensagem"], ["/notificacoes", `Notificações${nNotif ? ` (${nNotif})` : ""}`]];
   const geral: [string, string][] = [
     ...(["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role) ? [["/command-center", "Command Center"] as [string, string], ["/tv", "Modo TV"] as [string, string]] : []),
     ...(can.auditoria(s) ? [["/auditoria", "Auditoria"] as [string, string]] : []),
     ...(can.configurar(s) ? [["/configuracoes", "Configurações"] as [string, string]] : []), ...(["DIRECAO", "RH"].includes(s.role) ? [["/configuracoes/banco", "Banco de dados"] as [string, string]] : []),
-    ["/conta", "Minha conta"],
+    ...(s.role !== "LEITURA" ? [["/solicitacoes", "Solicitações e aprovações"] as [string, string]] : []), ["/conta", "Minha conta"],
   ];
   const grupos: [string, [string, string][]][] =
-    s.role === "COLABORADOR" ? [["", [[s.employeeId ? `/colaboradores/${s.employeeId}` : "/conta", "Minha ficha"], ...(s.employeeId ? [[`/colaboradores/${s.employeeId}/painel`, "Meu painel"] as [string, string]] : []), ["/desempenho/minha", "Minha avaliação"], ["/academy/minha", "Meus treinamentos"], ["/governanca/pops", "POPs e processos"], ["/operacoes/chamados", "Abrir chamado"], ["/comunicacao/comunicados", "Comunicados"], ["/notificacoes", `Notificações${nNotif ? ` (${nNotif})` : ""}`], ["/conta", "Minha conta"]]]] :
-    s.role === "OPERACOES" ? [["Operações", operacoes], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"]]], ["", [["/conta", "Minha conta"]]]] :
-    s.role === "COMERCIAL" ? [["Matrículas", matriculas], ["Atendimento", atendimento], ["Financeiro", [["/financeiro/descontos", "Descontos e bolsas"]]], ["Operações", [["/operacoes/chamados", "Abrir chamado"]]], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"]]], ["", [["/conta", "Minha conta"]]]] :
-    s.role === "FINANCEIRO" ? [["Financeiro", financeiro], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Matrículas", [["/matriculas", "Painel de vagas"], ["/matriculas/alunos", "Alunos e candidatos"]]], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"]]], ["", [["/command-center", "Command Center"], ["/conta", "Minha conta"]]]] :
-    s.role === "LEITURA" ? [["Pessoas", pessoas], ["Matrículas", matriculas], ["Atendimento", atendimento], ["Governança", [["/governanca/pops", "POPs e processos"]]], ["", geral]] :
+    s.role === "COLABORADOR" ? [["", [[s.employeeId ? `/colaboradores/${s.employeeId}` : "/conta", "Minha ficha"], ...(s.employeeId ? [[`/colaboradores/${s.employeeId}/painel`, "Meu painel"] as [string, string]] : []), ["/desempenho/minha", "Minha avaliação"], ["/academy/minha", "Meus treinamentos"], ["/cobertura/minha", "Minhas substituições"], ["/solicitacoes", "Solicitações"], ["/governanca/pops", "POPs e processos"], ["/operacoes/chamados", "Abrir chamado"], ["/operacoes/espacos/reservas", "Reservar espaço"], ["/comunicacao/comunicados", "Comunicados"], ["/notificacoes", `Notificações${nNotif ? ` (${nNotif})` : ""}`], ["/conta", "Minha conta"]]]] :
+    s.role === "OPERACOES" ? [["Operações", operacoes], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"], ...v22gov]], ["", [["/solicitacoes", "Solicitações e aprovações"], ["/conta", "Minha conta"]]]] :
+    s.role === "COMERCIAL" ? [["Matrículas", matriculas], ["Atendimento", atendimento], ["Financeiro", [["/financeiro/descontos", "Descontos e bolsas"]]], ["Operações", [["/operacoes/chamados", "Abrir chamado"], ["/operacoes/espacos/reservas", "Reservar espaço"], ["/operacoes/seguranca", "Portaria e saídas"]]], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"], ...v22gov]], ["", [["/solicitacoes", "Solicitações e aprovações"], ["/conta", "Minha conta"]]]] :
+    s.role === "FINANCEIRO" ? [["Financeiro", [...financeiro, ["/operacoes/contratos", "Contratos de fornecedores"]]], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Matrículas", [["/matriculas", "Painel de vagas"], ["/matriculas/alunos", "Alunos e candidatos"], ["/matriculas/rematricula", "Rematrícula"]]], ["Governança", [["/governanca/pops", "POPs e processos"], ["/governanca/excecoes", "Exceções"], ["/governanca/controles", "Controles e não conformidades"], ...v22gov]], ["", [["/command-center", "Command Center"], ["/solicitacoes", "Solicitações e aprovações"], ["/conta", "Minha conta"]]]] :
+    s.role === "LEITURA" ? [["Pessoas", pessoas], ["Matrículas", matriculas], ["Atendimento", atendimento], ["Governança", [["/governanca/pops", "POPs e processos"], ...v22gov]], ["", geral]] :
     [["Pessoas", pessoas], ["Matrículas", matriculas], ["Atendimento", atendimento], ["Financeiro", s.role === "GESTOR" ? [] : financeiro], ["Operações", operacoes], ["Estratégia", estrategia], ["Comunicação", comunicacao], ["Governança", governanca], ["", geral]].filter(([, items]) => items.length) as [string, [string, string][]][];
   const nav = grupos.flatMap(([, items]) => items);
   const links = (cls: string) => grupos.flatMap(([titulo, items]) => [
@@ -62,7 +70,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   void nav;
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[230px_1fr]">
+    <div className="min-h-screen md:grid md:grid-cols-[230px_minmax(0,1fr)]">
+      <RegistrarSW />
       <aside className="sticky top-0 z-20 bg-navy text-white md:static md:min-h-screen">
         {/* Celular: cabeçalho com botão Menu que abre a lista completa */}
         <details className="md:hidden">

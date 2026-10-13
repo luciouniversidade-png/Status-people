@@ -26,7 +26,7 @@ export default async function Comunicados({ searchParams }: { searchParams: Prom
     <Page title="Comunicados internos" sub="Mural da equipe. Comunicados com ciência obrigatória mostram quem já leu." actions={<><Btn kind="ghost" href="/comunicacao/mensagens">Mensagens às famílias</Btn><Btn kind="ghost" href="/comunicacao/modelos">Modelos</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       {pendentes.length > 0 && <Card className="mb-4 border-amber-200"><p className="text-sm">Você tem <b>{pendentes.length}</b> comunicado(s) aguardando sua ciência.</p></Card>}
-      <div className={`grid gap-4 ${pode ? "lg:grid-cols-[1fr_360px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${pode ? "lg:grid-cols-[minmax(0,1fr)_360px]" : ""} lg:items-start`}>
         <div className="space-y-3">{rows.length === 0 && <Card><p className="text-sm text-slate-500">Nenhum comunicado.</p></Card>}
           {rows.map(r => <Card key={r.id} className={r.fixado ? "border-sky-300" : ""} title={<span id={`c${r.id}`} className="flex flex-wrap items-center gap-2">{r.fixado && <Badge v="APROVADA" label="fixado" />}{r.titulo}<span className="text-xs font-normal text-slate-500">· {r.autor_nome} · {fmtDataHora(r.publicado_em)} · {r.publico === "TODOS" ? "toda a equipe" : r.publico === "UNIDADE" ? r.unidade : ROLE_LABEL[r.role as Role] ?? r.role}</span></span>}>
             <p className="whitespace-pre-wrap text-sm">{r.texto}</p>

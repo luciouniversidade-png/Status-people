@@ -14,7 +14,7 @@ export default async function Auditoria({ searchParams }: { searchParams: Promis
   const labels: Record<string, string> = { employees: "Colaborador", leave_requests: "Férias/afastamento", hour_entries: "Banco de horas", documents: "Documento", processes: "Processo", process_items: "Item de checklist", users: "Usuário", settings: "Configuração", positions: "Cargo", units: "Unidade", companies: "Empresa" };
   return (
     <Page title="Auditoria" sub="Trilha imutável: quem fez o quê, quando. Registros não podem ser editados nem apagados pela interface.">
-      <form className="mb-4 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[220px_1fr_auto]">
+      <form className="mb-4 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[220px_minmax(0,1fr)_auto]">
         <Field label="Entidade"><Select name="entidade" defaultValue={ent}><option value="">Todas</option>{Object.entries(labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
         <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Usuário, ação ou conteúdo" /></Field>
         <div className="flex items-end"><Btn kind="ghost">Filtrar</Btn></div>

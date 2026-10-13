@@ -24,9 +24,9 @@ export default async function Pops({ searchParams }: { searchParams: Promise<Rec
   return (
     <Page title="POPs e processos" sub="Biblioteca de procedimentos operacionais padrão. Vigentes pedem ciência da equipe; cada publicação vira uma versão." actions={gestao ? <Btn kind="ghost" href="/api/export/pops">Exportar CSV</Btn> : undefined}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${gestao ? "lg:grid-cols-[1fr_340px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${gestao ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>
         <div>
-          <form className="mb-3 grid gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[1fr_200px_170px_auto]">
+          <form className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_200px_170px_auto]">
             <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Código, título ou texto dos passos" /></Field>
             <Field label="Área"><Select name="area" defaultValue={area}><option value="">Todas</option>{cfg.governanca.areas.map(a => <option key={a}>{a}</option>)}</Select></Field>
             <Field label="Situação"><Select name="status" defaultValue={status}><option value="">Todas (exceto obsoletos)</option>{Object.entries(POP_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
@@ -41,7 +41,7 @@ export default async function Pops({ searchParams }: { searchParams: Promise<Rec
         </div>
         {gestao && <Card title="Novo POP">
           <form action={salvarPop} className="space-y-2">
-            <div className="grid grid-cols-[110px_1fr] gap-2"><Field label="Código"><Input name="codigo" required placeholder="POP-010" /></Field><Field label="Título"><Input name="titulo" required /></Field></div>
+            <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2"><Field label="Código"><Input name="codigo" required placeholder="POP-010" /></Field><Field label="Título"><Input name="titulo" required /></Field></div>
             <Field label="Área"><Select name="area" defaultValue={cfg.governanca.areas[0]}>{cfg.governanca.areas.map(a => <option key={a}>{a}</option>)}</Select></Field>
             <div className="grid grid-cols-2 gap-2"><Field label="Dono"><Select name="ownerUserId" defaultValue={s.id}>{users.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Field label="Unidade"><Select name="unitId" defaultValue=""><option value="">Rede</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field></div>
             <Field label="Objetivo"><Input name="objetivo" /></Field>

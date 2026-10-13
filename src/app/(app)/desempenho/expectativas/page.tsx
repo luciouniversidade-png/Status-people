@@ -20,7 +20,7 @@ export default async function Expectativas({ searchParams }: { searchParams: Pro
   return (
     <Page title="Perfis de expectativas por cargo" sub="Finalidade, responsabilidades, entregas, competências com nível requerido, comportamentos observáveis, evidências adequadas e condições para o trabalho — versionados e com ciência do colaborador." actions={<Btn kind="ghost" href="/desempenho">Desempenho</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className={`grid gap-4 ${rh ? "lg:grid-cols-[1fr_460px]" : ""} lg:items-start`}>
+      <div className={`grid grid-cols-1 gap-4 ${rh ? "lg:grid-cols-[minmax(0,1fr)_460px]" : ""} lg:items-start`}>
         <Table head={["Perfil", "Aplica-se a", "Versão", "Situação", "Vigência", "Ciência"]} empty="Nenhum perfil cadastrado.">{rows.map(r => <tr key={r.id}><Td><Link className="font-medium text-acao" href={`/desempenho/expectativas/${r.id}`}>{r.titulo}</Link></Td><Td className="text-xs">{r.cargo ?? (r.familia ? FAMILIAS[r.familia] : "—")}{r.nivel ? ` · ${r.nivel}` : ""}</Td><Td>v{r.versao}</Td><Td><Badge v={r.status === "VIGENTE" ? "APROVADA" : r.status === "ARQUIVADO" ? "CANCELADA" : "EM_AQUISICAO"} label={r.status.toLowerCase()} /></Td><Td className="text-xs">{r.vigencia_inicio ? `desde ${fmtData(r.vigencia_inicio)}` : "—"}</Td><Td className="text-xs">{r.status === "VIGENTE" ? `${r.acks}/${r.alvo}` : "—"}</Td></tr>)}</Table>
         {rh && <Card title="Novo perfil (rascunho)"><form action={salvarExpectativas} className="space-y-2"><CamposPerfil positions={positions} /><Btn small>Criar rascunho</Btn></form></Card>}
       </div>

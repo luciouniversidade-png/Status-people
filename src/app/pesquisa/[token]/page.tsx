@@ -3,10 +3,11 @@ import { db, schema } from "@/db";
 import { asc } from "drizzle-orm";
 import { responderPesquisa } from "@/app/(app)/clima-academy/actions";
 import type { Pergunta } from "@/lib/clima-academy";
+import { textoErro } from "@/lib/aviso";
 
 export const dynamic = "force-dynamic";
 
-export default async function PesquisaPublica({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ erro?: string; obrigado?: string }> }) {
+export default async function PesquisaPublica({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ erro?: string; as?: string; obrigado?: string }> }) {
   const { token } = await params; const sp = await searchParams;
   const [sv] = await db.select().from(schema.climateSurveys).where(eq(schema.climateSurveys.token, token));
   const units = await db.select().from(schema.units).orderBy(asc(schema.units.nome));
@@ -18,7 +19,7 @@ export default async function PesquisaPublica({ params, searchParams }: { params
     <Shell>
       <h1 className="text-xl font-semibold text-navy">{sv.nome}</h1>
       <p className="mt-1 text-sm text-slate-600">Anônima: não registramos seu nome, e-mail ou login. Os resultados só aparecem em grupos com pelo menos {sv.minimoAnonimato} respostas.</p>
-      {sp.erro && <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-erro">{decodeURIComponent(sp.erro)}</p>}
+      {textoErro(sp) && <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-erro">{textoErro(sp)}</p>}
       <form action={responderPesquisa} className="mt-5 space-y-5"><input type="hidden" name="token" value={token} />
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
           <label className="block text-sm"><span className="mb-1 block font-medium text-slate-700">Unidade em que você trabalha (opcional)</span><select name="unitId" className="w-full rounded-md border border-line px-3 py-2 text-sm"><option value="">Prefiro não informar</option>{units.filter(x => !sv.unitId || x.id === sv.unitId).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</select></label>

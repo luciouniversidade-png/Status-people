@@ -39,6 +39,13 @@ export async function requireStaff(): Promise<Session> {
   return s;
 }
 
+/** Páginas da Estratégia (gestão): todos os perfis de equipe, exceto autoatendimento. Cada ação confere a própria permissão e o escopo. */
+export async function requireGestao(): Promise<Session> {
+  const s = await requireSession();
+  if (s.role === "COLABORADOR") redirect(s.employeeId ? `/colaboradores/${s.employeeId}` : "/conta");
+  return s;
+}
+
 /** Páginas do módulo Financeiro. */
 export async function requireFinanceiro(permitirComercial = false): Promise<Session> {
   const s = await requireSession();
@@ -60,6 +67,9 @@ export const JANELA_MIN = 15;           // ...em 15 minutos bloqueiam novas tent
 /** Retorna a sessão, ou "bloqueado" quando há tentativas demais, ou null quando credenciais não conferem. */
 export async function login(email: string, senha: string, ip?: string | null): Promise<Session | "bloqueado" | null> {
   const e = email.trim().toLowerCase();
+  // chaves internas de limite de tentativas ("REMATRICULA:12", "etica:ET-…") nunca são alcançáveis pelo formulário de login:
+  // a entrada é minúscula e logins não têm ":" (ex.: rh@colegiostatus, direcao.teste)
+  if (!e || e.includes(":") || /\s/.test(e) || e.length > 200) return null;
   const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM login_attempts WHERE email=${e} AND ok=false AND at > now() - interval '15 minutes'`;
   if (n >= MAX_TENTATIVAS) return "bloqueado";
   // seleção explícita de colunas: o login continua funcionando mesmo antes de uma atualização de esquema ser aplicada

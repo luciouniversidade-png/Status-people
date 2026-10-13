@@ -54,7 +54,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       actions={<><Btn kind="ghost" href={`/colaboradores/${id}/painel`}>Painel do Colaborador</Btn>{can.editar(s) && <><Btn kind="ghost" href={`/colaboradores/${id}/editar`}>Editar</Btn>{emp.situacao !== "DESLIGADO" && <Btn kind="ghost" href="#desligamento">Desligar</Btn>}</>}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card title="Dados" className="lg:col-span-2">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
             {[
@@ -83,7 +83,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       {/* ---------- Férias e afastamentos ---------- */}
       <Card title="Férias e afastamentos" className="mt-4" >
         <div id="ferias" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4">
             <Table head={["Período aquisitivo", "Concessivo até", "Direito", "Usados", "Saldo", "Situação"]}>
               {periodos.map(p => <tr key={p.inicio}><Td>{fmtData(p.inicio)} – {fmtData(p.fim)}</Td><Td>{fmtData(p.concessivoAte)}</Td><Td>{p.direito}</Td><Td>{p.usados}</Td><Td className="font-medium">{p.saldo}</Td><Td><Badge v={p.status} label={{ EM_AQUISICAO: "Em aquisição", ABERTO: "Disponível", VENCIDO: "Vencido — férias em dobro", QUITADO: "Quitado" }[p.status]} /></Td></tr>)}
@@ -126,7 +126,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       {/* ---------- Banco de horas ---------- */}
       <Card title="Lançamentos do banco de horas" className="mt-4">
         <div id="banco" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Table head={["Data", "Tipo", "Minutos", "Descrição", "Situação", ""]} empty="Nenhum lançamento. O saldo começa em zero.">
             {hours.map(x => (
               <tr key={x.id}>
@@ -159,7 +159,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       {/* ---------- Documentos ---------- */}
       <Card title="Documentos" className="mt-4">
         <div id="documentos" />
-        <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
           <Table head={["Documento", "Recebido em", "Validade", "Situação", "Link", ""]} empty="Nenhum documento listado.">
             {docs.map(d => { const st = docStatus(d); return (
               <tr key={d.id}>
@@ -197,15 +197,15 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       </Card>
 
       {/* ---------- Remuneração e 1:1 ---------- */}
-      <div className="mt-4 grid gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         {can.verSalario(s) && <Card title="Remuneração">
           <Table head={["Data", "De", "Para", "Motivo", "Justificativa"]} empty="Sem histórico salarial registrado.">{salHist.map((x, i) => <tr key={i}><Td>{fmtData(x.data)}</Td><Td className="tabular-nums">{fmtBRL(x.salario_anterior)}</Td><Td className="tabular-nums">{fmtBRL(x.salario)}</Td><Td className="text-xs">{MOTIVO_SAL[x.motivo] ?? x.motivo}</Td><Td className="text-xs text-slate-600">{x.obs ?? "—"}</Td></tr>)}</Table>
-          {can.aprovar(s, cfg.alcadas.remuneracao) && emp.situacao !== "DESLIGADO" && <form action={reajustarSalario} className="mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-[1fr_1fr_1fr_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Novo salário (R$)"><Input name="salario" type="number" step="0.01" min={0} required defaultValue={emp.salario ?? ""} /></Field><Field label="Motivo"><Select name="motivo" defaultValue="MERITO">{Object.entries(MOTIVO_SAL).filter(([k]) => k !== "ADMISSAO").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Justificativa"><Input name="obs" /></Field><div className="flex items-end"><Btn small>Reajustar</Btn></div></form>}
+          {can.aprovar(s, cfg.alcadas.remuneracao) && emp.situacao !== "DESLIGADO" && <form action={reajustarSalario} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Novo salário (R$)"><Input name="salario" type="number" step="0.01" min={0} required defaultValue={emp.salario ?? ""} /></Field><Field label="Motivo"><Select name="motivo" defaultValue="MERITO">{Object.entries(MOTIVO_SAL).filter(([k]) => k !== "ADMISSAO").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Justificativa"><Input name="obs" /></Field><div className="flex items-end"><Btn small>Reajustar</Btn></div></form>}
           {position && <p className="mt-2 text-xs text-slate-500"><Link className="text-acao" href={`/cargos-salarios/${position.id}`}>Ver faixa e ocupantes do cargo</Link></p>}
         </Card>}
         <Card title="Conversas 1:1">
           <ul className="space-y-1 text-sm">{checkins.length === 0 && <li className="text-slate-500">Nenhuma conversa registrada.</li>}{checkins.map(k => <li key={k.id}><span className="text-xs text-slate-500">{fmtData(k.data)} · {k.quem}</span> — {k.temas}{k.combinados && <div className="text-xs text-slate-600">Combinados: {k.combinados}</div>}</li>)}</ul>
-          {["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role) && emp.situacao !== "DESLIGADO" && <form action={registrarCheckin} className="mt-3 grid gap-2 border-t border-line pt-3 sm:grid-cols-[140px_1fr_1fr_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Data"><Input name="data" type="date" defaultValue={h} /></Field><Field label="Temas"><Input name="temas" required /></Field><Field label="Combinados"><Input name="combinados" /></Field><div className="flex items-end"><Btn small kind="ghost">Registrar</Btn></div></form>}
+          {["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role) && emp.situacao !== "DESLIGADO" && <form action={registrarCheckin} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[140px_minmax(0,1fr)_minmax(0,1fr)_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Data"><Input name="data" type="date" defaultValue={h} /></Field><Field label="Temas"><Input name="temas" required /></Field><Field label="Combinados"><Input name="combinados" /></Field><div className="flex items-end"><Btn small kind="ghost">Registrar</Btn></div></form>}
           <p className="mt-2 text-xs text-slate-500"><Link className="text-acao" href="/desempenho">Ciclos de desempenho</Link></p>
         </Card>
       </div>
@@ -228,7 +228,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       {can.editar(s) && emp.situacao !== "DESLIGADO" && (
         <Card title="Desligar colaborador" className="mt-4 border-red-200">
           <div id="desligamento" />
-          <form action={iniciarDesligamento} className="grid gap-3 sm:grid-cols-[180px_1fr_auto]">
+          <form action={iniciarDesligamento} className="grid grid-cols-1 gap-3 sm:grid-cols-[180px_minmax(0,1fr)_auto]">
             <input type="hidden" name="id" value={id} />
             <Field label="Data do desligamento"><Input name="desligamento" type="date" defaultValue={h} required /></Field>
             <Field label="Motivo"><Input name="motivo" placeholder="Ex.: pedido do colaborador · término de contrato · sem justa causa" /></Field>

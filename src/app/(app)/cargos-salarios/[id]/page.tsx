@@ -25,7 +25,7 @@ export default async function Cargo({ params, searchParams }: { params: Promise<
   return (
     <Page title={p.nome} sub={<span>{p.area}{p.regulamentado ? " · regulamentado" : ""} · {grade ? `faixa ${grade.codigo} (${fmtBRL(grade.minimo)} – ${fmtBRL(grade.maximo)})` : "sem faixa"}{p.pontos ? ` · ${p.pontos} pontos` : ""} · <Link className="text-acao" href="/cargos-salarios">tabela</Link></span>}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_360px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
         <div className="space-y-4">
           <Card title={`Ocupantes (${ocupantes.length})`}>
             <Table head={["Colaborador", "Unidade", "Nível", "Admissão", "Salário", "Posição na faixa", ""]} empty="Nenhum ocupante ativo.">

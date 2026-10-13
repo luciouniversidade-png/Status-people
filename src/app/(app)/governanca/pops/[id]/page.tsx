@@ -27,18 +27,18 @@ export default async function Pop({ params, searchParams }: { params: Promise<{ 
     <Page title={`${p.codigo} — ${p.titulo}`} sub={<span className="flex flex-wrap items-center gap-2"><Badge v={p.status === "VIGENTE" ? "APROVADA" : p.status === "EM_REVISAO" ? "PENDENTE" : p.status === "OBSOLETO" ? "CANCELADA" : "EM_AQUISICAO"} label={POP_STATUS[p.status]} /> v{p.versao} · {p.area} · dono: {owner?.nome ?? <span className="text-aviso">não definido</span>}{p.publicadoEm && ` · publicado ${fmtDataHora(p.publicadoEm)}`}{p.revisarEm && ` · revisar em ${fmtData(p.revisarEm)}`} · <Link className="text-acao" href="/governanca/pops">biblioteca</Link></span>}
       actions={<PrintButton />}>
       <Flash ok={sp.ok} erro={sp.erro} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px] lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">
           <Card title="Procedimento">
             {p.objetivo && <p className="mb-2 text-sm"><span className="text-xs font-medium text-slate-500">Objetivo · </span>{p.objetivo}</p>}
             {p.escopo && <p className="mb-2 text-sm"><span className="text-xs font-medium text-slate-500">Escopo · </span>{p.escopo}</p>}
             {passos.length ? <ol className="mt-3 space-y-1.5 text-sm">{passos.map((x, i) => <li key={i} className="flex gap-3"><span className="w-6 shrink-0 text-right font-semibold tabular-nums text-navy">{i + 1}.</span><span>{x.replace(/^\d+[.)]\s*/, "")}</span></li>)}</ol> : <p className="text-sm text-slate-500">Sem passos cadastrados — cole o texto oficial no formulário ao lado.</p>}
-            {(p.responsavel || p.aprovador || p.consultados || p.informados) && <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-4">{[["Responsável (executa)", p.responsavel], ["Aprovador", p.aprovador], ["Consultados", p.consultados], ["Informados", p.informados]].map(([k, v]) => v ? <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div> : null)}</dl>}
+            {(p.responsavel || p.aprovador || p.consultados || p.informados) && <dl className="mt-4 grid grid-cols-1 gap-2 text-sm sm:grid-cols-4">{[["Responsável (executa)", p.responsavel], ["Aprovador", p.aprovador], ["Consultados", p.consultados], ["Informados", p.informados]].map(([k, v]) => v ? <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd>{v}</dd></div> : null)}</dl>}
             {p.indicadores && <p className="mt-3 text-sm"><span className="text-xs font-medium text-slate-500">Indicadores · </span>{p.indicadores}</p>}
             {p.link && <p className="mt-2 text-sm"><a className="text-acao" href={p.link} target="_blank" rel="noreferrer">Documento completo (Drive)</a></p>}
             {p.status === "VIGENTE" && <div className="mt-4 border-t border-line pt-3 print:hidden">{jaDeu ? <p className="text-sm text-ok">Você já deu ciência desta versão.</p> : <form action={darCiencia}><input type="hidden" name="id" value={pid} /><Btn>Li e entendi este procedimento (v{p.versao})</Btn></form>}</div>}
           </Card>
-          {p.status === "VIGENTE" && <Card title={`Ciência da equipe — versão ${p.versao} (${acks.length})`}>{acks.length === 0 ? <p className="text-sm text-slate-500">Ninguém deu ciência ainda.</p> : <ul className="grid gap-1 text-sm sm:grid-cols-2">{acks.map((a, i) => <li key={i}>{a.nome} <span className="text-xs text-slate-500">· {fmtDataHora(a.at)}</span></li>)}</ul>}</Card>}
+          {p.status === "VIGENTE" && <Card title={`Ciência da equipe — versão ${p.versao} (${acks.length})`}>{acks.length === 0 ? <p className="text-sm text-slate-500">Ninguém deu ciência ainda.</p> : <ul className="grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">{acks.map((a, i) => <li key={i}>{a.nome} <span className="text-xs text-slate-500">· {fmtDataHora(a.at)}</span></li>)}</ul>}</Card>}
           <Anexos entidade="procedure" id={pid} voltar={`/governanca/pops/${pid}`} podeEnviar={podeEditar} titulo="Modelos, formulários e evidências do POP" />
           {versoes.length > 0 && <Card title="Histórico de versões"><ul className="space-y-1 text-sm">{versoes.map(v => <li key={v.id}>v{v.versao} · {fmtDataHora(v.publicadoEm)} · {users.find(u => u.id === v.publicadoPor)?.nome ?? ""}{v.notas ? ` — ${v.notas}` : ""}</li>)}</ul></Card>}
         </div>
@@ -49,7 +49,7 @@ export default async function Pop({ params, searchParams }: { params: Promise<{ 
           </Card>}
           {podeEditar && p.status !== "OBSOLETO" && <Card title="Editar conteúdo">
             <form action={salvarPop} className="space-y-2"><input type="hidden" name="id" value={pid} />
-              <div className="grid grid-cols-[100px_1fr] gap-2"><Field label="Código"><Input name="codigo" defaultValue={p.codigo} required /></Field><Field label="Título"><Input name="titulo" defaultValue={p.titulo} required /></Field></div>
+              <div className="grid grid-cols-[100px_minmax(0,1fr)] gap-2"><Field label="Código"><Input name="codigo" defaultValue={p.codigo} required /></Field><Field label="Título"><Input name="titulo" defaultValue={p.titulo} required /></Field></div>
               <div className="grid grid-cols-2 gap-2"><Field label="Área"><Select name="area" defaultValue={p.area}>{cfg.governanca.areas.map(a => <option key={a}>{a}</option>)}</Select></Field><Field label="Unidade"><Select name="unitId" defaultValue={p.unitId ?? ""}><option value="">Rede</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field></div>
               <div className="grid grid-cols-2 gap-2"><Field label="Dono"><Select name="ownerUserId" defaultValue={p.ownerUserId ?? ""}><option value="">—</option>{users.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Field label="Próxima revisão"><Input name="revisarEm" type="date" defaultValue={p.revisarEm ?? ""} /></Field></div>
               <Field label="Objetivo"><Textarea name="objetivo" className="min-h-[50px]" defaultValue={p.objetivo ?? ""} /></Field>

@@ -8,6 +8,7 @@ import { inadimplencia } from "./financeiro";
 import { mapaSucessao } from "./talentos-analytics";
 import { matrizTreinamento } from "./clima-academy";
 import { mesRef } from "./relatorio";
+import { FONTES_EXTRA, metricasExtra } from "./metricas-extra";
 
 export const PROJ_STATUS: Record<string, string> = { IDEIA: "Ideia", PLANEJADO: "Planejado", EM_ANDAMENTO: "Em andamento", PAUSADO: "Pausado", CONCLUIDO: "Concluído", CANCELADO: "Cancelado" };
 export const SAUDE: Record<string, string> = { VERDE: "No rumo", AMARELO: "Atenção", VERMELHO: "Em risco" };
@@ -32,6 +33,7 @@ export const FONTES: Record<string, { nome: string; metrica: string }> = {
   "governanca.ciencia": { nome: "POPs vigentes com ciência completa", metrica: "%" },
   "operacoes.sla": { nome: "Chamados concluídos dentro do SLA (90 dias)", metrica: "%" },
   "operacoes.vistorias": { nome: "Conformidade média das vistorias (90 dias)", metrica: "%" },
+  ...Object.fromEntries(Object.entries(FONTES_EXTRA).map(([k, v]) => [k, { nome: v.nome, metrica: v.metrica }])),
 };
 
 export async function metricasSistema(unitId: number | null): Promise<Record<string, number | null>> {
@@ -42,7 +44,7 @@ export async function metricasSistema(unitId: number | null): Promise<Record<str
     sql<{ pct: number | null }[]>`SELECT (100.0 * count(*) FILTER (WHERE (SELECT count(*) FROM users u WHERE u.ativo AND u.role <> 'LEITURA') <= (SELECT count(*) FROM procedure_acks a WHERE a.procedure_id=p.id AND a.versao=p.versao)) / nullif(count(*),0))::numeric(5,1)::float AS pct FROM procedures p WHERE p.status='VIGENTE'`]);
   const vagas = oc.reduce((a, r) => a + r.vagas, 0); const ocup = vagas ? Math.round(1000 * oc.reduce((a, r) => a + r.confirmadas + r.reservadas, 0) / vagas) / 10 : null;
   const ret = at.ret.retidos + at.ret.perdidos ? Math.round(100 * at.ret.retidos / (at.ret.retidos + at.ret.perdidos)) : null;
-  return { "matriculas.ocupacao": ocup, "atendimento.nps": at.nps.nps, "atendimento.retencao": ret, "financeiro.inadimplencia": inad.taxa90, "financeiro.regua_pendente": inad.acoesPendentes, "pessoas.turnover": ph.turnover, "pessoas.enps": ph.enps, "pessoas.absenteismo": ph.absenteismo, "academy.conformidade": mat.conformidade, "sucessao.bench": suc.bench, "governanca.process_health": gov.score, "governanca.ciencia": cien.pct, "operacoes.sla": sla.pct, "operacoes.vistorias": vist.pct };
+  return { "matriculas.ocupacao": ocup, "atendimento.nps": at.nps.nps, "atendimento.retencao": ret, "financeiro.inadimplencia": inad.taxa90, "financeiro.regua_pendente": inad.acoesPendentes, "pessoas.turnover": ph.turnover, "pessoas.enps": ph.enps, "pessoas.absenteismo": ph.absenteismo, "academy.conformidade": mat.conformidade, "sucessao.bench": suc.bench, "governanca.process_health": gov.score, "governanca.ciencia": cien.pct, "operacoes.sla": sla.pct, "operacoes.vistorias": vist.pct, ...(await metricasExtra(unitId)) };
 }
 
 export function progressoKR(inicial: number, meta: number, atual: number | null, direcao: string) {
@@ -55,7 +57,7 @@ export type KRRow = { id: number; objective_id: number; titulo: string; metrica:
 
 /** Objetivos do ciclo com KRs; KRs com fonte de sistema recebem o valor atual calculado agora (e gravado). */
 export async function okrs(ciclo: string, unitId: number | null) {
-  const objs = await sql<{ id: number; pilar: string | null; titulo: string; descricao: string | null; owner: string | null; owner_user_id: number | null; unidade: string | null; unit_id: number | null; status: string; ordem: number; projetos: number }[]>`SELECT o.id, o.pilar, o.titulo, o.descricao, u.nome AS owner, o.owner_user_id, un.nome AS unidade, o.unit_id, o.status, o.ordem, (SELECT count(*) FROM projects p WHERE p.objective_id=o.id AND p.status <> 'CANCELADO')::int AS projetos FROM objectives o LEFT JOIN users u ON u.id=o.owner_user_id LEFT JOIN units un ON un.id=o.unit_id WHERE o.ciclo=${ciclo} ${unitId === null ? sql`` : sql`AND (o.unit_id IS NULL OR o.unit_id=${unitId})`} ORDER BY o.status='ATIVO' DESC, o.ordem, o.id`;
+  const objs = await sql<{ id: number; pilar: string | null; perspectiva: string | null; titulo: string; descricao: string | null; owner: string | null; owner_user_id: number | null; unidade: string | null; unit_id: number | null; status: string; ordem: number; projetos: number }[]>`SELECT o.id, o.pilar, o.perspectiva, o.titulo, o.descricao, u.nome AS owner, o.owner_user_id, un.nome AS unidade, o.unit_id, o.status, o.ordem, (SELECT count(*) FROM projects p WHERE p.objective_id=o.id AND p.status <> 'CANCELADO')::int AS projetos FROM objectives o LEFT JOIN users u ON u.id=o.owner_user_id LEFT JOIN units un ON un.id=o.unit_id WHERE o.ciclo=${ciclo} ${unitId === null ? sql`` : sql`AND (o.unit_id IS NULL OR o.unit_id=${unitId})`} ORDER BY o.status='ATIVO' DESC, o.ordem, o.id`;
   const krs = await sql<Omit<KRRow, "progresso">[]>`SELECT k.id, k.objective_id, k.titulo, k.metrica, k.valor_inicial::float, k.valor_meta::float, k.valor_atual::float, k.direcao, k.fonte, u.nome AS owner, k.owner_user_id, k.prazo::text, k.confianca, k.atualizado_em FROM key_results k LEFT JOIN users u ON u.id=k.owner_user_id WHERE k.objective_id IN (SELECT id FROM objectives WHERE ciclo=${ciclo}) ORDER BY k.id`;
   const precisa = krs.some(k => k.fonte?.startsWith("SISTEMA:")); const met = precisa ? await metricasSistema(unitId) : {};
   const rows: KRRow[] = [];

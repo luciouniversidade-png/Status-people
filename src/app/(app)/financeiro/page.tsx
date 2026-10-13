@@ -32,7 +32,7 @@ export default async function Financeiro({ searchParams }: { searchParams: Promi
         <Stat label="Resultado no ano" value={<span className={`text-xl ${orc.resultado < 0 ? "text-erro" : "text-ok"}`}>{brl(orc.resultado)}</span>} hint={`entradas − saídas registradas em ${hoje().slice(0, 4)}`} href="/financeiro/orcamento" />
         <Stat label="Custo por aluno/mês" value={<span className="text-xl">{brl(orc.custoPorAlunoMensal)}</span>} hint={`pessoal + ${cfg.financeiro.encargosPct}% encargos ÷ ${orc.alunos} alunos`} />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         <Card title="Alertas">{alertas.length === 0 ? <p className="text-sm text-slate-600">Nenhum alerta. Importe títulos, caixa e cadastre orçamento para o painel ganhar vida.</p> : <ul className="space-y-1 text-sm">{alertas.map((a, i) => <li key={i} className="flex gap-2"><span className="text-erro">●</span>{a}</li>)}</ul>}</Card>
         <Card title="Aging da inadimplência"><Table head={["Faixa", "Títulos", "Valor"]}>{inad.aging.map(a => <tr key={a.faixa}><Td>{a.faixa}</Td><Td>{a.n}</Td><Td className="tabular-nums">{brl(a.valor)}</Td></tr>)}</Table></Card>
         {!scope && inad.porUnidade.length > 0 && <Card title="Inadimplência por unidade"><Table head={["Unidade", "Títulos", "Valor"]}>{inad.porUnidade.map(u => <tr key={u.unidade}><Td>{u.unidade}</Td><Td>{u.n}</Td><Td className="tabular-nums">{brl(u.valor)}</Td></tr>)}</Table></Card>}
