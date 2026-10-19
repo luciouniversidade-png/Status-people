@@ -7,6 +7,7 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, num, hoje, addMonths, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { normNome, parseValor, parseData } from "@/lib/financeiro";
+import { formaRecebDe, competenciaFechada, mensagemTrava } from "@/lib/conciliacao";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
@@ -18,7 +19,7 @@ async function unidadePor(nome: string, units: { id: number; nome: string; codig
 export async function importarTitulos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
   try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro), "Importar títulos exige: " + cfg.alcadas.financeiro.join(", "));
-    const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("aluno") || !head.includes("vencimento") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter aluno, vencimento e valor (opcionais: titulo, unidade, tipo, competencia, responsavel, telefone, pago_em, valor_pago, status).");
+    const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("aluno") || !head.includes("vencimento") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter aluno, vencimento e valor (opcionais: titulo, unidade, tipo, competencia, responsavel, telefone, pago_em, valor_pago, status, forma).");
     const units = await db.select().from(schema.units); const alunos = await sql<{ id: number; nome: string; unit_atual_id: number | null }[]>`SELECT id, nome, unit_atual_id FROM students`; const unidadePadrao = int(fd, "unitId");
     let novos = 0, atualizados = 0; const erros: string[] = [];
     for (const [i, l] of linhas.entries()) { const g = get(l); try {
@@ -28,11 +29,14 @@ export async function importarTitulos(fd: FormData) {
       const status = /^(pago|liquidado|baixado)$/i.test(g("status")) || pagoEm ? "PAGO" : /^cancel/i.test(g("status")) ? "CANCELADO" : "ABERTO";
       const tipo = /integral/i.test(g("tipo")) ? "INTEGRAL" : /material/i.test(g("tipo")) ? "MATERIAL" : /taxa/i.test(g("tipo")) ? "TAXA" : g("tipo") && !/mensal/i.test(g("tipo")) ? "OUTRO" : "MENSALIDADE";
       const comp = g("competencia") ? (g("competencia").match(/^(\d{2})\/(\d{4})$/) ? `${g("competencia").slice(3)}-${g("competencia").slice(0, 2)}` : g("competencia").slice(0, 7)) : venc.slice(0, 7);
-      const ext = g("titulo") || null;
-      if (ext) { const r = await sql`INSERT INTO receivables (external_id, student_id, aluno_nome, responsavel, telefone, unit_id, tipo, competencia, vencimento, valor, valor_pago, pago_em, status) VALUES (${ext}, ${st?.id ?? null}, ${aluno}, ${g("responsavel") || null}, ${g("telefone") || null}, ${unitId}, ${tipo}, ${comp}, ${venc}, ${valor}, ${valorPago}, ${pagoEm}, ${status}) ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET valor_pago=EXCLUDED.valor_pago, pago_em=EXCLUDED.pago_em, status=CASE WHEN receivables.status='NEGOCIADO' AND EXCLUDED.status='ABERTO' THEN 'NEGOCIADO' ELSE EXCLUDED.status END, updated_at=now() RETURNING (xmax = 0) AS inserted`; if ((r[0] as { inserted: boolean }).inserted) novos++; else atualizados++; }
-      else { const [dup] = await sql<{ id: number }[]>`SELECT id FROM receivables WHERE external_id IS NULL AND lower(aluno_nome)=lower(${aluno}) AND vencimento=${venc} AND valor=${valor} AND tipo=${tipo}`; if (dup) { await sql`UPDATE receivables SET valor_pago=${valorPago}, pago_em=${pagoEm}, status=CASE WHEN status='NEGOCIADO' AND ${status}='ABERTO' THEN 'NEGOCIADO' ELSE ${status} END, updated_at=now() WHERE id=${dup.id}`; atualizados++; } else { await sql`INSERT INTO receivables (student_id, aluno_nome, responsavel, telefone, unit_id, tipo, competencia, vencimento, valor, valor_pago, pago_em, status) VALUES (${st?.id ?? null}, ${aluno}, ${g("responsavel") || null}, ${g("telefone") || null}, ${unitId}, ${tipo}, ${comp}, ${venc}, ${valor}, ${valorPago}, ${pagoEm}, ${status})`; novos++; } }
+      const ext = g("titulo") || null; const forma = status === "PAGO" ? formaRecebDe(g("forma") || g("forma_pagamento") || g("meio_de_pagamento")) : null;
+      if (ext) { const r = await sql`INSERT INTO receivables (external_id, student_id, aluno_nome, responsavel, telefone, unit_id, tipo, competencia, vencimento, valor, valor_pago, pago_em, status, forma_pagamento) VALUES (${ext}, ${st?.id ?? null}, ${aluno}, ${g("responsavel") || null}, ${g("telefone") || null}, ${unitId}, ${tipo}, ${comp}, ${venc}, ${valor}, ${valorPago}, ${pagoEm}, ${status}, ${forma}) ON CONFLICT (external_id) WHERE external_id IS NOT NULL DO UPDATE SET valor_pago=EXCLUDED.valor_pago, pago_em=EXCLUDED.pago_em, status=CASE WHEN receivables.status='NEGOCIADO' AND EXCLUDED.status='ABERTO' THEN 'NEGOCIADO' ELSE EXCLUDED.status END, forma_pagamento=coalesce(EXCLUDED.forma_pagamento, receivables.forma_pagamento), conciliado_em=CASE WHEN EXCLUDED.status='PAGO' THEN receivables.conciliado_em ELSE NULL END, updated_at=now() RETURNING (xmax = 0) AS inserted`; if ((r[0] as { inserted: boolean }).inserted) novos++; else atualizados++; }
+      else { const [dup] = await sql<{ id: number }[]>`SELECT id FROM receivables WHERE external_id IS NULL AND lower(aluno_nome)=lower(${aluno}) AND vencimento=${venc} AND valor=${valor} AND tipo=${tipo}`; if (dup) { await sql`UPDATE receivables SET valor_pago=${valorPago}, pago_em=${pagoEm}, status=CASE WHEN status='NEGOCIADO' AND ${status}='ABERTO' THEN 'NEGOCIADO' ELSE ${status} END, forma_pagamento=coalesce(${forma}, forma_pagamento), conciliado_em=CASE WHEN ${status}='PAGO' THEN conciliado_em ELSE NULL END, updated_at=now() WHERE id=${dup.id}`; atualizados++; } else { await sql`INSERT INTO receivables (student_id, aluno_nome, responsavel, telefone, unit_id, tipo, competencia, vencimento, valor, valor_pago, pago_em, status, forma_pagamento) VALUES (${st?.id ?? null}, ${aluno}, ${g("responsavel") || null}, ${g("telefone") || null}, ${unitId}, ${tipo}, ${comp}, ${venc}, ${valor}, ${valorPago}, ${pagoEm}, ${status}, ${forma})`; novos++; } }
     } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); } }
-    await audit(s, "importar títulos", "receivables", null, null, { novos, atualizados, erros: erros.length });
+    // baixa estornada no ActiveSoft (título deixou de estar pago): o par da conciliação deixa de valer e o crédito volta para a fila
+    const est = await sql<{ bank_line_id: number | null }[]>`UPDATE recon_matches m SET status='DESFEITO', desfeito_em=now(), motivo_desfazer='Baixa estornada no ActiveSoft' FROM receivables r WHERE r.id=m.receivable_id AND m.status IN ('CONFIRMADO','SUGERIDO') AND r.status <> 'PAGO' RETURNING m.bank_line_id`;
+    const linhasEst = [...new Set(est.map(x => x.bank_line_id).filter((x): x is number => !!x))]; if (linhasEst.length) await sql`UPDATE bank_lines SET status='PENDENTE' WHERE id = ANY(${linhasEst}) AND status IN ('CONCILIADO','SUGERIDO')`;
+    await audit(s, "importar títulos", "receivables", null, null, { novos, atualizados, erros: erros.length, paresDesfeitos: est.length });
     resumo = `${novos} título(s) novo(s), ${atualizados} atualizado(s).` + (erros.length ? ` ${erros.length} com erro: ${erros.slice(0, 4).join(" · ")}` : "");
   } catch (e) { redirect(go("/financeiro/importar", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go("/financeiro/inadimplencia", "ok", resumo));
@@ -124,16 +128,17 @@ export async function salvarPreco(fd: FormData) {
 export async function importarCaixa(fd: FormData) {
   const s = await requireSession(); let resumo = "";
   try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("data") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter data e valor (opcionais: tipo, categoria, forma, descricao, unidade, contraparte).");
-    const units = await db.select().from(schema.units); const unidadePadrao = int(fd, "unitId"); let ok = 0, dup = 0; const erros: string[] = [];
+    const units = await db.select().from(schema.units); const unidadePadrao = int(fd, "unitId"); let ok = 0, dup = 0, travadas = 0; const erros: string[] = []; const travas = new Map<string, boolean>();
     for (const [i, l] of linhas.entries()) { const g = get(l); try {
       const data = parseData(g("data")); let valor = parseValor(g("valor")); if (!data || !Number.isFinite(valor)) throw new Error("data ou valor inválido");
       const tipoTxt = g("tipo").toUpperCase(); const tipo = /TRANSF/.test(tipoTxt) ? "TRANSFERENCIA" : /SA[IÍ]D|D[EÉ]B|PAGAMENTO/.test(tipoTxt) || (!tipoTxt && valor < 0) ? "SAIDA" : "ENTRADA"; valor = Math.abs(valor);
       const un = g("unidade") ? await unidadePor(g("unidade"), units) : undefined; const unitId = un?.id ?? unidadePadrao; if (!unitId) throw new Error("unidade não identificada");
+      const kt = `${data.slice(0, 7)}|${unitId}`; if (!travas.has(kt)) travas.set(kt, !!(await competenciaFechada(data, unitId))); if (travas.get(kt)) { travadas++; continue; }
       const categoria = g("categoria") || (tipo === "ENTRADA" ? "Mensalidades" : tipo === "SAIDA" ? "Outras despesas" : "Transferência interna");
       const hash = createHash("sha1").update([unitId, data, tipo, valor.toFixed(2), g("descricao"), g("contraparte")].join("|")).digest("hex");
       const r = await sql`INSERT INTO cash_entries (unit_id, data, tipo, categoria, forma, descricao, valor, contraparte, hash) VALUES (${unitId}, ${data}, ${tipo}, ${categoria}, ${(g("forma") || "OUTRO").toUpperCase()}, ${g("descricao") || null}, ${valor}, ${g("contraparte") || null}, ${hash}) ON CONFLICT (hash) WHERE hash IS NOT NULL DO NOTHING RETURNING id`; if (r.length) ok++; else dup++;
     } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); } }
-    await audit(s, "importar caixa", "cash_entries", null, null, { ok, dup, erros: erros.length }); resumo = `${ok} lançamento(s) importado(s), ${dup} repetido(s) ignorado(s).` + (erros.length ? ` ${erros.length} com erro: ${erros.slice(0, 4).join(" · ")}` : "");
+    await audit(s, "importar caixa", "cash_entries", null, null, { ok, dup, erros: erros.length }); resumo = `${ok} lançamento(s) importado(s), ${dup} repetido(s) ignorado(s)${travadas ? `, ${travadas} em competência fechada (não entraram)` : ""}.` + (erros.length ? ` ${erros.length} com erro: ${erros.slice(0, 4).join(" · ")}` : "");
   } catch (e) { redirect(go("/financeiro/caixa", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go("/financeiro/caixa", "ok", resumo));
 }
@@ -147,6 +152,7 @@ export async function salvarSaldoInicial(fd: FormData) {
 export async function lancarCaixa(fd: FormData) {
   const s = await requireSession(); const b = `/financeiro/caixa?mes=${str(fd, "data").slice(0, 7)}`;
   try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const unitId = int(fd, "unitId"); const data = str(fd, "data"); const valor = num(fd, "valor"); const tipo = str(fd, "tipo"); const categoria = str(fd, "categoria"); if (!unitId || !data || valor === null || !tipo || !categoria) throw new Error("Preencha unidade, data, tipo, categoria e valor.");
+    const trava = await competenciaFechada(data, unitId); if (trava) throw new Error(mensagemTrava(trava));
     await db.insert(schema.cashEntries).values({ unitId, data, tipo, categoria, forma: strOrNull(fd, "forma"), descricao: strOrNull(fd, "descricao"), valor: String(Math.abs(valor)), contraparte: strOrNull(fd, "contraparte") }); await audit(s, "lançar caixa", "cash_entries", null, null, { unitId, data, tipo, categoria, valor });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Lançamento registrado."));
@@ -158,4 +164,22 @@ export async function salvarOrcamento(fd: FormData) {
     await audit(s, "orçamento", "budgets", null, null, { ano, unitId, linhas: n });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Orçamento salvo."));
+}
+
+/** T-026 · Reclassificar um lançamento de caixa (categoria) com trilha: antes/depois na auditoria e carimbo no lançamento. */
+export async function reclassificarLancamento(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/financeiro/lancamentos/${id}`;
+  try {
+    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro), "Reclassificar exige: " + cfg.alcadas.financeiro.join(", "));
+    const [l] = await sql<{ unit_id: number; data: string; tipo: string; categoria: string }[]>`SELECT unit_id, data::text, tipo, categoria FROM cash_entries WHERE id=${id}`; assert(!!l, "Lançamento não encontrado."); assertScope(s, l.unit_id);
+    const trava = await competenciaFechada(l.data, l.unit_id); if (trava) throw new Error(mensagemTrava(trava));
+    const categoria = str(fd, "categoria"); const motivo = str(fd, "motivo"); assert(motivo.length >= 5, "Explique a reclassificação (fica na trilha).");
+    const validas = [...(cfg.financeiro.categoriasEntrada as string[]), ...(cfg.financeiro.categoriasSaida as string[]), "Transferência entre unidades", "Transferências internas"];
+    assert(validas.includes(categoria), "Categoria inválida."); assert(categoria !== l.categoria, "A categoria é a mesma.");
+    const tipo = (cfg.financeiro.categoriasEntrada as string[]).includes(categoria) ? "ENTRADA" : (cfg.financeiro.categoriasSaida as string[]).includes(categoria) ? "SAIDA" : "TRANSFERENCIA";
+    assert(tipo === l.tipo || tipo === "TRANSFERENCIA" || l.tipo === "TRANSFERENCIA", "Entrada não vira despesa (e vice-versa): corrija o extrato na fonte.");
+    await sql`UPDATE cash_entries SET categoria=${categoria}, tipo=${tipo}, reclassificado_em=now() WHERE id=${id}`;
+    await audit(s, "reclassificar lançamento de caixa", "cash_entries", id, { categoria: l.categoria, tipo: l.tipo }, { categoria, tipo, motivo });
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", "Lançamento reclassificado — a DRE e o caixa já refletem a nova categoria."));
 }

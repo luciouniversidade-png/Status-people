@@ -4,8 +4,8 @@ import type { Campo } from "@/lib/solicitacoes";
 import { fmtData } from "@/lib/utils";
 import { fmtValorBr } from "@/lib/solicitacoes";
 
-export function SubNavSol({ ativo, painel, config, pendentes }: { ativo: string; painel: boolean; config: boolean; pendentes: number }) {
-  const itens: [string, string][] = [["/solicitacoes?aba=aprovar", `Para eu aprovar${pendentes ? ` (${pendentes})` : ""}`], ["/solicitacoes?aba=minhas", "Minhas"], ...(painel ? [["/solicitacoes?aba=todas", "Todas"] as [string, string]] : []), ["/solicitacoes/nova", "Nova solicitação"], ...(config ? [["/solicitacoes/tipos", "Tipos e aprovações"] as [string, string]] : [])];
+export function SubNavSol({ ativo, painel, config, pendentes, pagar = false, aPagar = 0 }: { ativo: string; painel: boolean; config: boolean; pendentes: number; pagar?: boolean; aPagar?: number }) {
+  const itens: [string, string][] = [["/solicitacoes?aba=aprovar", `Para eu aprovar${pendentes ? ` (${pendentes})` : ""}`], ["/solicitacoes?aba=minhas", "Minhas"], ...(painel ? [["/solicitacoes?aba=todas", "Todas"] as [string, string]] : []), ...(pagar ? [["/solicitacoes?aba=pagar", `A pagar${aPagar ? ` (${aPagar})` : ""}`] as [string, string]] : []), ["/solicitacoes/nova", "Nova solicitação"], ...(config ? [["/solicitacoes/tipos", "Tipos e aprovações"] as [string, string]] : [])];
   return <nav className="mb-4 flex flex-wrap gap-1">{itens.map(([h, l]) => <Link key={h} href={h} className={`rounded-md px-3 py-1.5 text-sm ${ativo === h ? "bg-navy text-white" : "border border-line bg-white text-navy hover:bg-mist"}`}>{l}</Link>)}</nav>;
 }
 /** Formulário gerado a partir dos campos do tipo (mesmos nomes que a action lê). */

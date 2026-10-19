@@ -35,6 +35,8 @@ export default async function Processo({ params, searchParams }: { params: Promi
                 <div className="flex-1 text-sm">
                   <div className={i.concluido ? "text-slate-500 line-through" : "text-ink"}>{i.titulo}{!i.obrigatorio && <span className="ml-1 text-xs text-slate-400">opcional</span>}</div>
                   {i.concluido && <div className="text-xs text-slate-500">{nomeUser(i.concluidoPor)} · {fmtDataHora(i.concluidoEm)}</div>}
+                  {!i.concluido && aberto && p.tipo === "ADMISSAO" && cfg.sst?.exigirAsoAdmissional && /exame admissional|\bASO\b/i.test(i.titulo) && <div className="text-xs text-slate-500">Conclui com o ASO admissional (apto) registrado · <Link className="text-acao" href="/sst?sit=SEM_ADMISSIONAL">registrar em Saúde e segurança</Link></div>}
+                  {!i.concluido && aberto && p.tipo === "DESLIGAMENTO" && /exame demissional/i.test(i.titulo) && <div className="text-xs text-slate-500">Conclui com o exame demissional registrado (ou exame dentro da dispensa da NR-7) · <Link className="text-acao" href="/sst?sit=DEMISSIONAL_PENDENTE">registrar em Saúde e segurança</Link></div>}
                 </div>
               </li>
             ))}

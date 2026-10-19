@@ -1,5 +1,5 @@
 import { requireFinanceiro, scopeUnit, can } from "@/lib/auth";
-import { db, schema } from "@/db";
+import { db, schema, sql } from "@/db";
 import { asc } from "drizzle-orm";
 import { Page, Card, Table, Td, Flash, Field, Select, Btn, Input, Stat, Textarea } from "@/components/ui";
 import { fmtData, getSettings, hoje } from "@/lib/utils";
@@ -12,6 +12,10 @@ export default async function Caixa({ searchParams }: { searchParams: Promise<Re
   const s = await requireFinanceiro(); const sp = await searchParams; const cfg = await getSettings(); const scope = scopeUnit(s); const unitId = scope ?? (sp.unidade ? Number(sp.unidade) : null); const mes = sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : hoje().slice(0, 7);
   const [cx, units] = await Promise.all([caixaMes(mes, unitId), db.select().from(schema.units).orderBy(asc(schema.units.nome))]);
   const gest = can.financeiro(s);
+  const fimMes = new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1)).toISOString().slice(0, 10);
+  const porConta = await sql<{ conta: string | null; entradas: number; saidas: number; transf: number; n: number; conciliadas: number; extrato_ate: string | null }[]>`SELECT a.apelido AS conta, coalesce(sum(c.valor) FILTER (WHERE c.tipo='ENTRADA'),0)::float AS entradas, coalesce(sum(c.valor) FILTER (WHERE c.tipo='SAIDA'),0)::float AS saidas, coalesce(sum(c.valor) FILTER (WHERE c.tipo='TRANSFERENCIA'),0)::float AS transf, count(*)::int AS n,
+      count(*) FILTER (WHERE bl.status IN ('CONCILIADO','IGNORADO'))::int AS conciliadas, (SELECT max(l2.data) FROM bank_lines l2 WHERE l2.bank_account_id=a.id)::text AS extrato_ate
+    FROM cash_entries c LEFT JOIN bank_accounts a ON a.id=c.bank_account_id LEFT JOIN bank_lines bl ON bl.id=c.bank_line_id WHERE c.data >= ${mes + "-01"} AND c.data < ${fimMes} ${unitId === null ? sql`` : sql`AND c.unit_id=${unitId}`} GROUP BY a.id, a.apelido ORDER BY a.apelido NULLS LAST`;
   return (
     <Page title="Fluxo de caixa" sub="As quatro unidades no mesmo painel: entradas por forma, saídas por categoria, transferências internas, saldo inicial e final. Importado dos extratos ou lançado à mão." actions={<><Btn kind="ghost" href={`/api/export/caixa?mes=${mes}`}>Exportar CSV</Btn><Btn kind="ghost" href="/financeiro">Painel</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
@@ -19,10 +23,12 @@ export default async function Caixa({ searchParams }: { searchParams: Promise<Re
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5"><Stat label="Saldo inicial" value={cx.saldoInicial === null ? "—" : brl(cx.saldoInicial)} hint={cx.temSaldo ? undefined : "não informado"} /><Stat label="Entradas" value={<span className="text-ok">{brl(cx.tot.entradas)}</span>} /><Stat label="Saídas" value={<span className="text-erro">{brl(cx.tot.saidas)}</span>} /><Stat label="Transferências internas" value={brl(cx.tot.transf)} hint="não entram no resultado" /><Stat label="Saldo final" value={cx.saldoFinal === null ? brl(cx.tot.entradas - cx.tot.saidas) : <span className={cx.saldoFinal < 0 ? "text-erro" : ""}>{brl(cx.saldoFinal)}</span>} hint={cx.saldoFinal === null ? "movimento do mês (sem saldo inicial)" : undefined} /></div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             <Card title="Entradas por categoria"><Table head={["Categoria", "Lanç.", "Valor"]} empty="Sem entradas.">{cx.porCat.filter(c => c.tipo === "ENTRADA").map(c => <tr key={c.categoria}><Td>{c.categoria}</Td><Td>{c.n}</Td><Td className="tabular-nums">{brl(c.valor)}</Td></tr>)}</Table><div className="mt-2 text-xs text-slate-500">Por forma: {cx.porForma.map(f => `${f.forma} ${brl(f.valor)}`).join(" · ") || "—"}</div></Card>
             <Card title="Saídas por categoria"><Table head={["Categoria", "Lanç.", "Valor"]} empty="Sem saídas.">{cx.porCat.filter(c => c.tipo === "SAIDA").map(c => <tr key={c.categoria}><Td>{c.categoria}</Td><Td>{c.n}</Td><Td className="tabular-nums">{brl(c.valor)}</Td></tr>)}</Table></Card>
           </div>
+          {porConta.some(c => c.conta) && <Card title="Por conta bancária"><Table head={["Conta", "Entradas", "Saídas", "Transferências", "Lançamentos", "Extrato até"]}>{porConta.map(c => <tr key={c.conta ?? "sem"}><Td>{c.conta ?? <span className="text-slate-500">Sem conta (lançado à mão ou CSV antigo)</span>}</Td><Td className="tabular-nums text-ok">{brl(c.entradas)}</Td><Td className="tabular-nums text-erro">{brl(c.saidas)}</Td><Td className="tabular-nums text-slate-500">{brl(c.transf)}</Td><Td className="text-xs">{c.n}{c.conta ? ` · ${c.conciliadas} conciliado(s)` : ""}</Td><Td className="text-xs">{c.extrato_ate ? fmtData(c.extrato_ate) : "—"}</Td></tr>)}</Table>
+            <p className="mt-2 text-xs text-slate-500">Transferências entre contas do grupo ficam fora de entradas e saídas: no consolidado, a saída de uma conta e a entrada na outra se anulam. Extratos e conciliação em <a className="text-acao" href="/financeiro/conciliacao?aba=contas">Conciliação → Contas e importação</a>.</p></Card>}
           <Card title="Dia a dia"><Table head={["Data", "Entradas", "Saídas", "Saldo do dia"]} empty="Nenhum lançamento no mês.">{cx.dias.map(d => <tr key={d.data}><Td>{fmtData(d.data)}</Td><Td className="tabular-nums text-ok">{d.entradas ? brl(d.entradas) : "—"}</Td><Td className="tabular-nums text-erro">{d.saidas ? brl(d.saidas) : "—"}</Td><Td className={`tabular-nums ${d.entradas - d.saidas < 0 ? "text-erro" : ""}`}>{brl(d.entradas - d.saidas)}</Td></tr>)}</Table></Card>
         </div>
         {gest && <div className="space-y-4">

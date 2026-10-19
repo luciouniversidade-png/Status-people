@@ -22,6 +22,7 @@ export async function removerAnexo(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const voltar = caminhoSeguro(str(fd, "voltar"), "/");
   try { const [a] = await sql<{ entidade: string; entidade_id: number; unit_id: number | null; user_id: number | null; nome: string }[]>`SELECT entidade, entidade_id, unit_id, user_id, nome FROM attachments WHERE id=${id}`; if (!a) throw new Error("Anexo não encontrado.");
     if (["privacy_incident", "ethics_report"].includes(a.entidade)) throw new Error("Evidência de incidente ou de relato de ética não pode ser removida.");
+    if (a.entidade === "obligation") { const [o] = await sql<{ status: string; n: number }[]>`SELECT o.status, (SELECT count(*) FROM attachments x WHERE x.entidade='obligation' AND x.entidade_id=o.id)::int AS n FROM obligations o WHERE o.id=${a.entidade_id}`; if (o?.status === "PAGA" && o.n <= 1) throw new Error("É o comprovante da baixa: a Direção reabre a obrigação (com motivo) antes de removê-lo."); }
     if ((await acessoAnexoRestrito(s, a.entidade, a.entidade_id, "editar")) === false) throw new Error("Sem acesso a este registro.");
     assert(["DIRECAO", "RH"].includes(s.role) || a.user_id === s.id, "Só quem anexou, RH ou Direção removem."); if (a.unit_id) assertScope(s, a.unit_id);
     await sql`DELETE FROM attachments WHERE id=${id}`; await audit(s, "remover anexo", "attachments", id, null, { nome: a.nome, entidade: a.entidade, id: a.entidade_id });

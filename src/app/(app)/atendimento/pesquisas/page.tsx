@@ -6,6 +6,7 @@ import { Page, Card, Table, Td, Badge, Flash, Select, Field, Btn, Input, Textare
 import { fmtData, hoje } from "@/lib/utils";
 import { registrarPesquisa, importarPesquisas } from "../actions";
 import { alunosDaRede } from "../_shared";
+import { CANAL_LABEL } from "@/lib/atendimento";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ export default async function Pesquisas({ searchParams }: { searchParams: Promis
           {!scope && <form className="flex items-end gap-2"><Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Btn kind="ghost">Filtrar</Btn></form>}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{meses.slice(0, 3).map(m => <Stat key={m.mes} label={m.mes.split("-").reverse().join("/")} value={m.nps === null ? "—" : <span className={m.nps >= 50 ? "text-ok" : m.nps >= 0 ? "text-aviso" : "text-erro"}>NPS {m.nps}</span>} hint={`${m.n} resp.${m.csat ? ` · CSAT ${m.csat}` : ""}`} />)}</div>
           <Table head={["Data", "Tipo", "Nota", "Família", "Unidade", "Comentário", "Canal"]} empty="Nenhuma resposta registrada.">
-            {rows.map(r => <tr key={r.id}><Td className="whitespace-nowrap">{fmtData(r.data)}</Td><Td>{r.tipo}</Td><Td><Badge v={r.tipo === "NPS" ? (r.nota >= 9 ? "APROVADA" : r.nota >= 7 ? "PENDENTE" : "REJEITADA") : (r.nota >= 4 ? "APROVADA" : r.nota === 3 ? "PENDENTE" : "REJEITADA")} label={String(r.nota)} /></Td><Td>{r.student_id ? <Link className="text-acao" href={`/matriculas/alunos/${r.student_id}#atendimento`}>{r.aluno}</Link> : <span className="text-slate-400">anônimo</span>}{r.case_id && <div className="text-xs text-slate-500"><Link href={`/atendimento/casos/${r.case_id}`} className="text-acao">caso #{r.case_id}</Link></div>}</Td><Td>{r.unidade}</Td><Td className="max-w-[280px] text-xs text-slate-600">{r.comentario ?? "—"}</Td><Td className="text-xs">{r.canal ?? "—"}</Td></tr>)}
+            {rows.map(r => <tr key={r.id}><Td className="whitespace-nowrap">{fmtData(r.data)}</Td><Td>{r.tipo}</Td><Td><Badge v={r.tipo === "NPS" ? (r.nota >= 9 ? "APROVADA" : r.nota >= 7 ? "PENDENTE" : "REJEITADA") : (r.nota >= 4 ? "APROVADA" : r.nota === 3 ? "PENDENTE" : "REJEITADA")} label={String(r.nota)} /></Td><Td>{r.student_id ? <Link className="text-acao" href={`/matriculas/alunos/${r.student_id}#atendimento`}>{r.aluno}</Link> : <span className="text-slate-400">anônimo</span>}{r.case_id && <div className="text-xs text-slate-500"><Link href={`/atendimento/casos/${r.case_id}`} className="text-acao">caso #{r.case_id}</Link></div>}</Td><Td>{r.unidade}</Td><Td className="max-w-[280px] text-xs text-slate-600">{r.comentario ?? "—"}</Td><Td className="text-xs">{(r.canal ? CANAL_LABEL[r.canal] ?? (r.canal === "IMPORT" ? "Importação" : r.canal) : "—")}</Td></tr>)}
           </Table>
         </div>
         <div className="space-y-4">

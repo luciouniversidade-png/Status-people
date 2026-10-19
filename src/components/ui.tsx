@@ -1,5 +1,6 @@
 import Link from "@/components/Link";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode } from "react";
+import { fmtCompacto } from "@/lib/formato";
 
 export function Page({ title, sub, actions, children }: { title: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -62,8 +63,10 @@ export function Field({ label, children, hint, className = "" }: { label: string
   );
 }
 export const inputCls = "w-full rounded-md border border-line bg-white px-3 py-2 text-sm text-ink focus:border-acao focus:outline-none focus:ring-1 focus:ring-acao";
-export function Input(p: React.InputHTMLAttributes<HTMLInputElement>) { return <input {...p} className={`${inputCls} ${p.className ?? ""}`} />; }
-export function Select(p: React.SelectHTMLAttributes<HTMLSelectElement>) { return <select {...p} className={`${inputCls} ${p.className ?? ""}`} />; }
+// largura explícita (ex.: "w-20") substitui o w-full padrão — no CSS gerado o w-full venceria e espremeria o rótulo ao lado
+const baseCls = (c?: string) => c && /(^|\s)!?w-\S+/.test(c) ? inputCls.replace("w-full ", "") : inputCls;
+export function Input(p: React.InputHTMLAttributes<HTMLInputElement>) { return <input {...p} className={`${baseCls(p.className)} ${p.className ?? ""}`} />; }
+export function Select(p: React.SelectHTMLAttributes<HTMLSelectElement>) { return <select {...p} className={`${baseCls(p.className)} ${p.className ?? ""}`} />; }
 export function Textarea(p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) { return <textarea {...p} className={`${inputCls} min-h-[80px] ${p.className ?? ""}`} />; }
 
 export function Table({ head, children, empty }: { head: string[]; children: ReactNode; empty?: string }) {
@@ -84,6 +87,15 @@ export function Table({ head, children, empty }: { head: string[]; children: Rea
 export const Td = ({ children, className = "", colSpan }: { children: ReactNode; className?: string; colSpan?: number }) => <td colSpan={colSpan} className={`px-2 py-2 align-top first:sticky first:left-0 first:z-[1] first:bg-white sm:px-3 ${className}`}>{children}</td>;
 
 export function Stat({ label, value, hint, href }: { label: string; value: ReactNode; hint?: string; href?: string }) {
+  // Valor em reais longo (R$ 10 mil ou mais) quebraria no meio do número num cartão estreito: mostra compacto e leva o valor exato para a dica
+  const compactar = (txt: string): string | null => {
+    const m = txt.match(/^(-?)R\$\s?([\d.]+),(\d{2})$/);
+    if (!m) return null; const n = Number(m[2].replace(/\./g, "") + "." + m[3]); if (n < 10000) return null;
+    hint = hint ? `${txt} · ${hint}` : txt; return `${m[1] ? "−" : ""}R$ ${fmtCompacto(n)}`;
+  };
+  if (typeof value === "string") { const c = compactar(value); if (c) value = c; }
+  // valor colorido (<span className="text-ok">R$ …</span>): mesma regra, preservando o elemento
+  else if (isValidElement<{ children?: ReactNode }>(value) && typeof value.props.children === "string") { const c = compactar(value.props.children); if (c) value = cloneElement(value, {}, c); }
   const inner = (
     <div className="h-full min-w-0 rounded-md border border-line bg-white px-3 py-2.5 sm:px-4 sm:py-3">
       <div className="text-[11px] leading-tight text-slate-600 sm:text-xs">{label}</div>

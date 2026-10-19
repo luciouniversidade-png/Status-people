@@ -2,8 +2,10 @@
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
 import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
-import { audit, str, strOrNull, int, hoje, addDays, caminhoSeguro } from "@/lib/utils";
+import { audit, str, strOrNull, int, hoje, addDays, caminhoSeguro, getSettings } from "@/lib/utils";
+import { competenciaFechada, mensagemTrava } from "@/lib/conciliacao";
 import { notificar } from "@/lib/comunicacao";
+import { excecoesDespesa, EXCECAO_ROTULO, categoriaDoTipo } from "@/lib/despesas";
 import { lerCampos, lerEtapas, montarEtapas, podeDecidir, perfilDe, fmtValorBr, type Campo, type Etapa, type EtapaSnap } from "@/lib/solicitacoes";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
@@ -56,28 +58,54 @@ export async function abrirSolicitacao(fd: FormData) {
 
 
 /** Aprovar (passa à próxima etapa ou conclui), rejeitar ou devolver para ajuste — sempre por um aprovador da etapa atual, nunca pelo solicitante. */
+/** Uma decisão (aprovar, rejeitar, devolver) com trilha da etapa, auditoria e avisos. Usada no item e no lote (C10). */
+async function decidirUma(s: Session, id: number, decisao: string, obs: string | null, lote = false): Promise<string> {
+  const out = await sql.begin(async tx => {
+    const [r] = await tx<Req[]>`SELECT id, numero, titulo, type_id, status, etapa_atual, etapas, solicitante_user_id, unit_id, valor::text FROM requests WHERE id=${id} FOR UPDATE`; if (!r) throw new Error("Solicitação não encontrada.");
+    if (r.solicitante_user_id === s.id) throw new Error("Ninguém aprova a própria solicitação.");
+    if (!podeDecidir(s, r)) throw new Error("Esta etapa não está com você (ou já foi decidida).");
+    const etapas = r.etapas.map((e, i) => i === r.etapa_atual ? { ...e, decisao: decisao === "APROVAR" ? "APROVADA" : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA", por: s.id, porNome: s.nome, em: new Date().toISOString(), obs: obs ?? (lote ? "aprovada em lote" : null) } : e);
+    const ultima = r.etapa_atual >= etapas.length - 1;
+    const status = decisao === "APROVAR" ? (ultima ? "APROVADA" : "EM_APROVACAO") : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA";
+    const prox = decisao === "APROVAR" && !ultima ? r.etapa_atual + 1 : r.etapa_atual;
+    const [t] = await tx<{ prazo_dias: number }[]>`SELECT prazo_dias FROM request_types WHERE id=${r.type_id}`;
+    await tx`UPDATE requests SET etapas=${JSON.stringify(etapas)}::jsonb, status=${status}, etapa_atual=${prox}, prazo_etapa=${status === "EM_APROVACAO" ? addDays(hoje(), t?.prazo_dias ?? 2) : null}, concluida_em=${["APROVADA", "REJEITADA"].includes(status) ? tx`now()` : null}, updated_at=now() WHERE id=${id}`;
+    await tx`INSERT INTO request_events (request_id, etapa, tipo, texto, user_id, user_nome) VALUES (${id}, ${r.etapa_atual}, ${decisao === "APROVAR" ? "APROVADA" : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA"}, ${`${etapas[r.etapa_atual].nome}${obs ? `: ${obs}` : lote ? " (aprovação em lote)" : ""}`}, ${s.id}, ${s.nome})`;
+    return { r, etapas, status, prox };
+  });
+  await audit(s, `solicitação: ${decisao.toLowerCase()}${lote ? " (lote)" : ""}`, "requests", id, { status: out.r.status }, { status: out.status, etapa: out.r.etapa_atual });
+  const valor = out.r.valor === null ? null : Number(out.r.valor);
+  if (out.status === "EM_APROVACAO") { await avisarEtapa(out.r, out.etapas[out.prox], valor); return `Aprovada nesta etapa; seguiu para “${out.etapas[out.prox].nome}”.`; }
+  await notificar([out.r.solicitante_user_id], `${out.status === "APROVADA" ? "Aprovada" : out.status === "REJEITADA" ? "Rejeitada" : "Devolvida para ajuste"}: ${out.r.titulo}`, `${out.r.numero}${obs ? ` · ${obs}` : ""}`, `/solicitacoes/${id}`, out.status === "APROVADA" ? "INFO" : "ACAO");
+  return out.status === "APROVADA" ? "Solicitação aprovada (última etapa)." : out.status === "REJEITADA" ? "Solicitação rejeitada." : "Devolvida ao solicitante para ajuste.";
+}
+
 export async function decidirSolicitacao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = caminhoSeguro(str(fd, "voltar"), `/solicitacoes/${id}`); let msg = "";
   try {
     const decisao = str(fd, "decisao"); if (!["APROVAR", "REJEITAR", "DEVOLVER"].includes(decisao)) throw new Error("Decisão inválida.");
     const obs = strOrNull(fd, "obs"); if (decisao !== "APROVAR" && (!obs || obs.length < 5)) throw new Error(decisao === "REJEITAR" ? "Explique o motivo da rejeição." : "Diga o que precisa ser ajustado.");
-    const out = await sql.begin(async tx => {
-      const [r] = await tx<Req[]>`SELECT id, numero, titulo, type_id, status, etapa_atual, etapas, solicitante_user_id, unit_id, valor::text FROM requests WHERE id=${id} FOR UPDATE`; if (!r) throw new Error("Solicitação não encontrada.");
-      if (r.solicitante_user_id === s.id) throw new Error("Ninguém aprova a própria solicitação.");
-      if (!podeDecidir(s, r)) throw new Error("Esta etapa não está com você (ou já foi decidida).");
-      const etapas = r.etapas.map((e, i) => i === r.etapa_atual ? { ...e, decisao: decisao === "APROVAR" ? "APROVADA" : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA", por: s.id, porNome: s.nome, em: new Date().toISOString(), obs } : e);
-      const ultima = r.etapa_atual >= etapas.length - 1;
-      const status = decisao === "APROVAR" ? (ultima ? "APROVADA" : "EM_APROVACAO") : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA";
-      const prox = decisao === "APROVAR" && !ultima ? r.etapa_atual + 1 : r.etapa_atual;
-      const [t] = await tx<{ prazo_dias: number }[]>`SELECT prazo_dias FROM request_types WHERE id=${r.type_id}`;
-      await tx`UPDATE requests SET etapas=${JSON.stringify(etapas)}::jsonb, status=${status}, etapa_atual=${prox}, prazo_etapa=${status === "EM_APROVACAO" ? addDays(hoje(), t?.prazo_dias ?? 2) : null}, concluida_em=${["APROVADA", "REJEITADA"].includes(status) ? tx`now()` : null}, updated_at=now() WHERE id=${id}`;
-      await tx`INSERT INTO request_events (request_id, etapa, tipo, texto, user_id, user_nome) VALUES (${id}, ${r.etapa_atual}, ${decisao === "APROVAR" ? "APROVADA" : decisao === "REJEITAR" ? "REJEITADA" : "DEVOLVIDA"}, ${`${etapas[r.etapa_atual].nome}${obs ? `: ${obs}` : ""}`}, ${s.id}, ${s.nome})`;
-      return { r, etapas, status, prox };
-    });
-    await audit(s, `solicitação: ${decisao.toLowerCase()}`, "requests", id, { status: out.r.status }, { status: out.status, etapa: out.r.etapa_atual });
-    const valor = out.r.valor === null ? null : Number(out.r.valor);
-    if (out.status === "EM_APROVACAO") { await avisarEtapa(out.r, out.etapas[out.prox], valor); msg = `Aprovada nesta etapa; seguiu para “${out.etapas[out.prox].nome}”.`; }
-    else { await notificar([out.r.solicitante_user_id], `${out.status === "APROVADA" ? "Aprovada" : out.status === "REJEITADA" ? "Rejeitada" : "Devolvida para ajuste"}: ${out.r.titulo}`, `${out.r.numero}${strOrNull(fd, "obs") ? ` · ${strOrNull(fd, "obs")}` : ""}`, `/solicitacoes/${id}`, out.status === "APROVADA" ? "INFO" : "ACAO"); msg = out.status === "APROVADA" ? "Solicitação aprovada (última etapa)." : out.status === "REJEITADA" ? "Solicitação rejeitada." : "Devolvida ao solicitante para ajuste."; }
+    // atalho de aprovação da lista: só para o normal; exceção da política exige abrir o item (C10)
+    if (decisao === "APROVAR" && str(fd, "rapido") === "1") { const ex = (await excecoesDespesa([id])).get(id) ?? []; if (ex.length) throw new Error(`Exceção da política (${ex.map(e => EXCECAO_ROTULO[e.codigo]).join(", ")}): abra a solicitação e decida item a item.`); }
+    msg = await decidirUma(s, id, decisao, obs);
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", msg));
+}
+
+/** C10 · Aprovação em lote: só o normal entra; exceções (sem documento, acima do lote, categoria bloqueada, orçamento) ficam de fora, com trilha item a item. */
+export async function aprovarLote(fd: FormData) {
+  const s = await requireSession(); const b = "/solicitacoes?aba=aprovar"; let msg = "";
+  try {
+    const ids = [...new Set(fd.getAll("ids").map(Number).filter(n => Number.isInteger(n) && n > 0))]; assert(ids.length > 0, "Marque ao menos uma solicitação para aprovar em lote.");
+    assert(ids.length <= 100, "No máximo 100 por lote.");
+    const exc = await excecoesDespesa(ids); const nums = new Map((await sql<{ id: number; numero: string }[]>`SELECT id, numero FROM requests WHERE id = ANY(${ids})`).map(r => [r.id, r.numero]));
+    let ok = 0; const fora: string[] = [];
+    for (const id of ids) {
+      const ex = exc.get(id) ?? []; if (ex.length) { fora.push(`${nums.get(id) ?? `#${id}`} (${ex.map(e => EXCECAO_ROTULO[e.codigo].toLowerCase()).join(", ")})`); continue; }
+      try { await decidirUma(s, id, "APROVAR", null, true); ok++; } catch (e) { fora.push(`${nums.get(id) ?? `#${id}`} (${e instanceof Error ? e.message : "erro"})`); }
+    }
+    await audit(s, "aprovação em lote de solicitações", "requests", null, null, { marcadas: ids.length, aprovadas: ok, foraDoLote: fora.length });
+    msg = `${ok} aprovada(s) em lote${fora.length ? ` · ${fora.length} ficaram para decisão individual: ${fora.slice(0, 4).join("; ")}${fora.length > 4 ? "…" : ""}` : ""}.`;
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", msg));
 }
@@ -139,4 +167,56 @@ export async function salvarTipoSolicitacao(fd: FormData) {
     msg = `Tipo salvo: ${campos.length} campo(s), ${etapas.length} etapa(s). Solicitações já abertas seguem com as etapas da época.`;
   } catch (e) { redirect(go("/solicitacoes/tipos", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go("/solicitacoes/tipos", "ok", msg));
+}
+
+/** T-029 · Pagamento da despesa aprovada: só com o débito do extrato (conciliado), nunca por declaração. Reclassifica o lançamento do caixa. */
+export async function registrarPagamento(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/solicitacoes/${id}`;
+  try {
+    if (!["FINANCEIRO", "DIRECAO"].includes(s.role)) { await audit(s, "acesso negado: registrar pagamento de solicitação", "requests", id, null, { papel: s.role }); throw new Error("O pagamento é registrado pelo Financeiro ou pela Direção."); }
+    const [r] = await sql<{ status: string; valor: number | null; pago_em: string | null; titulo: string; numero: string; solicitante_user_id: number; codigo: string; concluida_em: string | null }[]>`SELECT r.status, r.valor::float, r.pago_em::text, r.titulo, r.numero, r.solicitante_user_id, t.codigo, r.concluida_em::text FROM requests r JOIN request_types t ON t.id=r.type_id WHERE r.id=${id}`;
+    assert(!!r, "Solicitação não encontrada."); assert(r.status === "APROVADA", "Só solicitação aprovada é paga."); const valorAprovado = r.valor ?? 0; assert(valorAprovado > 0, "Esta solicitação não tem valor a pagar."); assert(!r.pago_em, "Pagamento já registrado.");
+    const lineId = int(fd, "lineId"); assert(!!lineId, "Escolha o débito do extrato que pagou esta despesa.");
+    const [l] = await sql<{ data: string; valor: number; request_id: number | null; apelido: string; unit_id: number | null; cash_entry_id: number | null }[]>`SELECT l.data::text, l.valor::float, l.request_id, a.apelido, a.unit_id, l.cash_entry_id FROM bank_lines l JOIN bank_accounts a ON a.id=l.bank_account_id WHERE l.id=${lineId}`;
+    assert(!!l, "Lançamento do extrato não encontrado."); assert(l.valor < 0, "Escolha um débito (saída) do extrato."); assert(!l.request_id, "Este débito já pagou outra solicitação.");
+    assert(Math.abs(Math.abs(l.valor) - valorAprovado) < 0.005, `O débito (${Math.abs(l.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) não bate com o valor aprovado (${valorAprovado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).`);
+    const trava = await competenciaFechada(l.data, l.unit_id); if (trava) throw new Error(mensagemTrava(trava));
+    await sql`UPDATE requests SET pago_em=${l.data}, pagamento_line_id=${lineId}, pago_por=${s.id}, updated_at=now() WHERE id=${id}`;
+    await sql`UPDATE bank_lines SET request_id=${id}, status='CONCILIADO', classe='DESPESA', classificado_por=${s.id} WHERE id=${lineId}`;
+    const cfg = await getSettings(); const cat = categoriaDoTipo(cfg, r.codigo);
+    if (l.cash_entry_id && cat) { const [ce] = await sql<{ categoria: string }[]>`SELECT categoria FROM cash_entries WHERE id=${l.cash_entry_id}`;
+      if (ce && ce.categoria !== cat) { await sql`UPDATE cash_entries SET categoria=${cat}, descricao=${`${r.numero} · ${r.titulo}`.slice(0, 300)}, reclassificado_em=now() WHERE id=${l.cash_entry_id}`; await audit(s, "reclassificar lançamento de caixa", "cash_entries", l.cash_entry_id, { categoria: ce.categoria }, { categoria: cat, motivo: `Pagamento da solicitação ${r.numero}` }); } }
+    await sql`INSERT INTO request_events (request_id, etapa, tipo, texto, user_id, user_nome) VALUES (${id}, NULL, 'PAGA', ${`Paga em ${l.data.split("-").reverse().join("/")} · débito da conta ${l.apelido} (conciliado)`}, ${s.id}, ${s.nome})`;
+    await audit(s, "registrar pagamento de solicitação", "requests", id, { pago: false }, { pago: true, pagoEm: l.data, debito: lineId });
+    await notificar([r.solicitante_user_id], `Pago: ${r.titulo}`, `${r.numero} · ${valorAprovado.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} em ${l.data.split("-").reverse().join("/")}`, b, "INFO", `solpaga:${id}`);
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", "Pagamento registrado com o débito conciliado."));
+}
+export async function desfazerPagamento(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/solicitacoes/${id}`;
+  try {
+    assert(["FINANCEIRO", "DIRECAO"].includes(s.role), "Só Financeiro e Direção desfazem o pagamento."); const motivo = str(fd, "motivo"); assert(motivo.length >= 5, "Explique o motivo.");
+    const [r] = await sql<{ pagamento_line_id: number | null; pago_em: string | null }[]>`SELECT pagamento_line_id, pago_em::text FROM requests WHERE id=${id}`; assert(!!r?.pago_em, "Não há pagamento registrado.");
+    if (r.pagamento_line_id) { const [l] = await sql<{ data: string; unit_id: number | null }[]>`SELECT l.data::text, a.unit_id FROM bank_lines l JOIN bank_accounts a ON a.id=l.bank_account_id WHERE l.id=${r.pagamento_line_id}`; if (l) { const t = await competenciaFechada(l.data, l.unit_id); if (t) throw new Error(mensagemTrava(t)); }
+      await sql`UPDATE bank_lines SET request_id=NULL, status='IGNORADO', classe=NULL WHERE id=${r.pagamento_line_id}`; }
+    await sql`UPDATE requests SET pago_em=NULL, pagamento_line_id=NULL, pago_por=NULL, updated_at=now() WHERE id=${id}`;
+    await sql`INSERT INTO request_events (request_id, etapa, tipo, texto, user_id, user_nome) VALUES (${id}, NULL, 'COMENTARIO', ${`Pagamento desfeito: ${motivo}`}, ${s.id}, ${s.nome})`;
+    await audit(s, "desfazer pagamento de solicitação", "requests", id, { pagoEm: r.pago_em }, { pago: false, motivo });
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", "Pagamento desfeito."));
+}
+
+/** Programa a data do pagamento: a despesa aprovada entra na projeção de caixa (13 semanas) nessa data. */
+export async function programarPagamento(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = caminhoSeguro(str(fd, "voltar"), `/solicitacoes/${id}`);
+  try {
+    assert(["FINANCEIRO", "DIRECAO"].includes(s.role), "O Financeiro ou a Direção programam o pagamento.");
+    const data = str(fd, "data"); assert(/^\d{4}-\d{2}-\d{2}$/.test(data), "Informe a data prevista."); assert(data >= hoje(), "A data prevista não pode estar no passado.");
+    const [r] = await sql<{ status: string; pago_em: string | null; previsto: string | null }[]>`SELECT status, pago_em::text, pagamento_previsto::text AS previsto FROM requests WHERE id=${id}`;
+    assert(!!r && r.status === "APROVADA" && !r.pago_em, "Só despesa aprovada e ainda não paga é programada.");
+    await sql`UPDATE requests SET pagamento_previsto=${data}, updated_at=now() WHERE id=${id}`;
+    await sql`INSERT INTO request_events (request_id, etapa, tipo, texto, user_id, user_nome) VALUES (${id}, NULL, 'COMENTARIO', ${`Pagamento programado para ${data.split("-").reverse().join("/")}`}, ${s.id}, ${s.nome})`;
+    await audit(s, "programar pagamento de solicitação", "requests", id, { previsto: r.previsto }, { previsto: data });
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", "Pagamento programado — já entra na projeção de caixa."));
 }

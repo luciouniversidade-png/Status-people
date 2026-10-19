@@ -219,10 +219,79 @@ export async function salvarParamMatriculas(fd: FormData) {
   const s = await requireSession();
   try {
     assert(can.configurar(s)); const cfg = await getSettings();
-    const novo = { anoLetivo: int(fd, "anoLetivo") ?? cfg.matriculas.anoLetivo, reservaDias: int(fd, "reservaDias") ?? cfg.matriculas.reservaDias, ofertaFilaDias: int(fd, "ofertaFilaDias") ?? cfg.matriculas.ofertaFilaDias };
+    // mantém as chaves que este formulário não mostra (versões novas acrescentam parâmetros ao mesmo grupo)
+    const fim = fd.has("fimCampanha") ? str(fd, "fimCampanha") : String(cfg.matriculas.fimCampanha ?? "");
+    const meta = fd.has("metaRematriculaPct") ? int(fd, "metaRematriculaPct") : Number(cfg.matriculas.metaRematriculaPct ?? 85);
+    const novo = { ...cfg.matriculas, anoLetivo: int(fd, "anoLetivo") ?? cfg.matriculas.anoLetivo, reservaDias: int(fd, "reservaDias") ?? cfg.matriculas.reservaDias, ofertaFilaDias: int(fd, "ofertaFilaDias") ?? cfg.matriculas.ofertaFilaDias, fimCampanha: fim, metaRematriculaPct: meta ?? 85 };
     if (novo.reservaDias < 1 || novo.ofertaFilaDias < 1) throw new Error("Prazos precisam ser de ao menos 1 dia.");
+    if (fim && !/^\d{4}-\d{2}-\d{2}$/.test(fim)) throw new Error("Data do fim da campanha inválida.");
+    if (novo.metaRematriculaPct < 1 || novo.metaRematriculaPct > 100) throw new Error("A meta de rematrícula vai de 1% a 100%.");
     await sql`INSERT INTO settings (key, value) VALUES ('matriculas', ${JSON.stringify(novo)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
     await audit(s, "editar", "settings", null, cfg.matriculas, novo);
   } catch (e) { redirect(go("/configuracoes", "erro", e instanceof Error ? e.message : "Erro", "#matriculas")); }
   redirect(go("/configuracoes", "ok", "Parâmetros de matrícula salvos.", "#matriculas"));
+}
+
+/**
+ * v24.1 · carga inicial e virada de ano: importa a grade de turmas por planilha. Cabeçalho: unidade; serie; turno; nome; vagas
+ * (opcionais: modalidade — Regular/Integral —, series_grupo para o Integral, ano, situacao). Turma igual (ano, unidade, nome) é atualizada:
+ * vagas, turno e situação — nunca abaixo do que já está ocupado.
+ */
+export async function importarTurmas(fd: FormData) {
+  const s = await requireSession(); let resumo = "";
+  try {
+    assert(can.gradeTurmas(s), "Só RH e Direção alteram a grade de turmas.");
+    const cfg = await getSettings(); const texto = await textoImportacao(fd); if (!texto) throw new Error("Envie a planilha ou cole o conteúdo.");
+    const linhas = texto.split(/\r?\n/).map(l => l.replace(/\s+$/, "")).filter(l => l.trim()); const sep = detectarSeparador(linhas[0]);
+    const head = linhas[0].split(sep).map(normalizarCabecalho); const idx = (k: string) => head.indexOf(k);
+    if (["unidade", "turno", "nome", "vagas"].some(k => idx(k) < 0)) throw new Error("Cabeçalho precisa ter: unidade; serie; turno; nome; vagas (opcionais: modalidade, series_grupo, ano, situacao).");
+    const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+    const units = await db.select().from(schema.units); const grades = await db.select().from(schema.grades);
+    const TURNOS_TURMA = ["Matutino", "Vespertino", "Integral"]; let novas = 0, atualizadas = 0; const erros: string[] = [];
+    for (const [i, l] of linhas.slice(1).entries()) {
+      const c = l.split(sep).map(x => x.trim().replace(/^"(.*)"$/, "$1").trim()); const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : "");
+      try {
+        const u = units.find(x => norm(x.nome) === norm(g("unidade")) || norm(x.codigo) === norm(g("unidade"))); if (!u) throw new Error(`unidade "${g("unidade")}" não encontrada`);
+        const integral = /^integral$/i.test(norm(g("modalidade")));
+        const serie = g("serie") ? grades.find(x => norm(x.nome) === norm(g("serie"))) ?? grades.find(x => norm(x.nome).startsWith(norm(g("serie")))) : undefined;
+        if (!integral && !serie) throw new Error(g("serie") ? `série "${g("serie")}" não encontrada` : "turma Regular precisa da série");
+        const tt = norm(g("turno")); const turno = TURNOS_TURMA.find(t => norm(t) === tt) ?? ({ manha: "Matutino", tarde: "Vespertino", matutino: "Matutino", vespertino: "Vespertino", integral: "Integral" } as Record<string, string>)[tt]; if (!turno) throw new Error(`turno "${g("turno")}" inválido (Matutino, Vespertino ou Integral)`);
+        const vagas = Number(g("vagas")); if (!Number.isInteger(vagas) || vagas < 0) throw new Error(`vagas "${g("vagas")}" inválido`);
+        const nome = g("nome"); if (!nome) throw new Error("nome da turma vazio");
+        const ano = g("ano") ? Number(g("ano")) : cfg.matriculas.anoLetivo; if (!Number.isInteger(ano) || ano < 2000) throw new Error(`ano "${g("ano")}" inválido`);
+        const status = /^fech/i.test(g("situacao")) ? "FECHADA" : "ABERTA";
+        const [ja] = await sql<{ id: number }[]>`SELECT id FROM classes WHERE ano=${ano} AND unit_id=${u.id} AND lower(nome)=lower(${nome})`;
+        if (ja) {
+          const [{ ocup }] = await sql<{ ocup: number }[]>`SELECT count(*)::int AS ocup FROM enrollments WHERE class_id=${ja.id} AND (status='CONFIRMADA' OR (status='RESERVADA' AND reserva_ate >= ${hoje()}))`;
+          if (vagas < ocup) throw new Error(`"${nome}" já tem ${ocup} vaga(s) ocupada(s)/reservada(s); não reduzo para ${vagas}`);
+          await sql`UPDATE classes SET vagas=${vagas}, turno=${turno}, status=${status} WHERE id=${ja.id}`; atualizadas++;
+        } else {
+          await db.insert(schema.classes).values({ ano, unitId: u.id, modalidade: integral ? "INTEGRAL" : "REGULAR", gradeId: integral ? null : serie!.id, seriesTexto: integral ? (g("series_grupo") || g("serie") || null) : null, turno, nome, vagas, status }); novas++;
+        }
+      } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); }
+    }
+    await audit(s, "importar turmas", "classes", null, null, { novas, atualizadas, erros: erros.length });
+    resumo = `${novas} turma(s) criada(s), ${atualizadas} atualizada(s).` + (erros.length ? ` ${erros.length} linha(s) com erro: ${erros.slice(0, 5).join(" · ")}${erros.length > 5 ? " …" : ""}` : "");
+  } catch (e) { redirect(go("/matriculas/turmas", "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go("/matriculas/turmas", "ok", resumo));
+}
+
+/** v24.1 · virada de ano: cria as turmas do ano de destino copiando a grade do ano de origem (mesmos nomes, séries, turnos e vagas). Turma que já existe no destino fica como está. */
+export async function copiarTurmas(fd: FormData) {
+  const s = await requireSession(); const de = int(fd, "de"); const para = int(fd, "para"); let msg = "";
+  try {
+    assert(can.gradeTurmas(s), "Só RH e Direção alteram a grade de turmas.");
+    if (!de || !para || de === para) throw new Error("Escolha o ano de origem e um ano de destino diferente.");
+    const origem = await sql<{ unit_id: number; modalidade: string; grade_id: number | null; series_texto: string | null; turno: string; nome: string; vagas: number }[]>`SELECT unit_id, modalidade, grade_id, series_texto, turno, nome, vagas FROM classes WHERE ano=${de} AND status='ABERTA'`;
+    if (!origem.length) throw new Error(`Não há turmas abertas em ${de}.`);
+    let criadas = 0, existiam = 0;
+    for (const t of origem) {
+      const [ja] = await sql<{ id: number }[]>`SELECT id FROM classes WHERE ano=${para} AND unit_id=${t.unit_id} AND lower(nome)=lower(${t.nome})`;
+      if (ja) { existiam++; continue; }
+      await db.insert(schema.classes).values({ ano: para, unitId: t.unit_id, modalidade: t.modalidade, gradeId: t.grade_id, seriesTexto: t.series_texto, turno: t.turno, nome: t.nome, vagas: t.vagas, status: "ABERTA" }); criadas++;
+    }
+    await audit(s, "copiar turmas", "classes", null, null, { de, para, criadas, existiam });
+    msg = `${criadas} turma(s) de ${para} criada(s) a partir de ${de}` + (existiam ? `; ${existiam} já existia(m) e ficaram como estavam.` : ".");
+  } catch (e) { redirect(go("/matriculas/turmas", "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(`/matriculas/turmas?ano=${para}`, "ok", msg));
 }

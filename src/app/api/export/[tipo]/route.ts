@@ -16,6 +16,8 @@ import { listarIndicadores, listarAcoes, TIPO_IND, ACAO_STATUS } from "@/lib/ges
 import { FAROL_LABEL, FREQ_LABEL, DIRECAO_IND, ultimosPeriodos, periodoDe, SEGMENTO_LABEL } from "@/lib/gestao-calc";
 import { radarFamilias } from "@/lib/radar-familia";
 import { exportarV22 } from "@/lib/export-v22";
+import { exportarV23 } from "@/lib/export-v23";
+import { exportarV25 } from "@/lib/export-v25";
 import { getSettings, ENR_STATUS } from "@/lib/utils";
 import { calcularRevisao } from "@/lib/avaliacao-server";
 import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PADRAO, type Criterio, type Memoria, type Notas, type Faixas } from "@/lib/avaliacao";
@@ -28,9 +30,10 @@ function csv(rows: (string | number | null | undefined)[][]) {
 }
 
 export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }> }) {
-  const s = await getSession();
-  if (!s || s.role === "COLABORADOR") return NextResponse.json({ erro: "Não autorizado." }, { status: 401 });
-  const { tipo } = await ctx.params; const u = scopeUnit(s); const uf = u === null ? sql`` : sql`AND e.unit_id=${u}`;
+  const s = await getSession(); const { tipo } = await ctx.params;
+  // v25 · o próprio espelho (portal do colaborador) é o único export do autoatendimento
+  if (!s || (s.role === "COLABORADOR" && tipo !== "meu-espelho")) return NextResponse.json({ erro: "Não autorizado." }, { status: 401 });
+  const u = scopeUnit(s); const uf = u === null ? sql`` : sql`AND e.unit_id=${u}`;
   let rows: (string | number | null)[][] = [];
   if (tipo === "colaboradores") {
     const sens = can.verSensivel(s);
@@ -95,8 +98,10 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
     const m = await matrizTreinamento(u);
     rows = [["colaborador", "unidade", "cargo", "treinamento", "tipo", "situacao", "concluido_em", "valido_ate"], ...m.linhas.flatMap(l => l.itens.map(i => [l.emp.nome, l.emp.unidade, l.emp.cargo, `${i.curso.codigo} ${i.curso.titulo}`, i.curso.tipo, i.status, fmtData(i.concluidoEm), fmtData(i.validoAte)]))];
   } else if (tipo === "risco-pessoas") {
-    if (!["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
+    // v24 · T-067: lista nominal só para RH/Direção, sempre na trilha (o diretor de unidade vê o agregado por área)
+    if (!["RH", "DIRECAO"].includes(s.role)) return NextResponse.json({ erro: "A lista nominal de risco é restrita ao RH e à Direção." }, { status: 403 });
     const r = (await sinaisPessoas(u)).filter(x => x.nivel !== "BAIXO");
+    const { audit } = await import("@/lib/utils"); await audit(s, "exportar lista nominal de risco", "employees", null, null, { unidade: u, pessoas: r.length });
     rows = [["colaborador", "unidade", "cargo", "pontos", "nivel", "sinais"], ...r.map(x => [x.nome, x.unidade, x.cargo, x.pontos, x.nivel, x.fatores.map(f => f.texto).join(" | ")])];
   } else if (tipo === "inadimplencia") {
     if (!["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
@@ -151,7 +156,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
     }
     rows = [[`Ciclo: ${c.nome} · cálculo pelo motor oficial (pendências e não observados nunca viram zero)`], cab, ...linhas];
   } else {
-    const v22 = await exportarV22(tipo, s, u, new URL(req.url));
+    const url = new URL(req.url);
+    const v22 = (await exportarV22(tipo, s, u, url)) ?? (await exportarV23(tipo, s, u, url)) ?? (await exportarV25(tipo, s, u, url));
     if (v22 === "negado") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
     if (!v22) return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
     rows = v22;

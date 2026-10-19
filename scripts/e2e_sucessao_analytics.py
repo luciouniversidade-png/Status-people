@@ -62,13 +62,20 @@ aid = find_form_aid(html, "Registrar como realizado"); post(f"/sucessao/review/{
 
 # ================= ANALYTICS =================
 html = page("/analytics"); assert "People Health" in html and "Turnover 12 meses" in html and "turnover 12 meses" in html; print("people health com desconto por turnover ok")
+# v24 · T-067: a lista nominal de risco fica atrás de "Ver nomes" (só RH/Direção) e cada consulta entra na trilha de auditoria
+assert "Ver nomes (consulta auditada)" in html and "Consulta nominal registrada" not in html and "Risco de saída por área" in html; print("v24: risco por área agregado; nomes só sob consulta ok")
+html = page("/analytics?nominal=1"); assert "Consulta nominal registrada" in html
 assert "Prof. Novo" in html and "menos de 6 meses de casa" in html; print("risk center: sinais ok")
 assert "Prof. Sucessora" in html and "talento estratégico" in html
+assert int(psql("SELECT count(*) FROM audit_log WHERE acao='consulta nominal: risco de saída'")) >= 1; print("v24: consulta nominal auditada ok")
+html = page("/analytics")
 assert "Folha mensal base" in html and "R$" in html; print("custo de pessoal ok (RH)")
 html = page("/analytics?dissidio=5&novos=2"); assert "Folha projetada" in html; print("simulação de dissídio ok")
 html = page("/configuracoes"); aid = find_form_aid(html, "Criar acesso"); post("/configuracoes", aid, {"nome": "Dir Car", "email": "dir@car", "role": "DIRETOR_UNIDADE", "unitId": car, "senha": "senha12345"})
 S2 = mk(); login(S2, "dir@car", "senha12345"); html = page("/analytics", sess=S2); assert "Folha mensal base" not in html and "People Health" in html; print("diretor sem custo de pessoal ok")
-r = S2.get(B + "/api/export/risco-pessoas"); assert r.status_code == 200 and "Prof. Novo" in r.text
+r = S2.get(B + "/api/export/risco-pessoas"); assert r.status_code == 403 and "Prof. Novo" not in r.text; print("v24: diretor de unidade sem lista nominal de risco (403) ok")
+html = page("/analytics?nominal=1", sess=S2); assert "Consulta nominal registrada" not in html and "Ver nomes (consulta auditada)" not in html
+r = S.get(B + "/api/export/risco-pessoas"); assert r.status_code == 200 and "Prof. Novo" in r.text; assert int(psql("SELECT count(*) FROM audit_log WHERE acao='exportar lista nominal de risco'")) >= 1; print("v24: exportação nominal pelo RH, auditada ok")
 html = page("/analytics/assistente"); ctx = html.split("O que o assistente enxerga")[1]; assert "não está ligado" in html and "people_health" in ctx and "Prof. Novo" not in ctx and "6000" not in ctx; print("contexto anonimizado ok")
 aid = find_form_aid(html, "O que você quer saber?"); loc = post("/analytics/assistente", aid, {"pergunta": "Onde está o maior risco?"}); assert "resposta=" in loc, loc
 html = page(loc); assert "AI_API_KEY" in html and "Onde está o maior risco?" in html; print("people AI sem chave: erro registrado, nada enviado ok")

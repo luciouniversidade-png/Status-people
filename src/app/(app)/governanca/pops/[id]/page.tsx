@@ -6,7 +6,7 @@ import { requireSession, can } from "@/lib/auth";
 import { Page, Card, Badge, Btn, Flash, Field, Input, Select, Textarea } from "@/components/ui";
 import { PrintButton } from "@/components/PrintButton";
 import { fmtData, fmtDataHora, getSettings } from "@/lib/utils";
-import { POP_STATUS } from "@/lib/governanca";
+import { POP_STATUS, revisoesPop } from "@/lib/governanca";
 import { salvarPop, publicarPop, mudarStatusPop, darCiencia } from "../../actions";
 import { GESTAO, usuariosGestao } from "../../_shared";
 import { Anexos } from "@/components/Anexos";
@@ -27,6 +27,7 @@ export default async function Pop({ params, searchParams }: { params: Promise<{ 
     <Page title={`${p.codigo} — ${p.titulo}`} sub={<span className="flex flex-wrap items-center gap-2"><Badge v={p.status === "VIGENTE" ? "APROVADA" : p.status === "EM_REVISAO" ? "PENDENTE" : p.status === "OBSOLETO" ? "CANCELADA" : "EM_AQUISICAO"} label={POP_STATUS[p.status]} /> v{p.versao} · {p.area} · dono: {owner?.nome ?? <span className="text-aviso">não definido</span>}{p.publicadoEm && ` · publicado ${fmtDataHora(p.publicadoEm)}`}{p.revisarEm && ` · revisar em ${fmtData(p.revisarEm)}`} · <Link className="text-acao" href="/governanca/pops">biblioteca</Link></span>}
       actions={<PrintButton />}>
       <Flash ok={sp.ok} erro={sp.erro} />
+      {(await revisoesPop({ procedureId: p.id, abertas: true })).map(r => <div key={r.id} id="revisao" className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-aviso"><b>Revisão aberta por exceção repetida</b> — {r.evidencias.length} exceções iguais ({r.motivo}); revisar até {fmtData(r.prazo)}{r.dono ? ` · dono: ${r.dono}` : ""}. Publique uma nova versão (a revisão fecha sozinha) ou conclua sem mudança com justificativa em <Link className="underline" href="/governanca/excecoes#revisoes">Exceções</Link>. Evidências: {r.evidencias.map(e => `#${e}`).join(", ")}.</div>)}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">
           <Card title="Procedimento">

@@ -43,3 +43,38 @@ export async function estatisticasGov(unitId: number | null) {
 
 /** Níveis de autonomia de agentes de IA (inventário de Governança). */
 export const NIVEIS_IA: Record<string, string> = { N0: "N0 · Consulta (responde, não produz entregável)", N1: "N1 · Rascunho (pessoa revisa antes de usar)", N2: "N2 · Executa com aprovação caso a caso", N3: "N3 · Rotina autônoma com log e auditoria" };
+
+// ------------------------------------------------------------ v25 · CRQ-PRJ-V3-03: exceção repetida revisa o POP
+/** Exceções iguais (mesmo POP — ou a mesma regra escrita — e o mesmo motivo) na janela: a partir do limiar, abre a revisão do POP com as evidências e prazo. */
+export async function verificarRevisaoPop(procedureId: number | null, regra: string, motivo: string) {
+  const { getSettings } = await import("./utils"); const { notificar, usuariosPorPerfil } = await import("./comunicacao");
+  const cfg = await getSettings(); const g = cfg.governanca as { excecaoRecorrenteLimiar?: number; excecaoJanelaDias?: number; revisaoPopPrazoDias?: number };
+  const limiar = Number(g.excecaoRecorrenteLimiar ?? 3), janela = Number(g.excecaoJanelaDias ?? 90), prazoDias = Number(g.revisaoPopPrazoDias ?? 30);
+  const chave = `${procedureId ?? `regra:${regra.trim().toLowerCase()}`}|${motivo}`;
+  const evid = await sql<{ id: number }[]>`SELECT id FROM exceptions WHERE motivo=${motivo} AND ${procedureId ? sql`procedure_id=${procedureId}` : sql`procedure_id IS NULL AND lower(trim(regra))=${regra.trim().toLowerCase()}`} AND status IN ('APROVADA','EXPIRADA','REVISADA') AND created_at > now() - make_interval(days => ${janela}) ORDER BY id`;
+  if (evid.length < limiar) return null;
+  const [ja] = await sql<{ id: number }[]>`SELECT id FROM procedure_reviews WHERE chave=${chave} AND status='ABERTA'`;
+  if (ja) { await sql`UPDATE procedure_reviews SET evidencias=${JSON.stringify(evid.map(e => e.id))}::jsonb WHERE id=${ja.id}`; return ja.id; }
+  const [p] = procedureId ? await sql<{ owner_user_id: number | null; codigo: string; titulo: string }[]>`SELECT owner_user_id, codigo, titulo FROM procedures WHERE id=${procedureId}` : [];
+  const prazo = new Date(Date.now() + prazoDias * 86400000).toISOString().slice(0, 10);
+  const [r] = await sql<{ id: number }[]>`INSERT INTO procedure_reviews (chave, procedure_id, regra, motivo, evidencias, prazo, dono_user_id) VALUES (${chave}, ${procedureId}, ${regra}, ${motivo}, ${JSON.stringify(evid.map(e => e.id))}::jsonb, ${prazo}, ${p?.owner_user_id ?? null}) ON CONFLICT DO NOTHING RETURNING id`;
+  if (!r) return null;
+  const dest = p?.owner_user_id ? [p.owner_user_id] : await usuariosPorPerfil(cfg.alcadas.pops as string[]);
+  await notificar(dest, `Revisão de POP aberta: ${p ? `${p.codigo} ${p.titulo}` : regra}`, `${evid.length} exceções iguais (${motivo}) em ${janela} dias — revisar até ${prazo.split("-").reverse().join("/")}.`, procedureId ? `/governanca/pops/${procedureId}#revisao` : "/governanca/excecoes#revisoes", "ACAO", `poprev:${r.id}`);
+  return r.id;
+}
+/** Revisões abertas (para o painel de governança e a página do POP). */
+export async function revisoesPop(filtro: { procedureId?: number; abertas?: boolean } = {}) {
+  return sql<{ id: number; procedure_id: number | null; codigo: string | null; titulo: string | null; regra: string; motivo: string; evidencias: number[]; prazo: string; dono: string | null; status: string; desfecho: string | null; desfecho_obs: string | null; versao_publicada: number | null; created_at: string; concluida_em: string | null }[]>`
+    SELECT r.id, r.procedure_id, p.codigo, p.titulo, r.regra, r.motivo, r.evidencias, r.prazo::text, u.nome AS dono, r.status, r.desfecho, r.desfecho_obs, r.versao_publicada, r.created_at::text, r.concluida_em::text
+    FROM procedure_reviews r LEFT JOIN procedures p ON p.id=r.procedure_id LEFT JOIN users u ON u.id=r.dono_user_id WHERE true ${filtro.procedureId ? sql`AND r.procedure_id=${filtro.procedureId}` : sql``} ${filtro.abertas ? sql`AND r.status='ABERTA'` : sql``} ORDER BY (r.status='ABERTA') DESC, r.prazo`;
+}
+/** Rotina: abre revisões que faltarem (exceções aprovadas por outros caminhos) e escala as vencidas à Direção. */
+export async function rotinaRevisaoPop() {
+  const { notificar, usuariosPorPerfil } = await import("./comunicacao");
+  const grupos = await sql<{ procedure_id: number | null; regra: string; motivo: string }[]>`SELECT procedure_id, min(regra) AS regra, motivo FROM exceptions WHERE status IN ('APROVADA','EXPIRADA','REVISADA') AND created_at > now() - interval '120 days' GROUP BY procedure_id, CASE WHEN procedure_id IS NULL THEN lower(trim(regra)) END, motivo HAVING count(*) >= 2`;
+  let abertas = 0; for (const g of grupos) if (await verificarRevisaoPop(g.procedure_id, g.regra, g.motivo)) abertas++;
+  const vencidas = await sql<{ id: number }[]>`UPDATE procedure_reviews SET escalada_em=now() WHERE status='ABERTA' AND prazo < current_date AND escalada_em IS NULL RETURNING id`;
+  if (vencidas.length) await notificar(await usuariosPorPerfil(["DIRECAO"]), "Revisão de POP vencida", `${vencidas.length} revisão(ões) por exceção repetida passaram do prazo.`, "/governanca/excecoes#revisoes", "ALERTA", `poprevvenc:${new Date().toISOString().slice(0, 10)}`);
+  return { abertas, escaladas: vencidas.length };
+}

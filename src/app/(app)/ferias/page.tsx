@@ -21,7 +21,7 @@ export default async function Ferias({ searchParams }: { searchParams: Promise<R
   const podeAprovar = can.aprovar(s, cfg.alcadas.ferias); const sensivel = can.verSensivel(s);
   const alertas = await feriasAVencer(u, 90);
   return (
-    <Page title="Férias e afastamentos" sub="Solicitações passam por aprovação. O saldo de férias é calculado pelos períodos aquisitivos de cada colaborador." actions={<Btn kind="ghost" href="/api/export/ferias">Exportar CSV</Btn>}>
+    <Page title="Férias e afastamentos" sub="Solicitações passam por aprovação. O saldo de férias é calculado pelos períodos aquisitivos de cada colaborador." actions={<><Btn kind="ghost" href="/ferias/calendario">Quem está fora (calendário)</Btn>{can.editar(s) && <Btn kind="ghost" href="/ferias/importar">Importar histórico</Btn>}<Btn kind="ghost" href="/api/export/ferias">Exportar CSV</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       {alertas.length > 0 && (
         <Card title={`Períodos de férias a vencer — ${alertas.length}`} className="mb-4 border-amber-200">

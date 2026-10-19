@@ -19,7 +19,7 @@ export default async function Acoes({ searchParams }: { searchParams: Promise<Re
   const qs = new URLSearchParams(Object.entries({ situacao, minhas: minhas ? "1" : "", q: sp.q ?? "" }).filter(([, v]) => v)).toString(); const voltar = `/estrategia/acoes${qs ? `?${qs}` : ""}`;
   return (
     <Page title="Plano de ação" sub="Ações 5W2H — o quê, por quê, onde, quando, quem, como e quanto. Vencida = passou do prazo sem estar bloqueada; bloqueada = aguarda apoio de terceiros e não conta como atraso de quem executa."
-      actions={<>{opcoes && <Modal label="Nova ação" kind="primary" small={false} title="Nova ação (5W2H)"><FormAcao o={opcoes} padrao={{ voltar }} /></Modal>}<Btn kind="ghost" href="/api/export/acoes">Exportar CSV</Btn></>}>
+      actions={<>{opcoes && <Modal label="Nova ação" kind="primary" small={false} title="Nova ação (5W2H)"><FormAcao o={opcoes} padrao={{ voltar }} /></Modal>}<Btn kind="ghost" href="/estrategia/acoes/quadro">Ver em quadro</Btn><Btn kind="ghost" href="/api/export/acoes">Exportar CSV</Btn></>}>
       <SubNav atual="acoes" />
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">

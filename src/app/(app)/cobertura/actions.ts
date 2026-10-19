@@ -6,6 +6,8 @@ import { audit, str, strOrNull, int, hoje, addDays, getSettings, fmtData, detect
 import { textoImportacao } from "@/lib/importacao";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { MOTIVO_AUS, SOLUCOES, minutos, turnoDe, diaSemana, sobrepoe, lerDia, gerarAulasDaAusencia, impedimento } from "@/lib/cobertura";
+import { alvoEdicao, choqueProfessor } from "@/lib/grade";
+import { semelhanca } from "@/lib/conciliacao";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
 const back = (fd: FormData, fb = "/cobertura") => caminhoSeguro(str(fd, "voltar"), fb);
@@ -185,45 +187,73 @@ export async function marcarRealizada(fd: FormData) {
   redirect(go(b, "ok", msg));
 }
 
-// ---------- Grade horária ----------
-async function validarSlot(s: Session, d: { employeeId: number; unitId: number; dia: number; inicio: string; fim: string; turma: string; spaceId: number | null }, ignorarId?: number) {
+// ---------- Grade horária (v25: com vigência — T-053 · CRQ-TMP-V3-01) ----------
+type DadosAula = { employeeId: number; unitId: number; dia: number; inicio: string; fim: string; turma: string; disciplina: string | null; spaceId: number | null };
+async function validarCamposAula(s: Session, d: DadosAula) {
   const u = scopeUnit(s); if (u !== null && d.unitId !== u) throw new Error("Sem acesso a esta unidade.");
   const [e] = await sql<{ situacao: string }[]>`SELECT situacao FROM employees WHERE id=${d.employeeId}`; if (!e) throw new Error("Professor não encontrado.");
   if (d.dia < 1 || d.dia > 6) throw new Error("Dia da semana inválido (segunda a sábado).");
   if (minutos(d.inicio) === null || minutos(d.fim) === null || (minutos(d.fim) ?? 0) <= (minutos(d.inicio) ?? 0)) throw new Error("Horário inválido: use HH:MM, com o fim depois do início.");
   if (!d.turma) throw new Error("Informe a turma.");
-  const conflito = (await sql<{ inicio: string; fim: string; turma: string }[]>`SELECT inicio, fim, turma FROM teacher_slots WHERE employee_id=${d.employeeId} AND ativo AND dia_semana=${d.dia} ${ignorarId ? sql`AND id <> ${ignorarId}` : sql``}`).find(x => sobrepoe(x.inicio, x.fim, d.inicio, d.fim));
-  if (conflito) throw new Error(`Choque de horário com a aula de ${conflito.turma} (${conflito.inicio}–${conflito.fim}).`);
   if (d.spaceId) { const [sp] = await sql<{ unit_id: number }[]>`SELECT unit_id FROM spaces WHERE id=${d.spaceId}`; if (!sp || sp.unit_id !== d.unitId) throw new Error("A sala precisa ser da mesma unidade."); }
 }
+const msgAjuste = (nome: string) => `Grade atualizada a partir de hoje (nova vigência “${nome}”): o que passou fica como era. A CH dos professores só muda quando o RH aplicar a CH desta vigência.`;
+type SlotRow = { id: number; unit_id: number; version_id: number | null; employee_id: number; dia_semana: number; inicio: string; fim: string; turma: string; disciplina: string | null; space_id: number | null };
+
 export async function salvarAula(fd: FormData) {
-  const s = await requireSession(); const b = back(fd, "/cobertura/grade");
+  const s = await requireSession(); const b = back(fd, "/cobertura/grade"); let msg = "Grade atualizada.";
   try {
     assert(coordena(s), "Só a coordenação e a direção editam a grade."); const id = int(fd, "id");
-    const d = { employeeId: int(fd, "employeeId") ?? 0, unitId: int(fd, "unitId") ?? 0, dia: int(fd, "dia") ?? 0, inicio: str(fd, "inicio"), fim: str(fd, "fim"), turma: str(fd, "turma"), disciplina: strOrNull(fd, "disciplina"), spaceId: int(fd, "spaceId") };
-    if (id) { const [old] = await sql<{ unit_id: number }[]>`SELECT unit_id FROM teacher_slots WHERE id=${id}`; if (!old) throw new Error("Aula não encontrada."); const u = scopeUnit(s); if (u !== null && old.unit_id !== u) throw new Error("Sem acesso a esta unidade."); }
-    await validarSlot(s, d, id ?? undefined);
-    if (id) await sql`UPDATE teacher_slots SET employee_id=${d.employeeId}, unit_id=${d.unitId}, dia_semana=${d.dia}, inicio=${d.inicio}, fim=${d.fim}, turno=${turnoDe(d.inicio)}, turma=${d.turma}, disciplina=${d.disciplina}, space_id=${d.spaceId} WHERE id=${id}`;
-    else await sql`INSERT INTO teacher_slots (employee_id, unit_id, dia_semana, inicio, fim, turno, turma, disciplina, space_id) VALUES (${d.employeeId}, ${d.unitId}, ${d.dia}, ${d.inicio}, ${d.fim}, ${turnoDe(d.inicio)}, ${d.turma}, ${d.disciplina}, ${d.spaceId})`;
-    await audit(s, id ? "editar aula da grade" : "incluir aula na grade", "teacher_slots", id, null, d);
+    const d: DadosAula = { employeeId: int(fd, "employeeId") ?? 0, unitId: int(fd, "unitId") ?? 0, dia: int(fd, "dia") ?? 0, inicio: str(fd, "inicio"), fim: str(fd, "fim"), turma: str(fd, "turma"), disciplina: strOrNull(fd, "disciplina"), spaceId: int(fd, "spaceId") };
+    let old: SlotRow | undefined;
+    if (id) { [old] = await sql<SlotRow[]>`SELECT id, unit_id, version_id, employee_id, dia_semana, inicio, fim, turma, disciplina, space_id FROM teacher_slots WHERE id=${id}`; if (!old) throw new Error("Aula não encontrada."); const u = scopeUnit(s); if (u !== null && old.unit_id !== u) throw new Error("Sem acesso a esta unidade."); if (old.unit_id !== d.unitId) throw new Error("Para mudar a aula de unidade, retire-a e inclua na grade da outra unidade."); }
+    await validarCamposAula(s, d);
+    const mudaCh = !old || old.employee_id !== d.employeeId || old.dia_semana !== d.dia || old.inicio !== d.inicio || old.fim !== d.fim;
+    const res = await sql.begin(async tx => {
+      if (old && old.version_id === null) { // aula antiga sem vigência (instalação anterior): edição direta
+        const c = (await tx<{ inicio: string; fim: string; turma: string; id: number }[]>`SELECT id, inicio, fim, turma FROM teacher_slots WHERE employee_id=${d.employeeId} AND ativo AND slot_vigente(version_id, current_date) AND dia_semana=${d.dia} AND id <> ${old.id}`).find(x => sobrepoe(x.inicio, x.fim, d.inicio, d.fim));
+        if (c) throw new Error(`Choque de horário com a aula de ${c.turma} (${c.inicio}–${c.fim}).`);
+        await tx`UPDATE teacher_slots SET employee_id=${d.employeeId}, dia_semana=${d.dia}, inicio=${d.inicio}, fim=${d.fim}, turno=${turnoDe(d.inicio)}, turma=${d.turma}, disciplina=${d.disciplina}, space_id=${d.spaceId} WHERE id=${old.id}`; return { versao: null, ajuste: false, slotId: old.id };
+      }
+      const T = tx as unknown as typeof sql; const alvo = await alvoEdicao(T, d.unitId, s.id, { versaoId: old?.version_id ?? int(fd, "versaoId"), mudaCh });
+      const alvoId = old ? (alvo.mapa?.get(old.id) ?? old.id) : null;
+      const c = await choqueProfessor(T, alvo.versao, d, alvoId);
+      if (c) throw new Error(`Choque de horário com a aula de ${c.turma} (${c.inicio}–${c.fim})${c.unit_id !== d.unitId ? " em outra unidade" : ""}.`);
+      if (alvoId) { await tx`UPDATE teacher_slots SET employee_id=${d.employeeId}, dia_semana=${d.dia}, inicio=${d.inicio}, fim=${d.fim}, turno=${turnoDe(d.inicio)}, turma=${d.turma}, disciplina=${d.disciplina}, space_id=${d.spaceId} WHERE id=${alvoId}`; return { versao: alvo.versao, ajuste: alvo.ajuste, slotId: alvoId }; }
+      const [n] = await tx<{ id: number }[]>`INSERT INTO teacher_slots (employee_id, unit_id, dia_semana, inicio, fim, turno, turma, disciplina, space_id, version_id) VALUES (${d.employeeId}, ${d.unitId}, ${d.dia}, ${d.inicio}, ${d.fim}, ${turnoDe(d.inicio)}, ${d.turma}, ${d.disciplina}, ${d.spaceId}, ${alvo.versao.id}) RETURNING id`;
+      return { versao: alvo.versao, ajuste: alvo.ajuste, slotId: n.id };
+    });
+    await audit(s, id ? "editar aula da grade" : "incluir aula na grade", "teacher_slots", res.slotId, old ? { employeeId: old.employee_id, dia: old.dia_semana, inicio: old.inicio, fim: old.fim, turma: old.turma, versao: old.version_id } : null, { ...d, versao: res.versao?.id ?? null, ajusteAPartirDeHoje: res.ajuste });
+    if (res.ajuste && res.versao) msg = msgAjuste(res.versao.nome);
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
-  redirect(go(b, "ok", "Grade atualizada."));
+  redirect(go(b, "ok", msg));
 }
 export async function removerAula(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/cobertura/grade"); let msg = "";
   try {
-    assert(coordena(s)); const [t] = await sql<{ id: number; unit_id: number }[]>`SELECT id, unit_id FROM teacher_slots WHERE id=${int(fd, "id") ?? 0}`; if (!t) throw new Error("Aula não encontrada.");
+    assert(coordena(s)); const [t] = await sql<SlotRow[]>`SELECT id, unit_id, version_id, employee_id, dia_semana, inicio, fim, turma, disciplina, space_id FROM teacher_slots WHERE id=${int(fd, "id") ?? 0}`; if (!t) throw new Error("Aula não encontrada.");
     const u = scopeUnit(s); if (u !== null && t.unit_id !== u) throw new Error("Sem acesso a esta unidade.");
-    const [usada] = await sql`SELECT 1 FROM cover_assignments WHERE slot_id=${t.id} LIMIT 1`;
-    if (usada) { await sql`UPDATE teacher_slots SET ativo=false WHERE id=${t.id}`; msg = "Aula retirada da grade (o histórico de coberturas fica)."; } else { await sql`DELETE FROM teacher_slots WHERE id=${t.id}`; msg = "Aula removida."; }
-    await audit(s, "remover aula da grade", "teacher_slots", t.id, null, null);
+    msg = await sql.begin(async tx => {
+      if (t.version_id !== null) {
+        const alvo = await alvoEdicao(tx as unknown as typeof sql, t.unit_id, s.id, { versaoId: t.version_id, mudaCh: true });
+        if (alvo.ajuste) { const copia = alvo.mapa?.get(t.id) ?? null; if (copia) await tx`DELETE FROM teacher_slots WHERE id=${copia}`; else await tx`DELETE FROM teacher_slots WHERE version_id=${alvo.versao.id} AND employee_id=${t.employee_id} AND dia_semana=${t.dia_semana} AND inicio=${t.inicio} AND fim=${t.fim} AND turma=${t.turma}`; return msgAjuste(alvo.versao.nome); }
+      }
+      const [usada] = await tx`SELECT 1 FROM cover_assignments WHERE slot_id=${t.id} LIMIT 1`;
+      if (usada) { await tx`UPDATE teacher_slots SET ativo=false WHERE id=${t.id}`; return "Aula retirada da grade (o histórico de coberturas fica)."; }
+      await tx`DELETE FROM teacher_slots WHERE id=${t.id}`; return "Aula removida.";
+    });
+    await audit(s, "remover aula da grade", "teacher_slots", t.id, { employeeId: t.employee_id, dia: t.dia_semana, inicio: t.inicio, fim: t.fim, turma: t.turma, versao: t.version_id }, null);
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", msg));
 }
 
-/** Importa a grade (planilha ou CSV): professor (nome, e-mail ou CPF), unidade, dia, início, fim, turma, disciplina, sala. Com "substituir", a grade anterior das unidades do arquivo sai. */
+/**
+ * Importa a grade (planilha ou CSV) em duas etapas: 1) lê e valida as linhas e propõe o de-para nome × colaborador;
+ * 2) a coordenação confirma o de-para de CADA nome (CRQ-TMP-V3-01: nunca automático) e só então as aulas entram no destino
+ * escolhido — a grade em vigor (ajuste a partir de hoje), um rascunho ou uma nova vigência a partir de uma data.
+ */
 export async function importarGrade(fd: FormData) {
-  const s = await requireSession(); const b = "/cobertura/grade"; let msg = "";
+  const s = await requireSession(); const b = "/cobertura/grade"; let destinoUrl = "";
   try {
     assert(coordena(s), "Só a coordenação e a direção importam a grade.");
     const texto = await textoImportacao(fd); if (!texto) throw new Error("Envie a planilha ou cole o conteúdo.");
@@ -233,38 +263,39 @@ export async function importarGrade(fd: FormData) {
     if ([cP, cU, cD, cI, cF, cT].some(i => i < 0)) throw new Error("Cabeçalho precisa ter: professor, unidade, dia, inicio, fim, turma (disciplina e sala são opcionais).");
     const norm = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
     const units = await sql<{ id: number; nome: string; codigo: string }[]>`SELECT id, nome, codigo FROM units`;
-    const emps = await sql<{ id: number; nome: string; email: string | null; cpf: string | null }[]>`SELECT id, nome, email, cpf FROM employees WHERE situacao <> 'DESLIGADO'`;
+    const emps = await sql<{ id: number; nome: string; email: string | null; cpf: string | null; unidade: string }[]>`SELECT e.id, e.nome, e.email, e.cpf, u.nome AS unidade FROM employees e JOIN units u ON u.id=e.unit_id WHERE e.situacao <> 'DESLIGADO'`;
     const spaces = await sql<{ id: number; nome: string; unit_id: number }[]>`SELECT id, nome, unit_id FROM spaces WHERE ativo`;
-    const escopo = scopeUnit(s); const erros: string[] = []; const validas: { employeeId: number; unitId: number; dia: number; inicio: string; fim: string; turma: string; disciplina: string | null; spaceId: number | null; linha: number }[] = [];
+    const escopo = scopeUnit(s); const erros: string[] = []; const validas: { nome: string; unitId: number; dia: number; inicio: string; fim: string; turma: string; disciplina: string | null; spaceId: number | null; linha: number }[] = [];
     for (const [i, l] of linhas.slice(1).entries()) {
       const c = l.split(sep).map(x => x.trim().replace(/^"(.*)"$/, "$1")); const g = (k: number) => (k >= 0 ? c[k] ?? "" : "");
       try {
-        const pv = norm(g(cP)); const e = emps.filter(x => norm(x.nome) === pv || (x.email && norm(x.email) === pv) || (x.cpf && x.cpf.replace(/\D/g, "") === pv.replace(/\D/g, "") && pv.replace(/\D/g, "").length === 11));
-        if (e.length !== 1) throw new Error(e.length ? `professor "${g(cP)}" ambíguo (use e-mail)` : `professor "${g(cP)}" não encontrado`);
+        if (!g(cP)) throw new Error("professor vazio");
         const u = units.find(x => norm(x.nome) === norm(g(cU)) || norm(x.codigo) === norm(g(cU))); if (!u) throw new Error(`unidade "${g(cU)}" não encontrada`);
         if (escopo !== null && u.id !== escopo) throw new Error("unidade fora do seu escopo");
         const dia = lerDia(g(cD)); if (!dia) throw new Error(`dia "${g(cD)}" inválido`);
         const ini = g(cI).padStart(5, "0"), fim = g(cF).padStart(5, "0"); if (minutos(ini) === null || minutos(fim) === null || (minutos(fim) ?? 0) <= (minutos(ini) ?? 0)) throw new Error(`horário ${g(cI)}–${g(cF)} inválido`);
         if (!g(cT)) throw new Error("turma vazia");
         const sp = g(cS) ? spaces.find(x => x.unit_id === u.id && norm(x.nome) === norm(g(cS))) : undefined; if (g(cS) && !sp) throw new Error(`sala "${g(cS)}" não cadastrada na unidade`);
-        validas.push({ employeeId: e[0].id, unitId: u.id, dia, inicio: ini, fim, turma: g(cT), disciplina: g(cDi) || null, spaceId: sp?.id ?? null, linha: i + 2 });
+        validas.push({ nome: g(cP), unitId: u.id, dia, inicio: ini, fim, turma: g(cT), disciplina: g(cDi) || null, spaceId: sp?.id ?? null, linha: i + 2 });
       } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); }
     }
-    // choques dentro do próprio arquivo
-    for (const [k, a] of validas.entries()) { const b2 = validas.slice(0, k).find(x => x.employeeId === a.employeeId && x.dia === a.dia && sobrepoe(x.inicio, x.fim, a.inicio, a.fim)); if (b2) erros.push(`Linha ${a.linha}: choque de horário com a linha ${b2.linha}`); }
+    // choques dentro do próprio arquivo (mesmo nome, mesmo dia, horários sobrepostos)
+    for (const [k, a] of validas.entries()) { const b2 = validas.slice(0, k).find(x => norm(x.nome) === norm(a.nome) && x.dia === a.dia && sobrepoe(x.inicio, x.fim, a.inicio, a.fim)); if (b2) erros.push(`Linha ${a.linha}: choque de horário com a linha ${b2.linha}`); }
     if (erros.length) throw new Error(`${erros.length} linha(s) com erro — nada foi importado. ${erros.slice(0, 6).join(" · ")}${erros.length > 6 ? " …" : ""}`);
-    const substituir = str(fd, "substituir") === "1"; const unidadesArq = [...new Set(validas.map(v => v.unitId))];
-    let n = 0;
-    await sql.begin(async tx => {
-      if (substituir) for (const u of unidadesArq) { await tx`UPDATE teacher_slots SET ativo=false WHERE unit_id=${u} AND ativo AND EXISTS (SELECT 1 FROM cover_assignments ca WHERE ca.slot_id=teacher_slots.id)`; await tx`DELETE FROM teacher_slots WHERE unit_id=${u} AND NOT EXISTS (SELECT 1 FROM cover_assignments ca WHERE ca.slot_id=teacher_slots.id)`; }
-      for (const v of validas) {
-        const choque = (await tx<{ inicio: string; fim: string; turma: string }[]>`SELECT inicio, fim, turma FROM teacher_slots WHERE employee_id=${v.employeeId} AND ativo AND dia_semana=${v.dia}`).find(x => sobrepoe(x.inicio, x.fim, v.inicio, v.fim));
-        if (choque) throw new Error(`Linha ${v.linha}: choque com a aula já cadastrada de ${choque.turma} (${choque.inicio}–${choque.fim}). Use "substituir a grade" ou corrija.`);
-        await tx`INSERT INTO teacher_slots (employee_id, unit_id, dia_semana, inicio, fim, turno, turma, disciplina, space_id) VALUES (${v.employeeId}, ${v.unitId}, ${v.dia}, ${v.inicio}, ${v.fim}, ${turnoDe(v.inicio)}, ${v.turma}, ${v.disciplina}, ${v.spaceId})`; n++;
-      }
+    if (!validas.length) throw new Error("Nenhuma aula no arquivo.");
+    // de-para proposto (nunca aplicado sem confirmação): e-mail/CPF ou nome exato sugerem; parecido só aparece como candidato
+    const nomes = [...new Map(validas.map(v => [norm(v.nome), v.nome])).entries()].map(([chave, nome]) => {
+      const dig = nome.replace(/\D/g, ""); const exatos = emps.filter(x => norm(x.nome) === chave || (x.email && norm(x.email) === chave) || (dig.length === 11 && x.cpf && x.cpf.replace(/\D/g, "") === dig));
+      const parecidos = emps.filter(x => !exatos.includes(x)).map(x => ({ x, sc: semelhanca(x.nome, nome) })).filter(y => y.sc >= 0.5).sort((p, q) => q.sc - p.sc).slice(0, 5);
+      return { chave, nome, aulas: validas.filter(v => norm(v.nome) === chave).length, sugerido: exatos.length === 1 ? exatos[0].id : null, ambiguo: exatos.length > 1,
+        candidatos: [...exatos.map(x => ({ id: x.id, nome: x.nome, unidade: x.unidade, motivo: x.email && norm(x.email) === chave ? "e-mail" : x.cpf && dig.length === 11 && x.cpf.replace(/\D/g, "") === dig ? "CPF" : "nome igual" })), ...parecidos.map(y => ({ id: y.x.id, nome: y.x.nome, unidade: y.x.unidade, motivo: `parecido (${Math.round(y.sc * 100)}%)` }))] };
     });
-    await audit(s, "importar grade horária", "teacher_slots", null, null, { aulas: n, substituir, unidades: unidadesArq });
-    msg = `${n} aula(s) importada(s)${substituir ? " (grade anterior das unidades substituída)" : ""}.`;
+    const destino = ["VIGENTE", "NOVA", "RASCUNHO"].includes(str(fd, "destino")) ? str(fd, "destino") : "VIGENTE";
+    const dataNova = str(fd, "inicioNova"); if (destino === "NOVA") assert(/^\d{4}-\d{2}-\d{2}$/.test(dataNova), "Informe a data de início da nova vigência.");
+    const rascunhoId = destino === "RASCUNHO" ? int(fd, "rascunhoId") : null; if (destino === "RASCUNHO") assert(!!rascunhoId, "Escolha o rascunho.");
+    const [bt] = await sql<{ id: number }[]>`INSERT INTO import_batches (tipo, user_id, payload, status) VALUES ('GRADE', ${s.id}, ${JSON.stringify({ destino, dataNova: destino === "NOVA" ? dataNova : null, rascunhoId, substituir: str(fd, "substituir") === "1", nomeNova: strOrNull(fd, "nomeNova"), linhas: validas, nomes })}::jsonb, 'PREVIA') RETURNING id`;
+    await audit(s, "importar grade horária (prévia)", "import_batches", bt.id, null, { aulas: validas.length, nomes: nomes.length, destino });
+    destinoUrl = `/cobertura/grade/importar/${bt.id}`;
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
-  redirect(go(b, "ok", msg));
+  redirect(go(destinoUrl, "ok", "Confira o de-para de cada professor e confirme para aplicar."));
 }

@@ -1,0 +1,69 @@
+import Link from "@/components/Link";
+import { redirect } from "next/navigation";
+import { sql } from "@/db";
+import { requireSession, scopeUnit } from "@/lib/auth";
+import { Page, Card, Flash, Stat, Table, Td, Btn, Field, Select, Input, Textarea, Badge } from "@/components/ui";
+import { Modal } from "@/components/Modal";
+import { podeIncidente, podeSst, TIPOS_INCIDENTE, GRAVIDADE_INCIDENTE, FUNCOES_CIPA, REPRESENTACAO_CIPA, estabilidadeCipa } from "@/lib/sst";
+import { registrarIncidente, registrarCat, registrarInvestigacao, salvarMembroCipa, encerrarMembroCipa, salvarReuniaoCipa } from "../actions";
+import { SstNav } from "../_nav";
+import { fmtData, hoje, diasEntre } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+
+/** T-102 · Incidentes, CAT e CIPA: acidente e quase acidente com protocolo, CAT no prazo legal, investigação que vira medida com dono. */
+export default async function Incidentes({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+  const s = await requireSession(); if (!podeIncidente(s)) redirect("/"); const sp = await searchParams; const u = scopeUnit(s); const h = hoje(); const gestao = podeSst(s);
+  const [units, emps, incidentes, membros, reunioes, usuarios] = await Promise.all([
+    sql<{ id: number; nome: string }[]>`SELECT id, nome FROM units ${u === null ? sql`` : sql`WHERE id=${u}`} ORDER BY nome`,
+    sql<{ id: number; nome: string; unit_id: number }[]>`SELECT id, nome, unit_id FROM employees WHERE situacao IN ('ATIVO','FERIAS','AFASTADO') ${u === null ? sql`` : sql`AND unit_id=${u}`} ORDER BY nome`,
+    sql<{ id: number; unidade: string; colaborador: string | null; data: string; tipo: string; gravidade: string; com_afastamento: boolean; local: string | null; descricao: string; cat_necessaria: boolean; cat_prazo: string | null; cat_numero: string | null; cat_emitida_em: string | null; causas: string | null; medidas: string | null; investigacao_prazo: string | null; investigado_em: string | null; action_plan_id: number | null; status: string }[]>`SELECT i.id, un.nome AS unidade, e.nome AS colaborador, i.data::text, i.tipo, i.gravidade, i.com_afastamento, i.local, i.descricao, i.cat_necessaria, i.cat_prazo::text, i.cat_numero, i.cat_emitida_em::text, i.causas, i.medidas, i.investigacao_prazo::text, i.investigado_em::text, i.action_plan_id, i.status FROM sst_incidents i JOIN units un ON un.id=i.unit_id LEFT JOIN employees e ON e.id=i.employee_id WHERE true ${u === null ? sql`` : sql`AND i.unit_id=${u}`} ORDER BY (i.status <> 'CONCLUIDO') DESC, i.data DESC LIMIT 100`,
+    sql<{ id: number; unidade: string; unit_id: number; nome: string; representacao: string; funcao: string; titular: boolean; mandato_inicio: string; mandato_fim: string; ativo: boolean }[]>`SELECT m.id, un.nome AS unidade, m.unit_id, e.nome, m.representacao, m.funcao, m.titular, m.mandato_inicio::text, m.mandato_fim::text, m.ativo FROM cipa_members m JOIN units un ON un.id=m.unit_id JOIN employees e ON e.id=m.employee_id WHERE true ${u === null ? sql`` : sql`AND m.unit_id=${u}`} ORDER BY m.ativo DESC, un.nome, m.funcao`,
+    sql<{ id: number; unidade: string; data: string; tipo: string; pauta: string | null; ata: string | null; realizada: boolean }[]>`SELECT r.id, un.nome AS unidade, r.data::text, r.tipo, r.pauta, r.ata, r.realizada FROM cipa_meetings r JOIN units un ON un.id=r.unit_id WHERE r.data >= ${h}::date - 365 ${u === null ? sql`` : sql`AND r.unit_id=${u}`} ORDER BY r.data DESC LIMIT 24`,
+    sql<{ id: number; nome: string }[]>`SELECT id, nome FROM users WHERE ativo AND role IN ('DIRECAO','RH','DIRETOR_UNIDADE','OPERACOES','GESTOR') ORDER BY nome`,
+  ]);
+  const abertos = incidentes.filter(i => i.status !== "CONCLUIDO"); const catAtr = incidentes.filter(i => i.cat_necessaria && !i.cat_emitida_em && i.cat_prazo && i.cat_prazo < h); const doAno = incidentes.filter(i => i.data.startsWith(h.slice(0, 4)));
+  const voltar = "/sst/incidentes";
+  return (
+    <Page title="Incidentes, CAT e CIPA" sub="Acidente e quase acidente com protocolo: CAT no prazo legal (primeiro dia útil seguinte; óbito, de imediato), investigação com a CIPA e a medida virando ação com dono.">
+      <Flash ok={sp.ok} erro={sp.erro} />
+      <SstNav atual="/sst/incidentes" />
+      <div className="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Stat label="Incidentes em aberto" value={abertos.length} /><Stat label="CAT com prazo vencido" value={<span className={catAtr.length ? "text-erro" : "text-ok"}>{catAtr.length}</span>} hint="escala à Direção" />
+        <Stat label={`Registros em ${h.slice(0, 4)}`} value={doAno.length} hint={`${doAno.filter(i => i.tipo === "QUASE_ACIDENTE").length} quase acidente(s)`} /><Stat label="Membros ativos da CIPA" value={membros.filter(m => m.ativo).length} />
+      </div>
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3 xl:items-start">
+        <Card title="Incidentes" className="xl:col-span-2">
+          <Table head={["Data · unidade", "Ocorrência", "CAT", "Investigação", ""]} empty="Nenhum incidente registrado.">
+            {incidentes.map(i => { const restante = i.cat_prazo ? diasEntre(h, i.cat_prazo) - 1 : null; return <tr key={i.id} id={`inc-${i.id}`}><Td className="whitespace-nowrap text-xs">{fmtData(i.data)}<div>{i.unidade}</div></Td><Td><b>{TIPOS_INCIDENTE[i.tipo]}</b> · {GRAVIDADE_INCIDENTE[i.gravidade]}{i.com_afastamento ? " · com afastamento" : ""}<div className="text-xs text-slate-600">{i.colaborador ? `${i.colaborador} · ` : ""}{i.local ?? ""}</div><div className="text-xs text-slate-500">{i.descricao}</div></Td>
+              <Td className="text-xs">{!i.cat_necessaria ? "—" : i.cat_emitida_em ? <><Badge v="APROVADA" label="emitida" /><div>{i.cat_numero} · {fmtData(i.cat_emitida_em)}</div></> : <><Badge v={restante !== null && restante < 0 ? "REJEITADA" : "PENDENTE"} label={restante === null ? "a emitir" : restante < 0 ? `vencida há ${-restante} dia(s)` : restante === 0 ? "vence hoje" : `faltam ${restante} dia(s)`} /><div>prazo {fmtData(i.cat_prazo)}</div></>}</Td>
+              <Td className="text-xs">{i.investigado_em ? <><Badge v="APROVADA" label="investigado" /><div className="text-slate-600">{i.medidas}</div>{i.action_plan_id && <Link href={`/estrategia/acoes/${i.action_plan_id}`} className="text-acao">ação #{i.action_plan_id}</Link>}</> : <>prazo {fmtData(i.investigacao_prazo)}{i.investigacao_prazo && i.investigacao_prazo < h && <div className="text-erro">atrasada</div>}</>}</Td>
+              <Td><div className="flex flex-col gap-1">{gestao && i.cat_necessaria && !i.cat_emitida_em && <Modal label="CAT" kind="link" title="Registrar a CAT"><form action={registrarCat} className="space-y-2"><input type="hidden" name="id" value={i.id} /><input type="hidden" name="voltar" value={voltar} /><Field label="Número da CAT"><Input name="numero" required /></Field><Field label="Emitida em"><Input type="date" name="em" defaultValue={h} /></Field><Btn small>Salvar</Btn></form></Modal>}
+                {!i.investigado_em && <Modal label="Investigar" kind="link" title="Investigação com a CIPA"><form action={registrarInvestigacao} className="space-y-2"><input type="hidden" name="id" value={i.id} /><input type="hidden" name="voltar" value={voltar} /><Field label="Causas"><Textarea name="causas" required /></Field><Field label="Medidas de controle"><Textarea name="medidas" required /></Field><label className="flex items-center gap-2 text-sm"><input type="checkbox" name="criarAcao" value="1" defaultChecked /> Criar ação com dono no plano de ação</label><div className="grid grid-cols-2 gap-2"><Field label="Responsável"><Select name="responsavelId">{usuarios.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Prazo"><Input type="date" name="prazo" /></Field></div><Btn small>Registrar</Btn></form></Modal>}</div></Td></tr>; })}
+          </Table>
+        </Card>
+        <Card title="Registrar ocorrência"><form action={registrarIncidente} className="space-y-2"><input type="hidden" name="voltar" value={voltar} />
+          <Field label="Unidade"><Select name="unitId">{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field>
+          <div className="grid grid-cols-2 gap-2"><Field label="Data"><Input type="date" name="data" defaultValue={h} max={h} required /></Field><Field label="Hora"><Input type="time" name="hora" /></Field></div>
+          <Field label="Tipo"><Select name="tipo">{Object.entries(TIPOS_INCIDENTE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+          <div className="grid grid-cols-2 gap-2"><Field label="Gravidade"><Select name="gravidade">{Object.entries(GRAVIDADE_INCIDENTE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Com afastamento?"><Select name="comAfastamento"><option value="0">Não</option><option value="1">Sim</option></Select></Field></div>
+          <Field label="Colaborador envolvido" hint="Com colaborador e lesão, a CAT é obrigatória"><Select name="employeeId" defaultValue=""><option value="">— nenhum (quase acidente / sem vítima) —</option>{emps.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}</Select></Field>
+          <Field label="Local"><Input name="local" placeholder="ex.: cozinha, quadra" /></Field><Field label="O que aconteceu" hint="Fatos, sem diagnóstico médico"><Textarea name="descricao" required minLength={10} /></Field><Btn small>Registrar</Btn></form></Card>
+      </div>
+      <div id="cipa" className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2 xl:items-start">
+        <Card title="CIPA — composição e mandatos">
+          <Table head={["Membro", "Unidade", "Função", "Mandato", "Estabilidade", ""]} empty="Nenhum membro cadastrado.">
+            {membros.map(m => { const est = estabilidadeCipa(m); return <tr key={m.id} className={m.ativo ? "" : "opacity-60"}><Td>{m.nome}<div className="text-[11px] text-slate-500">{REPRESENTACAO_CIPA[m.representacao]} · {m.titular ? "titular" : "suplente"}</div></Td><Td className="text-xs">{m.unidade}</Td><Td className="text-xs">{FUNCOES_CIPA[m.funcao]}</Td><Td className="whitespace-nowrap text-xs">{fmtData(m.mandato_inicio)} → {fmtData(m.mandato_fim)}</Td><Td className="whitespace-nowrap text-xs">{est ? <span className={est >= h ? "text-aviso" : "text-slate-500"}>até {fmtData(est)}</span> : "—"}</Td><Td>{gestao && m.ativo && <form action={encerrarMembroCipa}><input type="hidden" name="id" value={m.id} /><button className="text-xs text-erro">encerrar</button></form>}</Td></tr>; })}
+          </Table>
+          <p className="mt-2 text-[11px] text-slate-500">Eleito pelos empregados tem estabilidade até 1 ano após o fim do mandato (ADCT, art. 10, II, “a”) — confira antes de qualquer desligamento.</p>
+          {gestao && <details className="mt-3"><summary className="cursor-pointer text-sm text-acao">Incluir membro</summary><form action={salvarMembroCipa} className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2"><Field label="Unidade"><Select name="unitId">{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Colaborador"><Select name="employeeId">{emps.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}</Select></Field><Field label="Representação"><Select name="representacao">{Object.entries(REPRESENTACAO_CIPA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Função"><Select name="funcao">{Object.entries(FUNCOES_CIPA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Início do mandato"><Input type="date" name="inicio" required /></Field><Field label="Fim do mandato"><Input type="date" name="fim" required /></Field><Field label="Titular?"><Select name="titular"><option value="1">Titular</option><option value="0">Suplente</option></Select></Field><div className="flex items-end"><Btn small>Incluir</Btn></div></form></details>}
+        </Card>
+        <Card title="Reuniões da CIPA">
+          {reunioes.length === 0 ? <p className="text-sm text-slate-600">Nenhuma reunião nos últimos 12 meses.</p> : <ul className="space-y-2 text-sm">{reunioes.map(r => <li key={r.id} className="rounded-md border border-line p-2"><div className="flex flex-wrap items-center gap-2"><b>{fmtData(r.data)}</b><span className="text-xs text-slate-500">{r.unidade} · {r.tipo === "EXTRAORDINARIA" ? "extraordinária" : "ordinária"}</span>{r.realizada ? <Badge v="APROVADA" label="realizada" /> : r.data < h ? <Badge v="PENDENTE" label="sem ata" /> : <Badge v="ABERTO" label="agendada" />}</div>{r.pauta && <div className="text-xs text-slate-600">{r.pauta}</div>}{r.ata && <div className="mt-1 text-xs">{r.ata}</div>}
+            {!r.realizada && <form action={salvarReuniaoCipa} className="mt-2 space-y-1"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="unitId" value="0" /><input type="hidden" name="data" value={r.data} /><input type="hidden" name="realizada" value="1" /><Textarea name="ata" placeholder="Ata: presentes, assuntos e encaminhamentos" className="min-h-[48px] text-xs" /><Btn small kind="ghost">Registrar ata</Btn></form>}</li>)}</ul>}
+          <form action={salvarReuniaoCipa} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"><Field label="Unidade"><Select name="unitId">{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Data"><Input type="date" name="data" required /></Field><Field label="Tipo"><Select name="tipo"><option value="ORDINARIA">Ordinária</option><option value="EXTRAORDINARIA">Extraordinária</option></Select></Field><div className="flex items-end"><Btn small kind="ghost">Agendar</Btn></div><Field label="Pauta" className="sm:col-span-4"><Input name="pauta" /></Field></form>
+        </Card>
+      </div>
+    </Page>
+  );
+}

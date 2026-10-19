@@ -5,13 +5,15 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, ROLE_LABEL, type Role } from "@/lib/auth";
 import { Page, Card, Flash, Table, Td, Field, Input, Select, Btn, Textarea, Badge } from "@/components/ui";
 import { getSettings } from "@/lib/utils";
-import { salvarUnidade, salvarEmpresa, salvarCargo, excluirCargo, salvarUsuario, salvarAlcadas, salvarChecklist, salvarDocsPadrao } from "./actions";
+import { salvarUnidade, salvarEmpresa, salvarCargo, excluirCargo, salvarUsuario, salvarAlcadas, salvarChecklist, salvarDocsPadrao, salvarParamInsights } from "./actions";
 import { salvarSerie, salvarParamMatriculas } from "../matriculas/actions";
-import { redefinir2FA, gerarSenhaTemp } from "./actions";
+import { redefinir2FA, gerarSenhaTemp, criarAcessosAutoatendimento } from "./actions";
 import { salvarParamAtendimento } from "../atendimento/actions";
 import { salvarParamGovernanca } from "../governanca/actions";
 import { salvarParamAnalytics } from "../talentos/actions";
 import { salvarParamEstrategia } from "../estrategia/gestao-actions";
+import { ParametrosV24 } from "./_v24";
+import { ParametrosV25 } from "./_v25";
 
 export const dynamic = "force-dynamic";
 const ROLES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES", "LEITURA", "COLABORADOR"];
@@ -30,7 +32,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
     db.select({ id: schema.employees.id, nome: schema.employees.nome }).from(schema.employees).orderBy(asc(schema.employees.nome)),
   ]);
   const nomePos = (id: number | null) => positions.find(p => p.id === id)?.nome ?? "—";
-  const nav = [["unidades", "Unidades"], ["empresas", "Empresas"], ["cargos", "Cargos"], ["usuarios", "Usuários e acessos"], ["alcadas", "Alçadas"], ["checklists", "Checklists e documentos"], ["matriculas", "Matrículas: séries e prazos"], ["atendimento", "Atendimento: SLA e protocolos"], ["governanca", "Governança: áreas e prazos"], ["analytics", "People Health: pesos e metas"]];
+  const nav = [["unidades", "Unidades"], ["empresas", "Empresas"], ["cargos", "Cargos"], ["usuarios", "Usuários e acessos"], ["alcadas", "Alçadas"], ["checklists", "Checklists e documentos"], ["matriculas", "Matrículas: séries e prazos"], ["atendimento", "Atendimento: SLA e protocolos"], ["governanca", "Governança: áreas e prazos"], ["v24", "Nova Arquitetura: alertas, folha, SST, orçamento"], ["analytics", "People Health: pesos e metas"]];
 
   return (
     <Page title="Configurações" sub="Estrutura da rede, acessos e regras de aprovação. Toda alteração fica na auditoria.">
@@ -39,7 +41,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
 
       <Card title="Unidades" className="mb-4"><div id="unidades" />
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <Table head={["Nome", "Código", ""]}>{units.map(u => <tr key={u.id}><Td>{u.nome}</Td><Td>{u.codigo}</Td><Td><Modal label={"Editar"} kind="link"><form action={salvarUnidade} className="flex flex-wrap items-end gap-2"><input type="hidden" name="id" value={u.id} /><Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="Código"><Input name="codigo" defaultValue={u.codigo} className="w-24" /></Field><Btn small>Salvar</Btn></form></Modal></Td></tr>)}</Table>
+          <Table head={["Nome", "Código", "Entidade (CNPJ)", ""]}>{units.map(u => <tr key={u.id}><Td>{u.nome}</Td><Td>{u.codigo}</Td><Td>{companies.find(c => c.id === u.companyId)?.nome ?? <span className="text-xs text-aviso">sem vínculo</span>}</Td><Td><Modal label={"Editar"} kind="link"><form action={salvarUnidade} className="flex flex-wrap items-end gap-2"><input type="hidden" name="id" value={u.id} /><Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="Código"><Input name="codigo" defaultValue={u.codigo} className="w-24" /></Field><Field label="Entidade (CNPJ)" hint="Base do Consolidado e das visões por entidade (DRE, folha, obrigações)"><Select name="companyId" defaultValue={u.companyId ?? ""}><option value="">— sem vínculo —</option>{companies.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}</Select></Field><Btn small>Salvar</Btn></form></Modal></Td></tr>)}</Table>
           <form action={salvarUnidade} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Nova unidade</div><Field label="Nome"><Input name="nome" required /></Field><Field label="Código"><Input name="codigo" required placeholder="Ex.: CAR" /></Field><Btn small>Adicionar</Btn></form>
         </div>
       </Card>
@@ -73,7 +75,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
               <Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="E-mail"><Input name="email" defaultValue={u.email} /></Field>
               <Field label="Perfil"><Select name="role" defaultValue={u.role}>{ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</Select></Field><Field label="Unidade (escopo)"><Select name="unitId" defaultValue={u.unitId ?? ""}><option value="">Rede</option>{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field>
               <Field label="Colaborador vinculado"><Select name="employeeId" defaultValue={u.employeeId ?? ""}><option value="">—</option>{emps.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}</Select></Field><Field label="Nova senha (opcional)"><Input name="senha" type="password" autoComplete="new-password" /></Field>
-              <Field label="Situação"><Select name="ativo" defaultValue={u.ativo ? "1" : "0"}><option value="1">Ativo</option><option value="0">Inativo</option></Select></Field><div className="flex items-end"><Btn small>Salvar</Btn></div></form>{u.totpAtivo && <form action={redefinir2FA} className="mt-2"><input type="hidden" name="id" value={u.id} /><button className="text-xs text-erro underline">Redefinir verificação em duas etapas (perdeu o celular)</button></form>}</Modal></Td></tr>)}</Table>
+              <Field label="Situação"><Select name="ativo" defaultValue={u.ativo ? "1" : "0"}><option value="1">Ativo</option><option value="0">Inativo</option></Select></Field><div className="flex items-end"><Btn small>Salvar</Btn></div></form><form action={gerarSenhaTemp} className="mt-2 border-t border-line pt-2"><input type="hidden" name="id" value={u.id} /><Btn small kind="ghost">Gerar senha temporária</Btn><p className="mt-1 text-xs text-slate-500">Mostrada uma vez; o usuário é obrigado a trocar no primeiro acesso. Use na entrega do acesso ou quando a pessoa esquecer a senha.</p></form>{u.totpAtivo && <form action={redefinir2FA} className="mt-2"><input type="hidden" name="id" value={u.id} /><button className="text-xs text-erro underline">Redefinir verificação em duas etapas (perdeu o celular)</button></form>}</Modal></Td></tr>)}</Table>
           <form action={salvarUsuario} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Novo usuário</div>
             <Field label="Nome"><Input name="nome" required /></Field><Field label="E-mail (login)"><Input name="email" required /></Field>
             <Field label="Perfil"><Select name="role" defaultValue="GESTOR">{ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</Select></Field>
@@ -81,6 +83,10 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
             <Field label="Colaborador vinculado"><Select name="employeeId"><option value="">—</option>{emps.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}</Select></Field>
             <Field label="Senha inicial"><Input name="senha" type="password" required minLength={8} autoComplete="new-password" /></Field><Btn small>Criar acesso</Btn></form>
         </div>
+        <form action={criarAcessosAutoatendimento} className="mt-4 flex flex-wrap items-end gap-2 rounded-md border border-line p-3"><div className="w-full text-sm font-semibold text-navy">Acessos de autoatendimento em lote</div>
+          <p className="w-full text-xs text-slate-600">Cria o acesso de perfil Colaborador de quem tem e-mail na ficha e ainda não tem usuário (ativos e em admissão). Ninguém conhece a senha criada: a pessoa entra por “Esqueci minha senha” ou recebe do RH uma senha temporária (botão Editar → Gerar senha temporária).</p>
+          <Field label="Unidade"><Select name="unitId" defaultValue=""><option value="">Todas</option>{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field>
+          <Btn small>Criar acessos de quem ainda não tem</Btn></form>
         <p className="mt-3 text-xs text-slate-500">Perfis: Direção e RH veem tudo e editam; Diretor de unidade e Gestor veem só a própria unidade e podem solicitar; Somente leitura consulta; Colaborador (autoatendimento) vê apenas a própria ficha, pede férias e lança horas para aprovação — exige o colaborador vinculado. Salário e CPF só aparecem para RH e Direção.</p>
       </Card>
 
@@ -111,6 +117,8 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
               <Field label="Ano letivo em captação"><Input name="anoLetivo" type="number" defaultValue={cfg.matriculas.anoLetivo} /></Field>
               <Field label="Prazo padrão da reserva (dias)"><Input name="reservaDias" type="number" min={1} defaultValue={cfg.matriculas.reservaDias} /></Field>
               <Field label="Prazo da oferta na fila (dias)"><Input name="ofertaFilaDias" type="number" min={1} defaultValue={cfg.matriculas.ofertaFilaDias} /></Field>
+              <Field label="Fim da campanha de matrículas" hint={`para a previsão; vazio = 31/01/${cfg.matriculas.anoLetivo}`}><Input name="fimCampanha" type="date" defaultValue={String(cfg.matriculas.fimCampanha ?? "")} /></Field>
+              <Field label="Meta de rematrícula (%)" hint="padrão das metas por unidade"><Input name="metaRematriculaPct" type="number" min={1} max={100} defaultValue={Number(cfg.matriculas.metaRematriculaPct ?? 85)} /></Field>
               <Btn small>Salvar</Btn></form>
             <form action={salvarSerie} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Nova série</div><Field label="Nome"><Input name="nome" required /></Field><Field label="Segmento"><Input name="segmento" required placeholder="Ex.: Fundamental I" /></Field><Field label="Ordem"><Input name="ordem" type="number" defaultValue={100} /></Field><Btn small>Adicionar</Btn></form>
           </div>
@@ -161,6 +169,31 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
           <div className="lg:col-span-3"><Btn>Salvar parâmetros da estratégia</Btn></div>
         </form>
       </Card>
+      <Card title="Insights — farol dos indicadores, resumo, lembretes, prazos e caixa" className="mb-4"><div id="insights" />
+        <form action={salvarParamInsights} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-navy">Painel Executivo</div>
+            <Field label="Tolerância do farol (% da meta)" hint="sem limite de atenção cadastrado, o indicador fica em atenção até esta distância da meta"><Input name="toleranciaPct" type="number" min={1} max={50} defaultValue={Number(cfg.insights?.toleranciaPct ?? 10)} /></Field>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="resumoSemanal" value="1" defaultChecked={cfg.insights?.resumoSemanal !== false} className="mt-1" /><span>Enviar o resumo executivo da semana (segunda-feira) para quem assinou</span></label>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="lembretePendencias" value="1" defaultChecked={cfg.insights?.lembretePendencias !== false} className="mt-1" /><span>Lembrete diário das pendências vencidas e de hoje (dias úteis; só números e módulos, nunca o conteúdo)</span></label>
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-navy">Central de fluxos e SLA</div>
+            <Field label="Em risco quando resta até (% do prazo)"><Input name="riscoPct" type="number" min={5} max={90} defaultValue={Number(cfg.fluxos?.riscoPct ?? 25)} /></Field>
+            <Field label="Prazo para decidir vagas, descontos e exceções (dias)"><Input name="prazoDecisaoDias" type="number" min={1} max={30} defaultValue={Number(cfg.fluxos?.prazoDecisaoDias ?? 2)} /></Field>
+            <Field label="Prazo para aprovar férias e afastamentos (dias)" hint="nunca depois da véspera do início"><Input name="prazoFeriasDias" type="number" min={1} max={30} defaultValue={Number(cfg.fluxos?.prazoFeriasDias ?? 3)} /></Field>
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-navy">Caixa projetado — recebimento esperado</div>
+            <Field label="Cenário pessimista (%)"><Input name="cenarioPessimistaPct" type="number" min={0} max={100} defaultValue={Number(cfg.fpa?.cenarioPessimistaPct ?? 85)} /></Field>
+            <Field label="Cenário otimista (%)"><Input name="cenarioOtimistaPct" type="number" min={0} max={100} defaultValue={Number(cfg.fpa?.cenarioOtimistaPct ?? 100)} /></Field>
+            <p className="text-xs text-slate-500">A faixa do caixa projetado vai do pessimista ao otimista sobre o que está previsto para entrar.</p>
+          </div>
+          <div className="lg:col-span-3"><Btn>Salvar parâmetros do Insights</Btn></div>
+        </form>
+      </Card>
+      <ParametrosV24 />
+      <ParametrosV25 />
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
         <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div><div className="mb-1 text-sm font-semibold text-navy">Pesos (somam até 100)</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.pesos).map(([k, v]) => <Field key={k} label={k}><Input name={`peso_${k}`} type="number" min={0} max={40} defaultValue={v as number} /></Field>)}</div></div>

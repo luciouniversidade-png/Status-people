@@ -58,7 +58,13 @@ export async function salvarProjeto(fd: FormData) {
 export async function salvarMarco(fd: FormData) {
   const s = await requireSession(); const projectId = Number(fd.get("projectId")); const id = int(fd, "id"); const b = `/estrategia/projetos/${projectId}`;
   try { assert(GESTAO.includes(s.role)); const titulo = str(fd, "titulo"); const prazo = str(fd, "prazo"); if (!titulo || !prazo) throw new Error("Informe o marco e o prazo.");
-    if (id) await db.update(schema.milestones).set({ titulo, prazo, responsavelUserId: int(fd, "responsavelUserId") }).where(eq(schema.milestones.id, id)); else await db.insert(schema.milestones).values({ projectId, titulo, prazo, responsavelUserId: int(fd, "responsavelUserId"), ordem: int(fd, "ordem") ?? 0 });
+    if (id) {
+      // T-077: com baseline, mudar o prazo é replanejar — exige motivo; a data da baseline não muda (o desvio fica visível)
+      const [m] = await db.select().from(schema.milestones).where(eq(schema.milestones.id, id)); if (!m) throw new Error("Marco não encontrado.");
+      const motivo = str(fd, "motivo");
+      if (m.prazo !== prazo && m.baselinePrazo) { if (motivo.length < 10) throw new Error("Este marco tem baseline: replanejar o prazo exige o motivo (mín. 10 caracteres)."); await audit(s, "replanejar marco", "milestones", id, { prazo: m.prazo }, { prazo, baseline: m.baselinePrazo, motivo }); }
+      await db.update(schema.milestones).set({ titulo, prazo, responsavelUserId: int(fd, "responsavelUserId") }).where(eq(schema.milestones.id, id));
+    } else await db.insert(schema.milestones).values({ projectId, titulo, prazo, responsavelUserId: int(fd, "responsavelUserId"), ordem: int(fd, "ordem") ?? 0 });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro", "#marcos")); }
   redirect(go(b, "ok", "Marco salvo.", "#marcos"));
 }

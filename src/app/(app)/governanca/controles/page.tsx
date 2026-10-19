@@ -36,6 +36,7 @@ export default async function Controles({ searchParams }: { searchParams: Promis
       <Field label="Descrição"><Textarea name="descricao" className="min-h-[50px]" defaultValue={n?.descricao ?? ""} /></Field>
       <Field label="Causa raiz"><Input name="causaRaiz" defaultValue={n?.causa_raiz ?? ""} /></Field><Field label="Ação corretiva"><Input name="acaoCorretiva" defaultValue={n?.acao_corretiva ?? ""} /></Field><Field label="Ação preventiva"><Input name="acaoPreventiva" defaultValue={n?.acao_preventiva ?? ""} /></Field>
       <div className="grid grid-cols-2 gap-2"><Field label="Situação"><Select name="status" defaultValue={n?.status ?? "ABERTA"}>{Object.entries(NC_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><label className="mt-6 flex items-center gap-2 text-xs"><input type="checkbox" name="eficaciaVerificada" value="1" defaultChecked={n?.eficacia} /> Eficácia verificada</label></div>
+      <Field label="Evidência de eficácia (obrigatória para encerrar)"><Textarea name="eficaciaEvidencia" className="min-h-[50px]" placeholder="O que foi medido ou observado que comprova que a causa foi eliminada" /></Field>
       <Btn small>{n ? "Salvar" : "Abrir não conformidade"}</Btn>
     </form>
   );

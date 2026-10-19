@@ -33,7 +33,7 @@ type Tx = typeof sql;
 export async function gerarAulasDaAusencia(absenceId: number, tx: Tx = sql) {
   const [a] = await tx<{ id: number; employee_id: number; data: string; inicio: string | null; fim: string | null; status: string }[]>`SELECT id, employee_id, data::text, inicio, fim, status FROM cover_absences WHERE id=${absenceId}`;
   if (!a || a.status !== "ATIVA") return 0;
-  const slots = await tx<{ id: number; unit_id: number; inicio: string; fim: string; turno: string; turma: string; disciplina: string | null }[]>`SELECT id, unit_id, inicio, fim, turno, turma, disciplina FROM teacher_slots WHERE employee_id=${a.employee_id} AND ativo AND dia_semana=${diaSemana(a.data)} ORDER BY inicio`;
+  const slots = await tx<{ id: number; unit_id: number; inicio: string; fim: string; turno: string; turma: string; disciplina: string | null }[]>`SELECT id, unit_id, inicio, fim, turno, turma, disciplina FROM teacher_slots WHERE employee_id=${a.employee_id} AND ativo AND slot_vigente(version_id, ${a.data}::date) AND dia_semana=${diaSemana(a.data)} ORDER BY inicio`;
   let n = 0;
   for (const sl of slots) {
     if (a.inicio && a.fim && !sobrepoe(sl.inicio, sl.fim, a.inicio, a.fim)) continue;
@@ -48,7 +48,7 @@ export async function gerarAulasDaAusencia(absenceId: number, tx: Tx = sql) {
 export async function sincronizarAfastamentos(ini: string, fim: string) {
   let criadas = 0, canceladas = 0;
   const leaves = await sql<{ id: number; employee_id: number; tipo: string; inicio: string; fim: string; unit_id: number }[]>`SELECT l.id, l.employee_id, l.tipo, l.inicio::text, l.fim::text, e.unit_id FROM leave_requests l JOIN employees e ON e.id=l.employee_id
-    WHERE l.status='APROVADA' AND l.inicio <= ${fim} AND l.fim >= ${ini} AND EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=l.employee_id AND t.ativo)`;
+    WHERE l.status='APROVADA' AND l.inicio <= ${fim} AND l.fim >= ${ini} AND EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=l.employee_id AND t.ativo AND (t.version_id IS NULL OR EXISTS (SELECT 1 FROM grade_versions g WHERE g.id=t.version_id AND g.status='ATIVA' AND g.vigencia_inicio <= l.fim AND (g.vigencia_fim IS NULL OR g.vigencia_fim >= l.inicio))))`;
   for (const l of leaves) {
     for (let d = l.inicio > ini ? l.inicio : ini; d <= (l.fim < fim ? l.fim : fim); d = addDays(d, 1)) {
       if (diaSemana(d) === 0) continue;
@@ -83,7 +83,7 @@ export async function impedimentos(ids: number[], a: { id?: number; data: string
     sql<{ id: number; situacao: string }[]>`SELECT id, situacao FROM employees WHERE id = ANY(${ids})`,
     sql<{ employee_id: number; inicio: string | null; fim: string | null }[]>`SELECT employee_id, inicio, fim FROM cover_absences WHERE employee_id = ANY(${ids}) AND data=${a.data} AND status='ATIVA'`,
     sql<{ employee_id: number }[]>`SELECT DISTINCT employee_id FROM leave_requests WHERE employee_id = ANY(${ids}) AND status='APROVADA' AND ${a.data} BETWEEN inicio AND fim`,
-    sql<{ employee_id: number; inicio: string; fim: string }[]>`SELECT employee_id, inicio, fim FROM teacher_slots WHERE employee_id = ANY(${ids}) AND ativo AND dia_semana=${diaSemana(a.data)}`,
+    sql<{ employee_id: number; inicio: string; fim: string }[]>`SELECT employee_id, inicio, fim FROM teacher_slots WHERE employee_id = ANY(${ids}) AND ativo AND slot_vigente(version_id, ${a.data}::date) AND dia_semana=${diaSemana(a.data)}`,
     sql<{ employee_id: number; inicio: string; fim: string }[]>`SELECT cobertura_employee_id AS employee_id, inicio, fim FROM cover_assignments WHERE cobertura_employee_id = ANY(${ids}) AND data=${a.data} AND status IN ('CONVIDADO','CONFIRMADA','REALIZADA') ${a.id ? sql`AND id <> ${a.id}` : sql``}`]);
   for (const id of ids) {
     const e = emps.find(x => x.id === id);
@@ -103,10 +103,10 @@ export async function sugestoes(a: Aula): Promise<Sugestao[]> {
   const cfg = await getSettings(); const janela = cfg.substituicao.janelaHistoricoDias as number; const dia = diaSemana(a.data);
   const pool = await sql<{ id: number; nome: string; telefone: string | null; unit_id: number; user_id: number | null; disciplinas: string[] | null; turno_hoje: boolean; coberturas: number }[]>`
     SELECT e.id, e.nome, e.telefone, e.unit_id, (SELECT id FROM users WHERE employee_id=e.id AND ativo ORDER BY id LIMIT 1) AS user_id,
-      (SELECT array_agg(DISTINCT lower(t.disciplina)) FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND t.disciplina IS NOT NULL) AS disciplinas,
-      EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND t.unit_id=${a.unit_id} AND t.dia_semana=${dia} AND t.turno=${a.turno ?? ""}) AS turno_hoje,
+      (SELECT array_agg(DISTINCT lower(t.disciplina)) FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND slot_vigente(t.version_id, ${a.data}::date) AND t.disciplina IS NOT NULL) AS disciplinas,
+      EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND slot_vigente(t.version_id, ${a.data}::date) AND t.unit_id=${a.unit_id} AND t.dia_semana=${dia} AND t.turno=${a.turno ?? ""}) AS turno_hoje,
       (SELECT count(*) FROM cover_assignments c WHERE c.cobertura_employee_id=e.id AND c.status IN ('CONFIRMADA','REALIZADA') AND c.data BETWEEN ${addDays(a.data, -janela)} AND ${a.data})::int AS coberturas
-    FROM employees e WHERE e.situacao='ATIVO' AND e.id <> ${a.ausente_id} AND ((e.regime='DOCENTE' AND e.unit_id=${a.unit_id}) OR EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND t.unit_id=${a.unit_id}))`;
+    FROM employees e WHERE e.situacao='ATIVO' AND e.id <> ${a.ausente_id} AND ((e.regime='DOCENTE' AND e.unit_id=${a.unit_id}) OR EXISTS (SELECT 1 FROM teacher_slots t WHERE t.employee_id=e.id AND t.ativo AND slot_vigente(t.version_id, ${a.data}::date) AND t.unit_id=${a.unit_id}))`;
   const out: Sugestao[] = []; const imp = await impedimentos(pool.map(p => p.id), a);
   for (const p of pool) {
     if (imp.get(p.id)) continue;

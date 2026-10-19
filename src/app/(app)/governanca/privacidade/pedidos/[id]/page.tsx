@@ -18,7 +18,7 @@ export default async function Pedido({ params, searchParams }: { params: Promise
   const users = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM users WHERE ativo AND role <> 'COLABORADOR' ORDER BY nome`;
   const aberto = PEDIDO_ABERTO.includes(p.status); const atraso = aberto && p.prazo < hoje();
   return (
-    <Page title={`Pedido ${p.protocolo}`} sub={`${PEDIDO_TIPO[p.tipo]} · recebido ${fmtDataHora(p.created_at)} pelo canal ${p.canal.toLowerCase()}`} actions={<Btn kind="ghost" href="/governanca/privacidade">Privacidade</Btn>}>
+    <Page title={`Pedido ${p.protocolo}`} sub={`${PEDIDO_TIPO[p.tipo] ?? p.tipo} · recebido ${fmtDataHora(p.created_at)} pelo canal ${p.canal.toLowerCase()}`} actions={<Btn kind="ghost" href="/governanca/privacidade">Privacidade</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">

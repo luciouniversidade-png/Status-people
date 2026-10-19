@@ -28,7 +28,7 @@ export default async function Rematricula({ searchParams }: { searchParams: Prom
   const aceiteDe = new Map(aceites.map(a => [a.student_id, a]));
   return (
     <Page title={`Rematrícula ${ano}`} sub="Link individual para a família: confere os dados, escolhe o turno dentro das vagas e aceita o contrato com registro de data, versão e IP. Valores e boletos continuam no ActiveSoft."
-      actions={<><Btn kind="ghost" href={`/api/export/rematricula${unidade ? `?unidade=${unidade}` : ""}`}>Exportar CSV (com links)</Btn>{can.editar(s) && <Btn kind="ghost" href="/matriculas/rematricula/contrato">Contrato {ano}</Btn>}</>}>
+      actions={<><Btn kind="ghost" href={`/matriculas/rematricula/quadro${unidade ? `?unidade=${unidade}` : ""}`}>Ver em quadro</Btn><Btn kind="ghost" href="/matriculas/metas">Metas e previsão</Btn><Btn kind="ghost" href={`/api/export/rematricula${unidade ? `?unidade=${unidade}` : ""}`}>Exportar CSV (com links)</Btn>{can.editar(s) && <Btn kind="ghost" href="/matriculas/rematricula/contrato">Contrato {ano}</Btn>}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       {!contrato ? <Card className="mb-4 border-amber-300" title="Contrato não publicado"><p className="text-sm text-slate-700">Os links só podem ser gerados com o contrato {ano} publicado — a família aceita exatamente a versão vigente. {can.editar(s) ? <Link className="text-acao underline" href="/matriculas/rematricula/contrato">Publicar o contrato</Link> : "Peça à Direção/RH para publicar."}</p></Card>
         : <p className="mb-3 text-xs text-slate-500">Contrato vigente: <b>{contrato.titulo}</b> · versão {contrato.versao} · publicado em {fmtDataHora(contrato.publicado_em)}</p>}

@@ -9,10 +9,16 @@ import { atualizarBanco } from "./actions";
 
 export const dynamic = "force-dynamic";
 const AREAS: [RegExp, string][] = [
+  // v24 · Nova Arquitetura
+  [/^(alerts|alert_events|alert_sweeps)$/, "Central de alertas (v24)"], [/^(timesheet_locks|payroll_|obligations$)/, "Payroll Bridge e obrigações (v24)"], [/^(fiscal_cases|fiscal_case_events)$/, "Fiscalizações (v24)"],
+  [/^(sst_|cipa_|epi_)/, "Segurança e saúde no trabalho — SST (v24)"], [/^onboarding_/, "Onboarding 30-60-90 (v24)"], [/^position_slots$/, "Posições e FTE (v24)"], [/^(perf_cycle_stages|perf_stage_changes|perf_reminders)$/, "Etapas do ciclo de avaliação (v24)"],
+  [/^audits$/, "Auditorias e CAPA (v24)"], [/^project_baselines$/, "Baseline de projetos (v24)"], [/^budget_explain_requests$/, "Pedidos de explicação do orçamento (v24)"], [/^report_schedules$/, "Relatórios agendados (v24)"],
+  [/^daily_contacts$/, "Painel do dia (v24)"], [/^golive_items$/, "Go-live (v24)"], [/^student_documents$/, "Documentos de matrícula (v24)"],
   [/^(rematricula_links|contract_templates)$/, "Rematrícula por link (contratos do ano)"], [/^(teacher_slots|cover_absences|cover_assignments)$/, "Substituição de professores"],
   [/^(spaces|space_bookings)$/, "Mapa de salas e reservas"], [/^(visits|pickup_authorizations|early_departures|brigade_members|emergency_events|emergency_checks|emergency_failures)$/, "Portaria e segurança"],
   [/^(consent_purposes|consents|privacy_requests|privacy_incidents)$/, "Privacidade (LGPD)"], [/^(ethics_reports|ethics_messages)$/, "Canal de ética"],
-  [/^(request_types|requests|request_events)$/, "Solicitações e aprovações"], [/^(contracts|licenses)$/, "Contratos de fornecedores e licenças"], [/^push_subscriptions$/, "App no celular (notificações)"],
+  [/^(request_types|requests|request_events)$/, "Solicitações e aprovações"], [/^(bank_accounts|bank_lines|card_sales|recon_imports|recon_matches|recon_issues|recon_closings)$/, "Conciliação bancária e de cartão (v25)"], [/^(contracts|licenses)$/, "Contratos de fornecedores e licenças"], [/^push_subscriptions$/, "App no celular (notificações)"],
+  [/^kpi_/, "Painel Executivo e base de indicadores (v23)"], [/^budget_(months|comments)$/, "Orçamento mês a mês e desvios (v23)"], [/^(recognitions|recognition_reactions)$/, "Mural de reconhecimento (v23)"], [/^user_prefs$/, "Início personalizado (v23)"],
   [/^(strategy_|objective_links|indicator|action_plans|ritual)/, "Gestão estratégica (identidade, mapa, indicadores, plano de ação, rituais, assistente)"],
   [/^family_/, "Radar da família"], [/^(objectives|key_results|kr_checkins|projects|milestones|project_)/, "Estratégia (OKRs e projetos)"],
   [/^(students|enrollments|classes|grades|waitlist)$/, "Matrículas"],

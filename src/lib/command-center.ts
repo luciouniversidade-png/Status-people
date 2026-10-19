@@ -1,5 +1,6 @@
 import { sql } from "@/db";
 import { hoje, getSettings } from "./utils";
+import { fmtPct, fmtNumero } from "./formato";
 import { peopleHealth } from "./talentos-analytics";
 import { estatisticasGov } from "./governanca";
 import { ocupacao } from "./matriculas";
@@ -7,9 +8,10 @@ import { estatisticas as estatAtend, riscoFamilias } from "./atendimento";
 import { inadimplencia, caixaMes, orcamentoAno } from "./financeiro";
 import { mesRef } from "./relatorio";
 import { alertasV22 } from "./alertas-v22";
+import { alertasV24 } from "./alertas-v24";
 
-export type Fator = { peso: number; texto: string };
-export type Dominio = { chave: string; nome: string; score: number; fatores: Fator[]; kpis: { label: string; valor: string; hint?: string }[]; href: string };
+export type Fator = { peso: number; texto: string; href?: string };
+export type Dominio = { chave: string; nome: string; score: number; fatores: Fator[]; kpis: { label: string; valor: string; hint?: string }[]; href: string; parcial?: string | null };
 export type Alerta = { nivel: "ALTO" | "MEDIO"; texto: string; href: string };
 
 const clamp = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
@@ -20,7 +22,7 @@ export async function healthGeral(unitId: number | null, ver: { sensiveis?: bool
   const [ph, gov, oc, at, risco, inad, cx, orc] = await Promise.all([peopleHealth(unitId), estatisticasGov(unitId), ocupacao(ano, unitId, "REGULAR"), estatAtend(unitId, m.ini, m.fim), riscoFamilias(unitId), inadimplencia(unitId), caixaMes(h.slice(0, 7), unitId), orcamentoAno(Number(h.slice(0, 4)), unitId)]);
   const alertas: Alerta[] = [];
   // ---- Pessoas
-  const pessoas: Dominio = { chave: "pessoas", nome: "Pessoas", score: ph.score, fatores: ph.fatores, href: "/analytics", kpis: [{ label: "Ativos", valor: String(ph.hc.ativos) }, { label: "Turnover 12m", valor: ph.turnover === null ? "—" : `${ph.turnover}%` }, { label: "Absenteísmo", valor: ph.absenteismo === null ? "—" : `${ph.absenteismo}%` }, { label: "eNPS", valor: ph.enps === null ? "—" : String(ph.enps) }] };
+  const pessoas: Dominio = { chave: "pessoas", nome: "Pessoas", score: ph.score, fatores: ph.fatores, href: "/analytics", kpis: [{ label: "Ativos", valor: String(ph.hc.ativos) }, { label: "Turnover 12m", valor: ph.turnover === null ? "—" : fmtPct(ph.turnover) }, { label: "Absenteísmo", valor: ph.absenteismo === null ? "—" : fmtPct(ph.absenteismo) }, { label: "eNPS", valor: ph.enps === null ? "—" : String(ph.enps) }] };
   ph.fatores.forEach(f => alertas.push({ nivel: Math.abs(f.peso) >= 10 ? "ALTO" : "MEDIO", texto: `Pessoas: ${f.texto}`, href: "/analytics" }));
   // ---- Processos
   const processos: Dominio = { chave: "processos", nome: "Processos", score: gov.score, fatores: gov.fatores, href: "/governanca", kpis: [{ label: "POPs vigentes", valor: `${gov.pops.vigentes}/${gov.pops.total}` }, { label: "Exceções aguardando", valor: String(gov.exc.pendentes) }, { label: "Controles atrasados", valor: String(gov.ctl.atrasados) }, { label: "NCs abertas", valor: String(gov.nc.abertas) }] };
@@ -29,28 +31,28 @@ export async function healthGeral(unitId: number | null, ver: { sensiveis?: bool
   const vagas = oc.reduce((a, r) => a + r.vagas, 0), conf = oc.reduce((a, r) => a + r.confirmadas, 0), res = oc.reduce((a, r) => a + r.reservadas, 0), fila = oc.reduce((a, r) => a + r.fila, 0);
   const ocup = vagas ? Math.round(1000 * (conf + res) / vagas) / 10 : null; const fm: Fator[] = [];
   let sm = 100;
-  if (ocup !== null) { const meta = cfg.commandCenter.metaOcupacaoPct; if (ocup < meta) { const d = Math.round((meta - ocup) / meta * 70); sm -= d; fm.push({ peso: -d, texto: `ocupação ${ocup}% das vagas ${ano} (meta ${meta}%)` }); } }
+  if (ocup !== null) { const meta = cfg.commandCenter.metaOcupacaoPct; if (ocup < meta) { const d = Math.round((meta - ocup) / meta * 70); sm -= d; fm.push({ peso: -d, texto: `ocupação ${fmtPct(ocup)} das vagas ${ano} (meta ${fmtPct(meta, 0)})`, href: "/matriculas/turmas" }); } }
   const [venc] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.status='RESERVADA' AND e.reserva_ate <= ${h} AND c.ano=${ano} ${unitId === null ? sql`` : sql`AND c.unit_id=${unitId}`}`;
-  if (venc.n) { const d = Math.min(15, venc.n * 3); sm -= d; fm.push({ peso: -d, texto: `${venc.n} reserva(s) vencendo hoje` }); }
-  const filaComVaga = oc.filter(r => r.fila > 0 && r.livres > 0).length; if (filaComVaga) { const d = Math.min(15, filaComVaga * 5); sm -= d; fm.push({ peso: -d, texto: `${filaComVaga} turma(s) com fila e vaga livre (ofertar)` }); }
-  const matriculas: Dominio = { chave: "matriculas", nome: "Matrículas", score: clamp(sm), fatores: fm, href: "/matriculas", kpis: [{ label: `Ocupação ${ano}`, valor: ocup === null ? "—" : `${ocup}%` }, { label: "Matriculados", valor: String(conf) }, { label: "Reservas ativas", valor: String(res) }, { label: "Lista de espera", valor: String(fila) }] };
+  if (venc.n) { const d = Math.min(15, venc.n * 3); sm -= d; fm.push({ peso: -d, texto: `${venc.n} reserva(s) vencendo hoje`, href: "/matriculas/reservas" }); }
+  const filaComVaga = oc.filter(r => r.fila > 0 && r.livres > 0).length; if (filaComVaga) { const d = Math.min(15, filaComVaga * 5); sm -= d; fm.push({ peso: -d, texto: `${filaComVaga} turma(s) com fila e vaga livre (ofertar)`, href: "/matriculas/fila" }); }
+  const matriculas: Dominio = { chave: "matriculas", nome: "Matrículas", score: clamp(sm), fatores: fm, href: "/matriculas", parcial: ocup === null ? `sem turmas ${ano} cadastradas` : null, kpis: [{ label: `Ocupação ${ano}`, valor: ocup === null ? "—" : fmtPct(ocup) }, { label: "Matriculados", valor: String(conf) }, { label: "Reservas ativas", valor: String(res) }, { label: "Lista de espera", valor: String(fila) }] };
   fm.forEach(f => alertas.push({ nivel: Math.abs(f.peso) >= 10 ? "ALTO" : "MEDIO", texto: `Matrículas: ${f.texto}`, href: "/matriculas" }));
   // ---- Atendimento
   const fa: Fator[] = []; let sa = 100; const altos = risco.filter(r => r.nivel === "ALTO").length;
-  if (at.cas.atrasados) { const d = Math.min(40, at.cas.atrasados * 5); sa -= d; fa.push({ peso: -d, texto: `${at.cas.atrasados} caso(s) com SLA vencido` }); }
-  if (at.nps.nps !== null && at.nps.nps < 30) { const d = Math.round(Math.min(30, (30 - at.nps.nps) / 50 * 30)); sa -= d; fa.push({ peso: -d, texto: `NPS das famílias ${at.nps.nps} (meta ≥ 30)` }); }
-  if (altos) { const d = Math.min(30, altos * 3); sa -= d; fa.push({ peso: -d, texto: `${altos} família(s) em risco alto de saída` }); }
+  if (at.cas.atrasados) { const d = Math.min(40, at.cas.atrasados * 5); sa -= d; fa.push({ peso: -d, texto: `${at.cas.atrasados} caso(s) com SLA vencido`, href: "/atendimento/casos" }); }
+  if (at.nps.nps !== null && at.nps.nps < 30) { const d = Math.round(Math.min(30, (30 - at.nps.nps) / 50 * 30)); sa -= d; fa.push({ peso: -d, texto: `NPS das famílias ${fmtNumero(at.nps.nps)} (meta ≥ 30)`, href: "/atendimento" }); }
+  if (altos) { const d = Math.min(30, altos * 3); sa -= d; fa.push({ peso: -d, texto: `${altos} família(s) em risco alto de saída`, href: "/atendimento/radar" }); }
   if (at.ret.abertos) { const d = Math.min(10, at.ret.abertos * 2); sa -= d; fa.push({ peso: -d, texto: `${at.ret.abertos} pedido(s) de saída em andamento` }); }
   const taxa = at.ret.retidos + at.ret.perdidos ? Math.round(100 * at.ret.retidos / (at.ret.retidos + at.ret.perdidos)) : null;
-  const atendimento: Dominio = { chave: "atendimento", nome: "Atendimento e retenção", score: clamp(sa), fatores: fa, href: "/atendimento", kpis: [{ label: "Casos abertos", valor: String(at.cas.abertos) }, { label: "SLA vencido", valor: String(at.cas.atrasados) }, { label: "NPS famílias", valor: at.nps.nps === null ? "—" : String(at.nps.nps) }, { label: "Retenção no mês", valor: taxa === null ? "—" : `${taxa}%` }] };
+  const atendimento: Dominio = { chave: "atendimento", nome: "Atendimento e retenção", score: clamp(sa), fatores: fa, href: "/atendimento", parcial: at.nps.nps === null ? "sem pesquisa NPS no período" : null, kpis: [{ label: "Casos abertos", valor: String(at.cas.abertos) }, { label: "SLA vencido", valor: String(at.cas.atrasados) }, { label: "NPS famílias", valor: at.nps.nps === null ? "—" : fmtNumero(at.nps.nps) }, { label: "Retenção no mês", valor: taxa === null ? "—" : fmtPct(taxa) }] };
   fa.forEach(f => alertas.push({ nivel: Math.abs(f.peso) >= 10 ? "ALTO" : "MEDIO", texto: `Atendimento: ${f.texto}`, href: "/atendimento" }));
   // ---- Financeiro
   const ff: Fator[] = []; let sf = 100;
-  if (inad.taxa90 !== null && inad.taxa90 > cfg.commandCenter.inadimplenciaAlertaPct) { const d = Math.round(Math.min(40, (inad.taxa90 - cfg.commandCenter.inadimplenciaAlertaPct) * 4)); sf -= d; ff.push({ peso: -d, texto: `inadimplência ${inad.taxa90}% nos últimos 90 dias (meta ≤ ${cfg.commandCenter.inadimplenciaAlertaPct}%)` }); }
-  if (inad.acoesPendentes) { const d = Math.min(20, inad.acoesPendentes * 2); sf -= d; ff.push({ peso: -d, texto: `${inad.acoesPendentes} título(s) sem a ação da régua` }); }
-  if (cx.saldoFinal !== null && cx.saldoFinal < 0) { sf -= 20; ff.push({ peso: -20, texto: "caixa projetado negativo no mês" }); }
-  const estouros = orc.cats.filter(c => c.tipo === "SAIDA" && c.variacao !== null && c.variacao > 10); if (estouros.length) { const d = Math.min(20, estouros.length * 5); sf -= d; ff.push({ peso: -d, texto: `${estouros.length} categoria(s) acima do orçamento: ${estouros.map(c => c.categoria).join(", ")}` }); }
-  const financeiro: Dominio = { chave: "financeiro", nome: "Financeiro", score: clamp(sf), fatores: ff, href: "/financeiro", kpis: [{ label: "Inadimplência 90d", valor: inad.taxa90 === null ? "—" : `${inad.taxa90}%` }, { label: "Em aberto vencido", valor: brl(inad.total) }, { label: "Saldo de caixa", valor: cx.saldoFinal === null ? "—" : brl(cx.saldoFinal) }, { label: "Resultado no ano", valor: brl(orc.resultado) }] };
+  if (inad.taxa90 !== null && inad.taxa90 > cfg.commandCenter.inadimplenciaAlertaPct) { const d = Math.round(Math.min(40, (inad.taxa90 - cfg.commandCenter.inadimplenciaAlertaPct) * 4)); sf -= d; ff.push({ peso: -d, texto: `inadimplência ${fmtPct(inad.taxa90)} nos últimos 90 dias (meta ≤ ${fmtPct(Number(cfg.commandCenter.inadimplenciaAlertaPct), 1)})`, href: "/financeiro/inadimplencia" }); }
+  if (inad.acoesPendentes) { const d = Math.min(20, inad.acoesPendentes * 2); sf -= d; ff.push({ peso: -d, texto: `${inad.acoesPendentes} título(s) sem a ação da régua`, href: "/financeiro/inadimplencia" }); }
+  if (cx.saldoFinal !== null && cx.saldoFinal < 0) { sf -= 20; ff.push({ peso: -20, texto: "caixa projetado negativo no mês", href: "/financeiro/projecao" }); }
+  const estouros = orc.cats.filter(c => c.tipo === "SAIDA" && c.variacao !== null && c.variacao > 10); if (estouros.length) { const d = Math.min(20, estouros.length * 5); sf -= d; ff.push({ peso: -d, texto: `${estouros.length} categoria(s) acima do orçamento: ${estouros.map(c => c.categoria).join(", ")}`, href: "/financeiro/orcamento" }); }
+  const financeiro: Dominio = { chave: "financeiro", nome: "Financeiro", score: clamp(sf), fatores: ff, href: "/financeiro/cockpit", parcial: inad.taxa90 === null ? "sem títulos importados nos últimos 90 dias" : cx.saldoFinal === null ? "sem saldo inicial de caixa do mês" : null, kpis: [{ label: "Inadimplência 90d", valor: inad.taxa90 === null ? "—" : fmtPct(inad.taxa90) }, { label: "Em aberto vencido", valor: brl(inad.total) }, { label: "Saldo de caixa", valor: cx.saldoFinal === null ? "—" : brl(cx.saldoFinal) }, { label: "Resultado no ano", valor: brl(orc.resultado) }] };
   ff.forEach(f => alertas.push({ nivel: Math.abs(f.peso) >= 10 ? "ALTO" : "MEDIO", texto: `Financeiro: ${f.texto}`, href: "/financeiro" }));
   // ---- Geral
   const dom = [pessoas, processos, matriculas, atendimento, financeiro]; const pesos = cfg.commandCenter.pesos as Record<string, number>;
@@ -61,6 +63,7 @@ export async function healthGeral(unitId: number | null, ver: { sensiveis?: bool
   if (fx?.n) alertas.push({ nivel: "ALTO", texto: `Pessoas: ${fx.n} colaborador(es) sem comprovante da formação exigida pelo cargo`, href: "/documentos" });
   if (ia?.n) alertas.push({ nivel: "MEDIO", texto: `Governança de IA: ${ia.n} agente(s) com revisão vencida`, href: "/governanca/agentes" });
   alertas.push(...await alertasV22(unitId, !!ver.sensiveis, ver.licencas ?? true).catch(() => []));
+  alertas.push(...await alertasV24(unitId, !!ver.sensiveis).catch(() => [])); // v24 · caixa projetado, folha, obrigações, onboarding, ciclo, auditorias e SST
   alertas.sort((a, b) => (a.nivel === b.nivel ? 0 : a.nivel === "ALTO" ? -1 : 1));
   return { geral, dominios: dom, alertas, pesos };
 }
@@ -73,4 +76,22 @@ export async function registrarSnapshot(unitId: number | null, geral: number, sc
 }
 export async function tendencia(unitId: number | null, dias = 60) {
   return sql<{ data: string; geral: number; scores: Record<string, number> }[]>`SELECT data::text, geral, scores FROM health_snapshots WHERE data >= (${hoje()}::date - ${dias}::int) AND unit_id IS NOT DISTINCT FROM ${unitId} ORDER BY data`;
+}
+
+/** Memória de cálculo do domínio: 100 menos os descontos, limitada a 0–100 (reproduz exatamente a nota exibida). */
+export function memoriaDominio(d: Dominio) {
+  const descontos = d.fatores.reduce((a, f) => a + f.peso, 0); const bruto = 100 + descontos;
+  return { base: 100, descontos, bruto, nota: clamp(bruto), limitado: bruto !== clamp(bruto) };
+}
+/** Memória do Health Geral: Σ(nota × peso) ÷ Σ pesos, arredondado. */
+export function memoriaGeral(dom: Dominio[], pesos: Record<string, number>) {
+  const linhas = dom.map(d => ({ chave: d.chave, nome: d.nome, nota: d.score, peso: pesos[d.chave] ?? 0, produto: d.score * (pesos[d.chave] ?? 0) }));
+  const somaPesos = linhas.reduce((a, l) => a + l.peso, 0); const somaProd = linhas.reduce((a, l) => a + l.produto, 0);
+  return { linhas, somaPesos, somaProd, geral: somaPesos ? Math.round(somaProd / somaPesos) : 0, exato: somaPesos ? somaProd / somaPesos : 0 };
+}
+/** Últimas N semanas a partir dos retratos diários: o último retrato de cada semana (segunda a domingo). */
+export function semanasHealth(trend: { data: string; geral: number; scores: Record<string, number> }[], n = 13) {
+  const porSemana = new Map<string, { data: string; geral: number; scores: Record<string, number> }>();
+  for (const t of trend) { const d = new Date(`${t.data}T12:00:00Z`); const dow = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - dow); const k = d.toISOString().slice(0, 10); porSemana.set(k, t); }
+  return [...porSemana.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(-n).map(([semana, t]) => ({ semana, ...t }));
 }

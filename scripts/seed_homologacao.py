@@ -25,7 +25,9 @@ def novo(nome, unit, **kw):
 a = novo("Colaborador Teste Carandá", car); b = novo("Colaborador Teste Cultura", cul)
 html = S.get(B + "/configuracoes").text; aid = find_form_aid(html, "Criar acesso")
 perfis = [("direcao.teste", "DIRECAO", "", ""), ("rh.teste", "RH", "", ""), ("diretor.caranda", "DIRETOR_UNIDADE", car, ""), ("gestor.caranda", "GESTOR", car, ""), ("comercial.teste", "COMERCIAL", "", ""), ("financeiro.teste", "FINANCEIRO", "", ""), ("operacoes.teste", "OPERACOES", "", ""), ("colaborador.caranda", "COLABORADOR", car, a), ("colaborador.cultura", "COLABORADOR", cul, b), ("leitura.teste", "LEITURA", "", "")]
-for email, role, unit, emp in perfis: post("/configuracoes", aid, {"nome": email.replace(".", " ").title(), "email": email, "role": role, "unitId": unit, "employeeId": emp, "senha": SENHA_TESTE})
+NOMES = {"direcao.teste": "Direção Teste", "rh.teste": "RH Teste", "diretor.caranda": "Diretor Carandá Teste", "gestor.caranda": "Gestor Carandá Teste", "comercial.teste": "Comercial Teste",
+         "financeiro.teste": "Financeiro Teste", "operacoes.teste": "Operações Teste", "colaborador.caranda": "Colaborador Teste Carandá", "colaborador.cultura": "Colaborador Teste Cultura", "leitura.teste": "Leitura Teste"}
+for email, role, unit, emp in perfis: post("/configuracoes", aid, {"nome": NOMES.get(email, email.replace(".", " ").title()), "email": email, "role": role, "unitId": unit, "employeeId": emp, "senha": SENHA_TESTE})
 print("Usuários de homologação criados (senha:", SENHA_TESTE + "):"); [print(f"  {e:24s} {r}") for e, r, *_ in perfis]
 print("Colaboradores fictícios:", a, b)
 print("\nEntregue cada login à pessoa da área correspondente e siga o roteiro da FASE 18. Os perfis Direção, RH e Financeiro serão obrigados a ativar o 2FA no primeiro acesso.")

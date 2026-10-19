@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { textoImportacao } from "@/lib/importacao";
-import { audit, str, strOrNull, num, int, erroMsg, getSettings, hoje, detectarSeparador, normalizarCabecalho, arquivoParaTexto } from "@/lib/utils";
+import { audit, str, strOrNull, num, int, erroMsg, getSettings, hoje, detectarSeparador, normalizarCabecalho, arquivoParaTexto, NIVEIS } from "@/lib/utils";
 import { abrirProcesso } from "@/lib/processos";
 
 function lerColaborador(fd: FormData) {
@@ -20,6 +20,7 @@ function lerColaborador(fd: FormData) {
     companyId: int(fd, "companyId"), positionId: int(fd, "positionId"), nivel: strOrNull(fd, "nivel"), gestorId: int(fd, "gestorId"),
     vinculo: str(fd, "vinculo") || "CLT", jornadaMinDia: int(fd, "jornadaMinDia"), turno: strOrNull(fd, "turno"), obs: strOrNull(fd, "obs"),
     regime: str(fd, "regime") === "DOCENTE" ? "DOCENTE" : "ADMINISTRATIVO",
+    feriasQuitadasAte: strOrNull(fd, "feriasQuitadasAte"),
   };
 }
 
@@ -135,7 +136,7 @@ export async function importarCSV(fd: FormData) {
     const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     const findBy = <T extends { nome: string }>(arr: T[], v: string) => arr.find(a => norm(a.nome) === norm(v)) ?? arr.find(a => norm(a.nome).startsWith(norm(v)));
     const cfg = await getSettings();
-    let ok = 0; const erros: string[] = [];
+    let ok = 0; const erros: string[] = []; const gestoresPend: { id: number; gestor: string; linha: number }[] = [];
     for (const [i, l] of linhas.slice(1).entries()) {
       const c = l.split(sep).map(x => x.trim().replace(/^"(.*)"$/, "$1").trim());
       const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : "");
@@ -151,10 +152,18 @@ export async function importarCSV(fd: FormData) {
         const [dup] = await sql<{ id: number }[]>`SELECT id FROM employees WHERE lower(nome)=lower(${g("nome")}) AND unit_id=${unit.id} AND situacao <> 'DESLIGADO'`;
         if (dup) throw new Error(`"${g("nome")}" já existe nesta unidade (pulado)`);
         const regime = /professor|pedagog|docente/i.test(pos?.nome ?? g("cargo")) || /^(docente|sim|s|1)$/i.test(g("regime")) ? "DOCENTE" : "ADMINISTRATIVO";
-        const [novo] = await db.insert(schema.employees).values({ nome: g("nome"), unitId: unit.id, positionId: pos?.id ?? null, companyId: comp?.id ?? null, vinculo: vinc, admissao: adm, email: g("email") || null, telefone: g("telefone") || null, jornadaMinDia: g("jornada_min_dia") ? Number(g("jornada_min_dia")) : null, turno: g("turno") || null, regime }).returning({ id: schema.employees.id });
+        const fq = g("ferias_quitadas_ate"); const feriasQuitadasAte = fq ? (fq.includes("/") ? fq.split("/").reverse().join("-") : fq) : null;
+        if (feriasQuitadasAte && !/^\d{4}-\d{2}-\d{2}$/.test(feriasQuitadasAte)) throw new Error(`ferias_quitadas_ate "${fq}" inválida (use AAAA-MM-DD ou DD/MM/AAAA)`);
+        const [novo] = await db.insert(schema.employees).values({ nome: g("nome"), unitId: unit.id, positionId: pos?.id ?? null, companyId: comp?.id ?? null, vinculo: vinc, admissao: adm, email: g("email") || null, telefone: g("telefone") || null, jornadaMinDia: g("jornada_min_dia") ? Number(g("jornada_min_dia")) : null, turno: g("turno") || null, regime, feriasQuitadasAte, nivel: NIVEIS.find(nv => norm(nv) === norm(g("nivel"))) ?? null }).returning({ id: schema.employees.id });
+        if (g("gestor")) gestoresPend.push({ id: novo.id, gestor: g("gestor"), linha: i + 2 });
         await db.insert(schema.documents).values(cfg.documentos.map(([tipo, obrigatorio]) => ({ employeeId: novo.id, tipo: String(tipo), obrigatorio: Boolean(obrigatorio) })));
         ok++;
       } catch (e) { erros.push(`Linha ${i + 2}: ${e instanceof Error ? e.message : e}`); }
+    }
+    // gestor direto por nome (segunda passada: a ordem das linhas não importa)
+    if (gestoresPend.length) {
+      const todos = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM employees WHERE situacao <> 'DESLIGADO'`;
+      for (const p of gestoresPend) { const gs = todos.filter(t => norm(t.nome) === norm(p.gestor) && t.id !== p.id); if (gs.length === 1) await sql`UPDATE employees SET gestor_id=${gs[0].id} WHERE id=${p.id}`; else erros.push(`Linha ${p.linha}: gestor "${p.gestor}" ${gs.length ? "ambíguo" : "não encontrado"} (pessoa importada sem gestor)`); }
     }
     await audit(s, "importar CSV", "employees", null, null, { importados: ok, erros: erros.length });
     resumo = `${ok} colaborador(es) importado(s).` + (erros.length ? ` ${erros.length} linha(s) com erro: ${erros.slice(0, 5).join(" · ")}${erros.length > 5 ? " …" : ""}` : "");

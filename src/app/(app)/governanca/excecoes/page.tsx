@@ -5,8 +5,8 @@ import { db, schema, sql } from "@/db";
 import { asc } from "drizzle-orm";
 import { Page, Card, Table, Td, Badge, Flash, Field, Btn, Input, Select, Textarea } from "@/components/ui";
 import { fmtData, fmtDataHora, getSettings, hoje, addDays } from "@/lib/utils";
-import { EXC_STATUS, expirarExcecoes } from "@/lib/governanca";
-import { solicitarExcecao, decidirExcecao } from "../actions";
+import { EXC_STATUS, expirarExcecoes, revisoesPop } from "@/lib/governanca";
+import { solicitarExcecao, decidirExcecao, concluirRevisaoPop } from "../actions";
 import { requireGestao, popsLista } from "../_shared";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,26 @@ export default async function Excecoes({ searchParams }: { searchParams: Promise
           </form>
         </Card>
       </div>
+      <RevisoesPop />
     </Page>
+  );
+}
+
+const DESFECHO: Record<string, string> = { NOVA_VERSAO: "nova versão do POP", MANTIDO: "POP mantido (exceção legítima)", VIROU_REGRA: "virou regra", NC_ABERTA: "virou não conformidade" };
+/** CRQ-PRJ-V3-03 · três exceções iguais abrem revisão do POP com evidências e prazo. */
+async function RevisoesPop() {
+  const rs = await revisoesPop(); const h = hoje();
+  return (
+    <Card title="Revisões de POP por exceção repetida" className="mt-4"><div id="revisoes" />
+      {rs.length === 0 ? <p className="text-sm text-slate-500">Nenhuma revisão aberta: nenhum POP com exceções iguais acima do limite.</p> :
+        <Table head={["POP / regra", "Motivo das exceções", "Evidências", "Prazo", "Dono", "Situação"]}>
+          {rs.map(r => <tr key={r.id}><Td>{r.procedure_id ? <Link className="text-acao" href={`/governanca/pops/${r.procedure_id}#revisao`}>{r.codigo} {r.titulo}</Link> : r.regra}</Td><Td className="text-xs">{r.motivo}</Td><Td className="text-xs">{r.evidencias.length} exceção(ões): {r.evidencias.map(e => `#${e}`).join(", ")}</Td>
+            <Td className={`whitespace-nowrap text-xs ${r.status === "ABERTA" && r.prazo < h ? "font-semibold text-erro" : ""}`}>{fmtData(r.prazo)}</Td><Td className="text-xs">{r.dono ?? "—"}</Td>
+            <Td>{r.status === "ABERTA" ? <div className="flex flex-wrap items-center gap-1"><Badge v={r.prazo < h ? "REJEITADA" : "PENDENTE"} label={r.prazo < h ? "vencida" : "aberta"} /><Modal label="Concluir sem mudar o POP" title="Concluir a revisão sem nova versão"><form action={concluirRevisaoPop} className="space-y-2"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="voltar" value="/governanca/excecoes#revisoes" />
+                <Field label="Desfecho"><Select name="desfecho" defaultValue="MANTIDO"><option value="MANTIDO">POP mantido — exceção legítima</option><option value="VIROU_REGRA">O caso virou regra (comunicada)</option><option value="NC_ABERTA">Aberta não conformidade</option></Select></Field>
+                <Field label="Justificativa"><Textarea name="obs" required minLength={15} /></Field><p className="text-[11px] text-slate-500">Para mudar o procedimento, publique uma nova versão do POP: a revisão fecha sozinha.</p><Btn small>Concluir</Btn></form></Modal></div>
+              : <span className="text-xs text-slate-600">concluída em {fmtData(r.concluida_em?.slice(0, 10) ?? null)} · {DESFECHO[r.desfecho ?? ""] ?? r.desfecho}{r.versao_publicada ? ` (v${r.versao_publicada})` : ""}</span>}</Td></tr>)}
+        </Table>}
+    </Card>
   );
 }

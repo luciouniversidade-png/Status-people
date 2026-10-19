@@ -15,6 +15,7 @@ export const units = pgTable("units", {
   id: serial("id").primaryKey(),
   nome: text("nome").notNull(),
   codigo: text("codigo").notNull(),
+  companyId: integer("company_id"),               // v24: entidade (CNPJ) a que a unidade pertence
 });
 
 export const positions = pgTable("positions", {
@@ -32,6 +33,8 @@ export const positions = pgTable("positions", {
   formacaoExigida: text("formacao_exigida"),
   documentoFormacao: text("documento_formacao"),
   familia: text("familia"),                 // família para o modelo de avaliação: PROFESSORES · COORDENACAO · SECRETARIA · ATENDIMENTO_COMERCIAL · APOIO_OPERACIONAL · GESTAO
+  asoMeses: integer("aso_meses"),                  // v24: periodicidade do exame periódico (PCMSO)
+  epis: jsonb("epis"),                             // v24: EPIs exigidos pelo cargo (ids)
 });
 
 export const employees = pgTable("employees", {
@@ -55,10 +58,12 @@ export const employees = pgTable("employees", {
   jornadaMinDia: integer("jornada_min_dia"),   // carga horária diária em minutos (ex.: 528 = 8h48)
   turno: text("turno"),
   regime: text("regime").notNull().default("ADMINISTRATIVO"), // DOCENTE · ADMINISTRATIVO — define o calendário aplicável
+  feriasQuitadasAte: date("ferias_quitadas_ate"), // carga inicial: períodos aquisitivos encerrados até esta data contam como quitados
   salario: numeric("salario", { precision: 12, scale: 2 }), // visível só para RH/Direção
   obs: text("obs"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  contatoEmergencia: text("contato_emergencia"),          // v25 · T-104: atualizado pelo próprio colaborador
 });
 
 export const users = pgTable("users", {
@@ -92,6 +97,7 @@ export const leaveRequests = pgTable("leave_requests", {
   decididoEm: timestamp("decidido_em"),
   motivoDecisao: text("motivo_decisao"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  lote: text("lote"),                              // v24: aprovação em lote
 });
 
 export const hourEntries = pgTable("hour_entries", {
@@ -106,6 +112,9 @@ export const hourEntries = pgTable("hour_entries", {
   aprovadoPor: integer("aprovado_por"),
   timesheetDayId: integer("timesheet_day_id"), // gerado pelo espelho de ponto (um lançamento por dia)
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  lote: text("lote"),
+  decididoEm: timestamp("decidido_em"),
+  motivoDecisao: text("motivo_decisao"),
 });
 
 export const processes = pgTable("processes", {
@@ -188,6 +197,7 @@ export const classes = pgTable("classes", {
   vagas: integer("vagas").notNull(),
   status: text("status").notNull().default("ABERTA"), // ABERTA · FECHADA
   spaceId: integer("space_id"),                  // sala da turma (mapa de salas por turno, v22)
+  titularEmployeeId: integer("titular_employee_id"), // v24 · professor(a) titular (T-013: turma sem titular é pendência estrutural)
   obs: text("obs"),
 });
 
@@ -453,6 +463,11 @@ export const nonconformities = pgTable("nonconformities", {
   encerradaEm: timestamp("encerrada_em"),
   createdBy: integer("created_by"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  auditId: integer("audit_id"),
+  eficaciaEvidencia: text("eficacia_evidencia"),
+  eficaciaEm: date("eficacia_em"),
+  reincidenciaDe: integer("reincidencia_de"),
+  reincidencias: integer("reincidencias").notNull().default(0),
 });
 
 export const decisions = pgTable("decisions", {
@@ -651,6 +666,8 @@ export const requisitions = pgTable("requisitions", {
   abertaEm: date("aberta_em"),
   fechadaEm: date("fechada_em"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  slotId: integer("slot_id"),                      // v24: posição de origem (gate de reposição)
+  gate: jsonb("gate"),                             // v24: motivo, orçamento, alternativa avaliada e decisão
 });
 
 export const candidates = pgTable("candidates", {
@@ -666,6 +683,7 @@ export const candidates = pgTable("candidates", {
   obs: text("obs"),
   consentimentoLgpd: boolean("consentimento_lgpd").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  exclusaoPedidaEm: timestamp("exclusao_pedida_em"),        // v25 · pedido de exclusão (LGPD) pelo portal
 });
 
 export const applications = pgTable("applications", {
@@ -680,6 +698,7 @@ export const applications = pgTable("applications", {
   employeeId: integer("employee_id"),        // quando contratado
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  retiradaEm: timestamp("retirada_em"),                    // v25 · T-106: retirada pelo candidato no portal
 });
 
 export const applicationEvents = pgTable("application_events", {
@@ -688,6 +707,7 @@ export const applicationEvents = pgTable("application_events", {
   at: timestamp("at").notNull().defaultNow(),
   userNome: text("user_nome"),
   texto: text("texto").notNull(),
+  origem: text("origem").notNull().default("RH"),          // v25 · RH · CANDIDATO · RH_PARA_CANDIDATO (aparece no portal)
 });
 
 // ================= CLIMA E eNPS =================
@@ -882,6 +902,8 @@ export const receivables = pgTable("receivables", {
   obs: text("obs"),
   importadoEm: timestamp("importado_em").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  formaPagamento: text("forma_pagamento"),                 // v25 · forma da baixa no ActiveSoft (PIX, BOLETO, CARTAO, ...)
+  conciliadoEm: timestamp("conciliado_em"),
 });
 
 export const collectionActions = pgTable("collection_actions", {
@@ -962,6 +984,9 @@ export const cashEntries = pgTable("cash_entries", {
   contraparte: text("contraparte"),
   hash: text("hash"),                       // dedupe de importação
   importadoEm: timestamp("importado_em").notNull().defaultNow(),
+  bankAccountId: integer("bank_account_id"),               // v25 · origem no extrato
+  bankLineId: integer("bank_line_id"),
+  reclassificadoEm: timestamp("reclassificado_em"),
 });
 
 export const cashBalances = pgTable("cash_balances", {
@@ -1140,6 +1165,7 @@ export const projects = pgTable("projects", {
   resultadoEsperado: text("resultado_esperado"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  baselineVersao: integer("baseline_versao").notNull().default(0),
 });
 
 export const milestones = pgTable("milestones", {
@@ -1150,6 +1176,8 @@ export const milestones = pgTable("milestones", {
   responsavelUserId: integer("responsavel_user_id"),
   concluidoEm: date("concluido_em"),
   ordem: integer("ordem").notNull().default(0),
+  baselinePrazo: date("baseline_prazo"),            // v24: linha de base
+  dependeDe: integer("depende_de"),                 // v24: marco do qual este depende (T-077)
 });
 
 export const projectUpdates = pgTable("project_updates", {
@@ -1203,6 +1231,13 @@ export const announcements = pgTable("announcements", {
   autorNome: text("autor_nome"),
   publicadoEm: timestamp("publicado_em").notNull().defaultNow(),
   expiraEm: date("expira_em"),
+  status: text("status").notNull().default("PUBLICADO"),  // v25 · CRQ-COM-V3-01: AGUARDANDO_APROVACAO · APROVADO · AGENDADO · PUBLICADO · REJEITADO
+  destinatarios: integer("destinatarios"),
+  aprovadoPor: integer("aprovado_por"),
+  aprovadoEm: timestamp("aprovado_em"),
+  motivoRejeicao: text("motivo_rejeicao"),
+  disparoEm: timestamp("disparo_em"),
+  disparadoEm: timestamp("disparado_em"),
 });
 
 export const announcementAcks = pgTable("announcement_acks", {
@@ -1242,6 +1277,7 @@ export const messages = pgTable("messages", {
   userNome: text("user_nome"),
   unitId: integer("unit_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  campaignId: integer("campaign_id"),                     // v25 · envio em massa (CRQ-COM-V3-01)
 });
 
 // ================= PLATAFORMA: ANEXOS E NOTIFICAÇÕES (DOM-15) =================
@@ -1739,6 +1775,7 @@ export const teacherSlots = pgTable("teacher_slots", {
   spaceId: integer("space_id"),
   ativo: boolean("ativo").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  versionId: integer("version_id"),                        // v25 · T-053: vigência da grade
 });
 /** Ausência de professor num dia (falta, atestado, afastamento aprovado, formação…), que gera as aulas a cobrir. */
 export const coverAbsences = pgTable("cover_absences", {
@@ -2073,6 +2110,10 @@ export const requests = pgTable("requests", {
   etapas: jsonb("etapas").notNull(),                       // retrato das etapas aplicáveis: [{ nome, aprovadores, decisao, por, porNome, em, obs }]
   prazoEtapa: date("prazo_etapa"),
   concluidaEm: timestamp("concluida_em"),
+  pagoEm: date("pago_em"),                                  // v25 · T-029: só com o débito conciliado do extrato
+  pagamentoLineId: integer("pagamento_line_id"),
+  pagoPor: integer("pago_por"),
+  pagamentoPrevisto: date("pagamento_previsto"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -2141,4 +2182,314 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
   falhas: integer("falhas").notNull().default(0),
   ultimoEnvio: timestamp("ultimo_envio"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ======================= v23: ONE Insights =======================
+// Base de indicadores: série mensal por indicador e unidade (unit_id 0 = rede). Chave primária composta (chave, periodo, unit_id) criada pela migração.
+export const kpiSeries = pgTable("kpi_series", {
+  chave: text("chave").notNull(),
+  periodo: text("periodo").notNull(),                     // 'YYYY-MM'
+  unitId: integer("unit_id").notNull().default(0),
+  valor: numeric("valor"),                                // vazio = sem medição (nunca vira zero)
+  num: numeric("num"),
+  den: numeric("den"),
+  origem: text("origem").notNull().default("CALCULADO"),  // CALCULADO (reconstruído dos registros) · RETRATO (foto do mês)
+  calculadoEm: timestamp("calculado_em").notNull().defaultNow(),
+});
+export const kpiTargets = pgTable("kpi_targets", {
+  id: serial("id").primaryKey(),
+  chave: text("chave").notNull(),
+  ano: integer("ano").notNull(),
+  unitId: integer("unit_id").notNull().default(0),
+  meta: numeric("meta").notNull(),
+  alerta: numeric("alerta"),
+  periodicidade: text("periodicidade").notNull().default("MENSAL"), // MENSAL · ANUAL (só para indicadores que somam no ano)
+  obs: text("obs"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const kpiComments = pgTable("kpi_comments", {
+  id: serial("id").primaryKey(),
+  chave: text("chave").notNull(),
+  periodo: text("periodo").notNull(),
+  unitId: integer("unit_id").notNull().default(0),
+  texto: text("texto").notNull(),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const kpiSubscriptions = pgTable("kpi_subscriptions", {
+  userId: integer("user_id").primaryKey(),
+  unitId: integer("unit_id"),
+  ativo: boolean("ativo").notNull().default(true),
+  email: boolean("email").notNull().default(true),
+  ultimoEnvio: date("ultimo_envio"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const kpiWeekly = pgTable("kpi_weekly", {
+  semana: text("semana").notNull(),
+  chave: text("chave").notNull(),
+  unitId: integer("unit_id").notNull().default(0),
+  valor: numeric("valor"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const budgetMonths = pgTable("budget_months", {
+  id: serial("id").primaryKey(),
+  ano: integer("ano").notNull(),
+  unitId: integer("unit_id").notNull(),
+  tipo: text("tipo").notNull(),           // ENTRADA · SAIDA
+  categoria: text("categoria").notNull(),
+  mes: integer("mes").notNull(),          // 1–12
+  valor: numeric("valor", { precision: 14, scale: 2 }).notNull(),
+  userId: integer("user_id"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const budgetComments = pgTable("budget_comments", {
+  id: serial("id").primaryKey(),
+  ano: integer("ano").notNull(),
+  mes: integer("mes").notNull(),
+  unitId: integer("unit_id"),
+  tipo: text("tipo").notNull(),
+  categoria: text("categoria").notNull(),
+  texto: text("texto").notNull(),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const recognitions = pgTable("recognitions", {
+  id: serial("id").primaryKey(),
+  deUserId: integer("de_user_id"),
+  deNome: text("de_nome").notNull(),
+  paraEmployeeId: integer("para_employee_id").notNull(),
+  valor: text("valor"),                    // valor da identidade (Identidade → valores)
+  mensagem: text("mensagem").notNull(),
+  unitId: integer("unit_id"),
+  status: text("status").notNull().default("PUBLICADO"), // PUBLICADO · OCULTO
+  ocultoPor: integer("oculto_por"),
+  ocultoMotivo: text("oculto_motivo"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const recognitionReactions = pgTable("recognition_reactions", {
+  recognitionId: integer("recognition_id").notNull(),
+  userId: integer("user_id").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const userPrefs = pgTable("user_prefs", {
+  userId: integer("user_id").primaryKey(),
+  inicio: jsonb("inicio"),
+  atalhos: jsonb("atalhos"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  contexto: jsonb("contexto"),                     // v24: contexto padrão (entidade · unidade · período)
+  favoritos: jsonb("favoritos"),                   // v24: relatórios favoritos
+});
+
+// ------------------------------------------------------------------ v24 · Nova Arquitetura (as consultas usam SQL direto; aqui ficam para o diagnóstico do banco)
+const ts = (n: string) => timestamp(n);
+export const alerts = pgTable("alerts", { id: serial("id").primaryKey(), chave: text("chave").notNull(), escopo: integer("escopo").notNull().default(0), unitId: integer("unit_id"), regra: text("regra").notNull(), modulo: text("modulo").notNull(), severidade: text("severidade").notNull().default("MEDIO"), titulo: text("titulo").notNull(), href: text("href"), donoUserId: integer("dono_user_id"), defeito: text("defeito"), slaAte: ts("sla_ate"), status: text("status").notNull().default("ABERTO"), desfecho: text("desfecho"), silenciadoAte: date("silenciado_ate"), motivoSilencio: text("motivo_silencio"), escalonamento: integer("escalonamento").notNull().default(0), ocorrencias: integer("ocorrencias").notNull().default(1), primeiroEm: ts("primeiro_em").notNull().defaultNow(), vistoEm: ts("visto_em").notNull().defaultNow(), tratadoEm: ts("tratado_em"), tratadoPor: integer("tratado_por"), resolvidoEm: ts("resolvido_em"), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const alertEvents = pgTable("alert_events", { id: serial("id").primaryKey(), alertId: integer("alert_id").notNull(), at: ts("at").notNull().defaultNow(), userId: integer("user_id"), userNome: text("user_nome"), tipo: text("tipo").notNull(), texto: text("texto") });
+export const alertSweeps = pgTable("alert_sweeps", { escopo: integer("escopo").primaryKey(), at: ts("at").notNull().defaultNow(), n: integer("n").notNull().default(0) });
+export const positionSlots = pgTable("position_slots", { id: serial("id").primaryKey(), positionId: integer("position_id").notNull(), unitId: integer("unit_id").notNull(), jornadaMinDia: integer("jornada_min_dia").notNull().default(528), autorizada: boolean("autorizada").notNull().default(false), autorizadaPor: integer("autorizada_por"), autorizadaEm: ts("autorizada_em"), employeeId: integer("employee_id"), previstaAte: date("prevista_ate"), ativa: boolean("ativa").notNull().default(true), motivo: text("motivo"), obs: text("obs"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const timesheetLocks = pgTable("timesheet_locks", { id: serial("id").primaryKey(), unitId: integer("unit_id").notNull(), mes: text("mes").notNull(), status: text("status").notNull().default("FECHADO"), fechadoPor: integer("fechado_por"), fechadoPorNome: text("fechado_por_nome"), fechadoEm: ts("fechado_em").notNull().defaultNow(), ressalva: text("ressalva"), resumo: jsonb("resumo"), reabertoPor: integer("reaberto_por"), reabertoEm: ts("reaberto_em"), motivoReabertura: text("motivo_reabertura") });
+export const payrollCycles = pgTable("payroll_cycles", { id: serial("id").primaryKey(), competencia: text("competencia").notNull(), companyId: integer("company_id").notNull(), status: text("status").notNull().default("ABERTO"), pacote: jsonb("pacote"), pacoteEm: ts("pacote_em"), pacotePor: integer("pacote_por"), pacotePorNome: text("pacote_por_nome"), previa: jsonb("previa"), conferencia: jsonb("conferencia"), conferidoEm: ts("conferido_em"), conferidoPor: integer("conferido_por"), conferidoPorNome: text("conferido_por_nome"), resultadoEm: ts("resultado_em"), resultadoPor: integer("resultado_por"), resultadoPorNome: text("resultado_por_nome"), total: numeric("total", { precision: 14, scale: 2 }), totalAnterior: numeric("total_anterior", { precision: 14, scale: 2 }), variacaoPct: numeric("variacao_pct", { precision: 8, scale: 2 }), aceitoEm: ts("aceito_em"), aceitoPor: integer("aceito_por"), arquivadoEm: ts("arquivado_em"), arquivadoPor: integer("arquivado_por"), obs: text("obs"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const payrollResults = pgTable("payroll_results", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), unitId: integer("unit_id"), area: text("area"), headcount: integer("headcount"), salarios: numeric("salarios", { precision: 14, scale: 2 }).notNull().default("0"), inss: numeric("inss", { precision: 14, scale: 2 }).notNull().default("0"), fgts: numeric("fgts", { precision: 14, scale: 2 }).notNull().default("0"), irrf: numeric("irrf", { precision: 14, scale: 2 }).notNull().default("0"), provisao13: numeric("provisao_13", { precision: 14, scale: 2 }).notNull().default("0"), provisaoFerias: numeric("provisao_ferias", { precision: 14, scale: 2 }).notNull().default("0"), beneficios: numeric("beneficios", { precision: 14, scale: 2 }).notNull().default("0"), rescisoes: numeric("rescisoes", { precision: 14, scale: 2 }).notNull().default("0"), outros: numeric("outros", { precision: 14, scale: 2 }).notNull().default("0") });
+export const payrollEvents = pgTable("payroll_events", { id: serial("id").primaryKey(), cycleId: integer("cycle_id"), competencia: text("competencia").notNull(), companyId: integer("company_id"), at: ts("at").notNull().defaultNow(), userId: integer("user_id"), userNome: text("user_nome"), tipo: text("tipo").notNull(), texto: text("texto") });
+export const payrollExplanations = pgTable("payroll_explanations", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), motivo: text("motivo").notNull(), valor: numeric("valor", { precision: 14, scale: 2 }), texto: text("texto"), userId: integer("user_id"), userNome: text("user_nome"), createdAt: ts("created_at").notNull().defaultNow() });
+export const payrollDivergences = pgTable("payroll_divergences", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), employeeId: integer("employee_id"), descricao: text("descricao").notNull(), status: text("status").notNull().default("DEVOLVIDA"), resolvidaEm: ts("resolvida_em"), resolvidaPor: integer("resolvida_por"), userId: integer("user_id"), createdAt: ts("created_at").notNull().defaultNow() });
+export const payrollDocs = pgTable("payroll_docs", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), tipo: text("tipo").notNull(), employeeId: integer("employee_id"), attachmentId: integer("attachment_id").notNull(), obligationId: integer("obligation_id"), userId: integer("user_id"), createdAt: ts("created_at").notNull().defaultNow() });
+export const payrollDocViews = pgTable("payroll_doc_views", { id: serial("id").primaryKey(), docId: integer("doc_id").notNull(), userId: integer("user_id"), userNome: text("user_nome"), at: ts("at").notNull().defaultNow() });
+export const obligations = pgTable("obligations", { id: serial("id").primaryKey(), companyId: integer("company_id"), unitId: integer("unit_id"), tipo: text("tipo").notNull(), descricao: text("descricao"), competencia: text("competencia"), vencimento: date("vencimento").notNull(), valor: numeric("valor", { precision: 14, scale: 2 }), status: text("status").notNull().default("PENDENTE"), pagoEm: date("pago_em"), responsavelUserId: integer("responsavel_user_id"), origem: text("origem").notNull().default("MANUAL"), cycleId: integer("cycle_id"), baixadoPor: integer("baixado_por"), obs: text("obs"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const fiscalCases = pgTable("fiscal_cases", { id: serial("id").primaryKey(), titulo: text("titulo").notNull(), orgao: text("orgao"), tipo: text("tipo"), companyIds: jsonb("company_ids"), abertura: date("abertura"), prazo: date("prazo"), status: text("status").notNull().default("ABERTO"), responsavelUserId: integer("responsavel_user_id"), descricao: text("descricao"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const fiscalCaseEvents = pgTable("fiscal_case_events", { id: serial("id").primaryKey(), caseId: integer("case_id").notNull(), data: date("data").notNull(), tipo: text("tipo").notNull(), texto: text("texto").notNull(), prazo: date("prazo"), cumpridoEm: date("cumprido_em"), userId: integer("user_id"), userNome: text("user_nome"), createdAt: ts("created_at").notNull().defaultNow() });
+export const sstExams = pgTable("sst_exams", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), tipo: text("tipo").notNull(), data: date("data").notNull(), validade: date("validade"), resultado: text("resultado").notNull().default("APTO"), restricao: text("restricao"), clinica: text("clinica"), situacao: text("situacao").notNull().default("REALIZADO"), userId: integer("user_id"), createdAt: ts("created_at").notNull().defaultNow() });
+export const sstIncidents = pgTable("sst_incidents", { id: serial("id").primaryKey(), unitId: integer("unit_id").notNull(), employeeId: integer("employee_id"), data: date("data").notNull(), hora: text("hora"), tipo: text("tipo").notNull(), gravidade: text("gravidade").notNull().default("LEVE"), comAfastamento: boolean("com_afastamento").notNull().default(false), local: text("local"), descricao: text("descricao").notNull(), catNecessaria: boolean("cat_necessaria").notNull().default(false), catPrazo: date("cat_prazo"), catNumero: text("cat_numero"), catEmitidaEm: date("cat_emitida_em"), causas: text("causas"), medidas: text("medidas"), investigacaoPrazo: date("investigacao_prazo"), investigadoEm: date("investigado_em"), actionPlanId: integer("action_plan_id"), status: text("status").notNull().default("ABERTO"), escaladoEm: ts("escalado_em"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const cipaMembers = pgTable("cipa_members", { id: serial("id").primaryKey(), unitId: integer("unit_id").notNull(), employeeId: integer("employee_id").notNull(), representacao: text("representacao").notNull().default("EMPREGADOS"), funcao: text("funcao").notNull().default("MEMBRO"), titular: boolean("titular").notNull().default(true), mandatoInicio: date("mandato_inicio").notNull(), mandatoFim: date("mandato_fim").notNull(), ativo: boolean("ativo").notNull().default(true), createdAt: ts("created_at").notNull().defaultNow() });
+export const cipaMeetings = pgTable("cipa_meetings", { id: serial("id").primaryKey(), unitId: integer("unit_id").notNull(), data: date("data").notNull(), tipo: text("tipo").notNull().default("ORDINARIA"), pauta: text("pauta"), ata: text("ata"), realizada: boolean("realizada").notNull().default(false), createdAt: ts("created_at").notNull().defaultNow() });
+export const epiItems = pgTable("epi_items", { id: serial("id").primaryKey(), nome: text("nome").notNull(), ca: text("ca"), trocaDias: integer("troca_dias"), ativo: boolean("ativo").notNull().default(true), createdAt: ts("created_at").notNull().defaultNow() });
+export const epiDeliveries = pgTable("epi_deliveries", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), epiId: integer("epi_id").notNull(), data: date("data").notNull(), quantidade: integer("quantidade").notNull().default(1), termoAssinado: boolean("termo_assinado").notNull().default(false), proximaTroca: date("proxima_troca"), devolvidoEm: date("devolvido_em"), userId: integer("user_id"), createdAt: ts("created_at").notNull().defaultNow() });
+export const onboardingPlans = pgTable("onboarding_plans", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), inicio: date("inicio").notNull(), gestorUserId: integer("gestor_user_id"), buddyEmployeeId: integer("buddy_employee_id"), status: text("status").notNull().default("EM_ANDAMENTO"), concluidoEm: ts("concluido_em"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow() });
+export const onboardingItems = pgTable("onboarding_items", { id: serial("id").primaryKey(), planId: integer("plan_id").notNull(), marco: integer("marco").notNull(), titulo: text("titulo").notNull(), tipo: text("tipo").notNull().default("TAREFA"), responsavel: text("responsavel").notNull().default("GESTOR"), prazo: date("prazo").notNull(), concluidoEm: ts("concluido_em"), concluidoPor: integer("concluido_por"), nota: text("nota"), lembradoEm: date("lembrado_em"), ordem: integer("ordem").notNull().default(0) });
+export const onboardingSurveys = pgTable("onboarding_surveys", { id: serial("id").primaryKey(), planId: integer("plan_id").notNull(), marco: integer("marco").notNull(), nota: integer("nota").notNull(), comentario: text("comentario"), createdAt: ts("created_at").notNull().defaultNow() });
+export const perfCycleStages = pgTable("perf_cycle_stages", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), etapa: text("etapa").notNull(), inicio: date("inicio").notNull(), fim: date("fim").notNull(), status: text("status").notNull().default("PLANEJADA"), fechadaEm: ts("fechada_em"), fechadaPor: integer("fechada_por"), ordem: integer("ordem").notNull().default(0) });
+export const perfStageChanges = pgTable("perf_stage_changes", { id: serial("id").primaryKey(), stageId: integer("stage_id").notNull(), deFim: date("de_fim"), paraFim: date("para_fim"), motivo: text("motivo").notNull(), userId: integer("user_id"), userNome: text("user_nome"), createdAt: ts("created_at").notNull().defaultNow() });
+export const perfReminders = pgTable("perf_reminders", { id: serial("id").primaryKey(), cycleId: integer("cycle_id").notNull(), etapa: text("etapa").notNull(), employeeId: integer("employee_id").notNull(), n: integer("n").notNull().default(1), escalado: boolean("escalado").notNull().default(false), userId: integer("user_id"), at: ts("at").notNull().defaultNow() });
+export const audits = pgTable("audits", { id: serial("id").primaryKey(), titulo: text("titulo").notNull(), tipo: text("tipo").notNull().default("INTERNA"), area: text("area"), unitId: integer("unit_id"), leadUserId: integer("lead_user_id"), planejadaPara: date("planejada_para").notNull(), realizadaEm: date("realizada_em"), prazoRelatorio: date("prazo_relatorio"), status: text("status").notNull().default("PLANEJADA"), escopo: text("escopo"), conclusao: text("conclusao"), createdBy: integer("created_by"), createdAt: ts("created_at").notNull().defaultNow(), updatedAt: ts("updated_at").notNull().defaultNow() });
+export const projectBaselines = pgTable("project_baselines", { id: serial("id").primaryKey(), projectId: integer("project_id").notNull(), versao: integer("versao").notNull(), motivo: text("motivo").notNull(), decisionId: integer("decision_id"), marcos: jsonb("marcos").notNull(), userId: integer("user_id"), userNome: text("user_nome"), createdAt: ts("created_at").notNull().defaultNow() });
+export const budgetExplainRequests = pgTable("budget_explain_requests", { id: serial("id").primaryKey(), ano: integer("ano").notNull(), mes: integer("mes").notNull(), escopo: integer("escopo").notNull().default(0), categoria: text("categoria").notNull(), executadoPct: numeric("executado_pct", { precision: 8, scale: 2 }), responsavelUserId: integer("responsavel_user_id"), status: text("status").notNull().default("ABERTA"), respondidaEm: ts("respondida_em"), createdAt: ts("created_at").notNull().defaultNow() });
+export const reportSchedules = pgTable("report_schedules", { id: serial("id").primaryKey(), userId: integer("user_id").notNull(), relatorio: text("relatorio").notNull(), params: jsonb("params"), dia: integer("dia").notNull().default(1), ativo: boolean("ativo").notNull().default(true), ultimoEnvio: date("ultimo_envio"), createdAt: ts("created_at").notNull().defaultNow() });
+export const dailyContacts = pgTable("daily_contacts", { id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), data: date("data").notNull(), desfecho: text("desfecho").notNull(), obs: text("obs"), userId: integer("user_id"), userNome: text("user_nome"), createdAt: ts("created_at").notNull().defaultNow() });
+export const goliveItems = pgTable("golive_items", { chave: text("chave").primaryKey(), feito: boolean("feito").notNull().default(false), evidencia: text("evidencia"), responsavel: text("responsavel"), userId: integer("user_id"), userNome: text("user_nome"), updatedAt: ts("updated_at").notNull().defaultNow() });
+
+// v24 · T-013 · documentos de matrícula do aluno (pendente → recebido → verificado/rejeitado; vencimento)
+export const studentDocuments = pgTable("student_documents", {
+  id: serial("id").primaryKey(),
+  studentId: integer("student_id").notNull(),
+  tipo: text("tipo").notNull(),
+  status: text("status").notNull().default("PENDENTE"),
+  validade: date("validade"),
+  solicitadoEm: date("solicitado_em"),
+  solicitacoes: integer("solicitacoes").notNull().default(0),
+  recebidoEm: date("recebido_em"),
+  verificadoPor: integer("verificado_por"),
+  verificadoEm: timestamp("verificado_em"),
+  motivo: text("motivo"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// ------------------------------------------------------------ v25 · Conciliação bancária e de cartão (Cap. 21 · T-026, T-033…T-035, T-039)
+export const bankAccounts = pgTable("bank_accounts", {
+  id: serial("id").primaryKey(),
+  apelido: text("apelido").notNull(),
+  banco: text("banco"),
+  agencia: text("agencia"),
+  conta: text("conta"),
+  companyId: integer("company_id"),
+  unitId: integer("unit_id"),
+  tipo: text("tipo").notNull().default("CORRENTE"),
+  ativo: boolean("ativo").notNull().default(true),
+  obs: text("obs"),
+  createdBy: integer("created_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const reconImports = pgTable("recon_imports", {
+  id: serial("id").primaryKey(),
+  tipo: text("tipo").notNull(),
+  bankAccountId: integer("bank_account_id"),
+  arquivo: text("arquivo"),
+  linhas: integer("linhas").notNull().default(0),
+  novas: integer("novas").notNull().default(0),
+  repetidas: integer("repetidas").notNull().default(0),
+  travadas: integer("travadas").notNull().default(0),
+  periodoIni: date("periodo_ini"),
+  periodoFim: date("periodo_fim"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const bankLines = pgTable("bank_lines", {
+  id: serial("id").primaryKey(),
+  bankAccountId: integer("bank_account_id").notNull(),
+  importId: integer("import_id"),
+  data: date("data").notNull(),
+  valor: numeric("valor", { precision: 12, scale: 2 }).notNull(),
+  forma: text("forma").notNull().default("OUTRO"),
+  descricao: text("descricao"),
+  documento: text("documento"),
+  pagador: text("pagador"),
+  pagadorDoc: text("pagador_doc"),
+  chave: text("chave").notNull(),
+  status: text("status").notNull().default("PENDENTE"),
+  studentId: integer("student_id"),
+  classe: text("classe"),
+  observacao: text("observacao"),
+  cashEntryId: integer("cash_entry_id"),
+  classificadoPor: integer("classificado_por"),
+  requestId: integer("request_id"),                        // T-029: débito que pagou a solicitação
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const cardSales = pgTable("card_sales", {
+  id: serial("id").primaryKey(),
+  importId: integer("import_id"),
+  unitId: integer("unit_id"),
+  dataVenda: date("data_venda").notNull(),
+  dataPagamento: date("data_pagamento"),
+  bandeira: text("bandeira").notNull(),
+  produto: text("produto").notNull(),
+  parcelas: integer("parcelas").notNull().default(1),
+  parcela: integer("parcela").notNull().default(1),
+  nsu: text("nsu"),
+  autorizacao: text("autorizacao"),
+  valorBruto: numeric("valor_bruto", { precision: 12, scale: 2 }).notNull(),
+  valorTaxa: numeric("valor_taxa", { precision: 12, scale: 2 }).notNull().default("0"),
+  valorLiquido: numeric("valor_liquido", { precision: 12, scale: 2 }).notNull(),
+  antecipado: boolean("antecipado").notNull().default(false),
+  chave: text("chave").notNull().unique(),
+  status: text("status").notNull().default("PENDENTE"),
+  repasse: text("repasse").notNull().default("A_RECEBER"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const reconMatches = pgTable("recon_matches", {
+  id: serial("id").primaryKey(),
+  tipo: text("tipo").notNull(),
+  grupo: text("grupo"),
+  receivableId: integer("receivable_id"),
+  bankLineId: integer("bank_line_id"),
+  cardSaleId: integer("card_sale_id"),
+  valor: numeric("valor", { precision: 12, scale: 2 }).notNull(),
+  confianca: integer("confianca").notNull().default(0),
+  metodo: text("metodo").notNull().default("AUTO"),
+  status: text("status").notNull().default("SUGERIDO"),
+  motivo: text("motivo"),
+  userId: integer("user_id"),
+  userNome: text("user_nome"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  confirmadoEm: timestamp("confirmado_em"),
+  desfeitoEm: timestamp("desfeito_em"),
+  motivoDesfazer: text("motivo_desfazer"),
+});
+export const reconIssues = pgTable("recon_issues", {
+  id: serial("id").primaryKey(),
+  chave: text("chave").notNull().unique(),
+  tipo: text("tipo").notNull(),
+  origem: text("origem").notNull(),
+  unitId: integer("unit_id"),
+  valor: numeric("valor", { precision: 12, scale: 2 }),
+  descricao: text("descricao").notNull(),
+  bankLineId: integer("bank_line_id"),
+  cardSaleId: integer("card_sale_id"),
+  receivableId: integer("receivable_id"),
+  referencia: date("referencia").notNull(),
+  donoUserId: integer("dono_user_id"),
+  prazo: date("prazo"),
+  status: text("status").notNull().default("ABERTA"),
+  desfecho: text("desfecho"),
+  desfechoObs: text("desfecho_obs"),
+  resolvidoEm: timestamp("resolvido_em"),
+  resolvidoPor: integer("resolvido_por"),
+  escalonamento: integer("escalonamento").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const reconClosings = pgTable("recon_closings", {
+  id: serial("id").primaryKey(),
+  competencia: text("competencia").notNull(),
+  companyId: integer("company_id"),
+  recebido: numeric("recebido", { precision: 14, scale: 2 }),
+  conciliado: numeric("conciliado", { precision: 14, scale: 2 }),
+  explicado: numeric("explicado", { precision: 14, scale: 2 }),
+  pct: numeric("pct", { precision: 6, scale: 2 }),
+  status: text("status").notNull().default("FECHADA"),
+  obs: text("obs"),
+  fechadoPor: integer("fechado_por"),
+  fechadoEm: timestamp("fechado_em").notNull().defaultNow(),
+  reabertoPor: integer("reaberto_por"),
+  reabertoEm: timestamp("reaberto_em"),
+  motivoReabertura: text("motivo_reabertura"),
+});
+// ------------------------------------------------------------ v25 · comunicação em massa (CRQ-COM-V3-01) e revisão de POP por exceção repetida (CRQ-PRJ-V3-03)
+export const messageCampaigns = pgTable("message_campaigns", {
+  id: serial("id").primaryKey(), titulo: text("titulo").notNull(), canal: text("canal").notNull(), templateId: integer("template_id").notNull(), publico: text("publico").notNull(), filtro: jsonb("filtro").notNull(), assunto: text("assunto"),
+  total: integer("total").notNull().default(0), status: text("status").notNull().default("AGUARDANDO_APROVACAO"), autorUserId: integer("autor_user_id").notNull(), autorNome: text("autor_nome"), aprovadoPor: integer("aprovado_por"), aprovadoEm: timestamp("aprovado_em"),
+  motivoRejeicao: text("motivo_rejeicao"), disparoEm: timestamp("disparo_em"), disparadoEm: timestamp("disparado_em"), enviadas: integer("enviadas").notNull().default(0), registradas: integer("registradas").notNull().default(0), falhas: integer("falhas").notNull().default(0), createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const procedureReviews = pgTable("procedure_reviews", {
+  id: serial("id").primaryKey(), chave: text("chave").notNull(), procedureId: integer("procedure_id"), regra: text("regra").notNull(), motivo: text("motivo").notNull(), evidencias: jsonb("evidencias").notNull(), prazo: date("prazo").notNull(), donoUserId: integer("dono_user_id"),
+  status: text("status").notNull().default("ABERTA"), desfecho: text("desfecho"), desfechoObs: text("desfecho_obs"), versaoPublicada: integer("versao_publicada"), concluidaPor: integer("concluida_por"), concluidaEm: timestamp("concluida_em"), escaladaEm: timestamp("escalada_em"), createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const candidatePortalLinks = pgTable("candidate_portal_links", {
+  id: serial("id").primaryKey(), applicationId: integer("application_id").notNull(), tokenHash: text("token_hash").notNull().unique(), status: text("status").notNull().default("ATIVO"), expiraEm: date("expira_em").notNull(), criadoPor: integer("criado_por"), criadoEm: timestamp("criado_em").notNull().defaultNow(), abertoEm: timestamp("aberto_em"), ultimoAcesso: timestamp("ultimo_acesso"), encerradoEm: timestamp("encerrado_em"),
+});
+export const candidateDocRequests = pgTable("candidate_doc_requests", {
+  id: serial("id").primaryKey(), applicationId: integer("application_id").notNull(), tipo: text("tipo").notNull(), obrigatorio: boolean("obrigatorio").notNull().default(true), status: text("status").notNull().default("PENDENTE"), enviadoEm: timestamp("enviado_em"), conferidoPor: integer("conferido_por"), conferidoEm: timestamp("conferido_em"), motivoRecusa: text("motivo_recusa"), criadoPor: integer("criado_por"), createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const interviewSlots = pgTable("interview_slots", {
+  id: serial("id").primaryKey(), applicationId: integer("application_id").notNull(), etapa: text("etapa").notNull(), inicio: timestamp("inicio").notNull(), duracaoMin: integer("duracao_min").notNull().default(45), local: text("local"), status: text("status").notNull().default("OFERECIDO"), escolhidoEm: timestamp("escolhido_em"), criadoPor: integer("criado_por"), createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+export const gradeVersions = pgTable("grade_versions", {
+  id: serial("id").primaryKey(), unitId: integer("unit_id").notNull(), nome: text("nome").notNull(), vigenciaInicio: date("vigencia_inicio").notNull(), vigenciaFim: date("vigencia_fim"), status: text("status").notNull().default("RASCUNHO"), origem: text("origem").notNull().default("MANUAL"), copiadaDe: integer("copiada_de"), obs: text("obs"), justificativa: text("justificativa"),
+  criadaPor: integer("criada_por"), criadaEm: timestamp("criada_em").notNull().defaultNow(), ativadaPor: integer("ativada_por"), ativadaEm: timestamp("ativada_em"), chAplicadaPor: integer("ch_aplicada_por"), chAplicadaEm: timestamp("ch_aplicada_em"), descartadaEm: timestamp("descartada_em"),
+});
+export const timesheetAudit = pgTable("timesheet_audit", {
+  id: serial("id").primaryKey(), employeeId: integer("employee_id").notNull(), unitId: integer("unit_id"), data: date("data").notNull(), tipo: text("tipo").notNull(), minutos: integer("minutos").notNull().default(0), detalhe: text("detalhe"), status: text("status").notNull().default("ABERTA"), decisaoObs: text("decisao_obs"), decididoPor: integer("decidido_por"), decididoEm: timestamp("decidido_em"), hourEntryId: integer("hour_entry_id"), createdAt: timestamp("created_at").notNull().defaultNow(), updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

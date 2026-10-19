@@ -10,6 +10,12 @@ import { lerPlanilhaPonto, type ArquivoLido } from "@/lib/ponto-import";
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
 const podeLancar = (r: string) => ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(r);
 
+/** CRQ-TMP-V3-01/04: jornada que cobre mês fechado não muda por edição solta — vale nova vigência a partir de um mês aberto. */
+async function mesFechadoNoPeriodo(employeeId: number, de: string, ate: string | null) {
+  const [r] = await sql<{ mes: string }[]>`SELECT l.mes FROM employees e JOIN timesheet_locks l ON l.unit_id=e.unit_id AND l.status='FECHADO' WHERE e.id=${employeeId} AND l.mes >= ${de.slice(0, 7)} AND l.mes <= ${(ate ?? hoje()).slice(0, 7)} ORDER BY l.mes LIMIT 1`;
+  return r?.mes ?? null;
+}
+const msgFechado = (mes: string) => `O ponto de ${mes.split("-").reverse().join("/")} está fechado: a jornada desse período não muda por edição. Crie uma nova jornada com vigência a partir do próximo mês aberto (ou reabra o mês com justificativa).`;
 async function emp(id: number) { const [e] = await db.select().from(schema.employees).where(eq(schema.employees.id, id)); if (!e) throw new Error("Colaborador não encontrado."); return e; }
 
 // ---------- Folha mensal ----------
@@ -55,8 +61,12 @@ export async function salvarJornada(fd: FormData) {
     const min = (k: string) => { const v = str(fd, k); const hm = v.match(/^(\d+):(\d{1,2})$/); return hm ? Number(hm[1]) * 60 + Number(hm[2]) : Math.round(Number(v.replace(",", ".")) || 0); };
     const d = { employeeId, vigenciaInicio: str(fd, "vigenciaInicio") || hoje(), vigenciaFim: strOrNull(fd, "vigenciaFim"), seg: min("seg"), ter: min("ter"), qua: min("qua"), qui: min("qui"), sex: min("sex"), sab: min("sab"), dom: min("dom"), horarios: strOrNull(fd, "horarios"), obs: strOrNull(fd, "obs") };
     if (d.vigenciaFim && d.vigenciaFim < d.vigenciaInicio) throw new Error("Vigência final anterior à inicial.");
-    if (id) { const [antes] = await db.select().from(schema.schedules).where(eq(schema.schedules.id, id)); await db.update(schema.schedules).set(d).where(eq(schema.schedules.id, id)); await audit(s, "editar", "schedules", id, antes, d); }
+    if (id) { const [antes] = await db.select().from(schema.schedules).where(eq(schema.schedules.id, id));
+      if (antes) { const mudaCh = (["seg", "ter", "qua", "qui", "sex", "sab", "dom"] as const).some(k => antes[k] !== d[k]) || antes.vigenciaInicio !== d.vigenciaInicio || (antes.vigenciaFim ?? null) !== (d.vigenciaFim ?? null);
+        const f = mudaCh ? await mesFechadoNoPeriodo(employeeId, antes.vigenciaInicio < d.vigenciaInicio ? antes.vigenciaInicio : d.vigenciaInicio, antes.vigenciaFim && d.vigenciaFim ? (antes.vigenciaFim > d.vigenciaFim ? antes.vigenciaFim : d.vigenciaFim) : null) : null; if (f) throw new Error(msgFechado(f)); }
+      await db.update(schema.schedules).set(d).where(eq(schema.schedules.id, id)); await audit(s, "editar", "schedules", id, antes, d); }
     else {
+      { const f = await mesFechadoNoPeriodo(employeeId, d.vigenciaInicio, d.vigenciaInicio); if (f) throw new Error(msgFechado(f)); }
       // encerra a jornada anterior aberta no dia anterior ao início da nova
       await sql`UPDATE schedules SET vigencia_fim = (${d.vigenciaInicio}::date - 1) WHERE employee_id=${employeeId} AND vigencia_fim IS NULL AND vigencia_inicio < ${d.vigenciaInicio}`;
       const [r] = await db.insert(schema.schedules).values(d).returning({ id: schema.schedules.id }); await audit(s, "criar", "schedules", r.id, null, d);
@@ -69,7 +79,7 @@ export async function salvarJornada(fd: FormData) {
 
 export async function excluirJornada(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = str(fd, "voltar") || "/ponto/jornadas";
-  try { assert(can.editar(s)); const [antes] = await db.select().from(schema.schedules).where(eq(schema.schedules.id, id)); await db.delete(schema.schedules).where(eq(schema.schedules.id, id)); await audit(s, "excluir", "schedules", id, antes, null); }
+  try { assert(can.editar(s)); const [antes] = await db.select().from(schema.schedules).where(eq(schema.schedules.id, id)); if (antes) { const f = await mesFechadoNoPeriodo(antes.employeeId, antes.vigenciaInicio, antes.vigenciaFim); if (f) throw new Error(msgFechado(f)); } await db.delete(schema.schedules).where(eq(schema.schedules.id, id)); await audit(s, "excluir", "schedules", id, antes, null); }
   catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Jornada excluída."));
 }

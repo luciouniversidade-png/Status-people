@@ -81,7 +81,7 @@ okmsg(post(f"/solicitacoes/{R1}", aid_re, {"id": R1, "campo_descricao": "Materia
 assert psql(f"SELECT status || '|' || etapa_atual || '|' || jsonb_array_length(etapas) || '|' || valor FROM requests WHERE id={R1}") == "EM_APROVACAO|0|2|900.00"
 okmsg(post(f"/solicitacoes/{R1}", aid_dec, {"id": R1, "decisao": "APROVAR"}, sess=DS), "seguiu"); okmsg(post(f"/solicitacoes/{R1}", aid_dec, {"id": R1, "decisao": "APROVAR", "voltar": "/solicitacoes?aba=aprovar"}, sess=FS), "aprovada (última etapa)")
 assert psql(f"SELECT status || '|' || (concluida_em IS NOT NULL) FROM requests WHERE id={R1}") == "APROVADA|true" and psql(f"SELECT count(*) FROM notifications WHERE user_id={UC} AND titulo LIKE 'Aprovada:%'") == "1"
-hc = page(f"/solicitacoes/{R1}", sess=CS); assert "Siga com o financeiro" in hc and "Devolveu" in hc and "Reenviou" in hc
+hc = page(f"/solicitacoes/{R1}", sess=CS); assert "O Financeiro registra o pagamento com o débito do extrato" in hc and "Devolveu" in hc and "Reenviou" in hc
 ok("etapa fora da vez barrada; aprovação passa adiante; devolução exige o ajuste e avisa a solicitante; reenvio recalcula a alçada (R$ 900 → sem Direção) e recomeça; aprovação final avisa")
 
 print("Ninguém aprova o próprio pedido; rejeição; cancelamento")
@@ -100,11 +100,12 @@ ok("diretora que pede: etapa “diretor(a) da unidade” vai para a Direção; n
 print("Visibilidade, lista de aprovação no celular e anexos")
 page(f"/solicitacoes/{R1}", expect=404, sess=DC); page(f"/solicitacoes/{R1}", expect=404, sess=DV); assert "Material de papelaria" in page(f"/solicitacoes/{R1}", sess=FS)
 loc = post("/solicitacoes/nova", aid_ab, {**ped, "campo_valor": "50"}, sess=CS); R4 = re.search(r"/solicitacoes/(\d+)", loc).group(1)
-hl = page("/solicitacoes?aba=aprovar", sess=DS); assert "Para eu aprovar (1)" in hl and "R$ 50,00" in hl; aid_l = aid_of(hl, ">Aprovar<")
-okmsg(post("/solicitacoes?aba=aprovar", aid_l, {"id": R4, "decisao": "APROVAR", "voltar": "/solicitacoes?aba=aprovar"}, sess=DS), "seguiu")
-assert "Nada aguardando sua aprovação" in page("/solicitacoes?aba=aprovar", sess=DS)
+hl = page("/solicitacoes?aba=aprovar", sess=DS); mn = hl[hl.find("<main"):hl.find("</main>")]; assert "Para eu aprovar (1)" in mn and "R$ 50,00" in mn and "Sem documento:" in mn and ">Aprovar<" not in mn and "Abrir e decidir" in mn, "v25: despesa sem comprovante não tem atalho"
 hc = page(f"/solicitacoes/{R4}", sess=CS); aid_anx = aid_of(hc, "Anexar")
 okmsg(post(f"/solicitacoes/{R4}", aid_anx, {"entidade": "request", "entidadeId": R4, "voltar": f"/solicitacoes/{R4}"}, sess=CS, files=[("arquivo", ("nota.pdf", b"%PDF-1.4 nota", "application/pdf"))]), "anexado")
+hl = page("/solicitacoes?aba=aprovar", sess=DS); aid_l = aid_of(hl, ">Aprovar<")
+okmsg(post("/solicitacoes?aba=aprovar", aid_l, {"id": R4, "decisao": "APROVAR", "rapido": "1", "voltar": "/solicitacoes?aba=aprovar"}, sess=DS), "seguiu")
+assert "Nada aguardando sua aprovação" in page("/solicitacoes?aba=aprovar", sess=DS)
 AX = psql(f"SELECT id FROM attachments WHERE entidade='request' AND entidade_id={R4}")
 assert CS.get(B + f"/api/anexos/{AX}").status_code == 200 and FS.get(B + f"/api/anexos/{AX}").status_code == 200 and DV.get(B + f"/api/anexos/{AX}").status_code == 403 and DC.get(B + f"/api/anexos/{AX}").status_code == 403
 ok("diretor de outra unidade e colega não abrem; financeiro (aprovador) vê; lista “para eu aprovar” com um toque; comprovante anexado pela solicitante e visível só aos envolvidos")

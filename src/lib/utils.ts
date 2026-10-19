@@ -34,7 +34,8 @@ export function fmtData(d: string | Date | null | undefined) {
 }
 export function fmtDataHora(d: Date | string | null | undefined) {
   if (!d) return "—";
-  const dt = typeof d === "string" ? new Date(d.replace(" ", "T").replace(/(\.\d+)?$/, "") + "Z") : d;
+  // texto sem fuso (timestamp do banco, em UTC) ganha o "Z"; texto ISO que já traz o fuso (ex.: 2026-10-19T13:24:58.047Z) é lido como está
+  const dt = typeof d === "string" ? (/(Z|[+-]\d{2}:?\d{2})$/.test(d.trim()) ? new Date(d.trim()) : new Date(d.replace(" ", "T").replace(/(\.\d+)?$/, "") + "Z")) : d;
   if (isNaN(dt.getTime())) return String(d);
   return dt.toLocaleString("pt-BR", { timeZone: "America/Campo_Grande", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
@@ -56,14 +57,16 @@ export function idade(nasc: string | null) {
 
 // ---------- Férias: períodos aquisitivos (CLT: 12 meses → 30 dias; concessivo nos 12 meses seguintes) ----------
 export type Periodo = { inicio: string; fim: string; concessivoAte: string; direito: number; usados: number; saldo: number; status: "EM_AQUISICAO" | "ABERTO" | "VENCIDO" | "QUITADO" };
-export function periodosFerias(admissao: string, aprovadas: { periodoRef: string | null; dias: number }[], ate = hoje()): Periodo[] {
+/** Períodos aquisitivos desde a admissão. `quitadasAte` (carga inicial): períodos encerrados até essa data contam como quitados — férias gozadas antes do sistema. */
+export function periodosFerias(admissao: string, aprovadas: { periodoRef: string | null; dias: number }[], ate = hoje(), quitadasAte: string | null = null): Periodo[] {
   const out: Periodo[] = [];
   let ini = admissao;
   for (let i = 0; i < 40; i++) {
     const fim = addDays(addMonths(ini, 12), -1);
     if (ini > ate) break;
-    const usados = aprovadas.filter(a => a.periodoRef === ini).reduce((s, a) => s + a.dias, 0);
-    const direito = 30; const saldo = Math.max(direito - usados, 0);
+    const direito = 30; const quitadoAntes = !!quitadasAte && fim <= quitadasAte;
+    const usados = quitadoAntes ? direito : aprovadas.filter(a => a.periodoRef === ini).reduce((s, a) => s + a.dias, 0);
+    const saldo = Math.max(direito - usados, 0);
     const concessivoAte = addDays(addMonths(fim, 12), 0);
     let status: Periodo["status"] = fim >= ate ? "EM_AQUISICAO" : saldo === 0 ? "QUITADO" : concessivoAte < ate ? "VENCIDO" : "ABERTO";
     out.push({ inicio: ini, fim, concessivoAte, direito, usados, saldo, status });

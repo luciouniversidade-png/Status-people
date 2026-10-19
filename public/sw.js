@@ -1,6 +1,6 @@
 /* STATUS ONE — service worker: instala o app, mostra notificações push e uma página amigável sem internet.
    Não guarda dados do sistema em cache (tudo é sempre buscado do servidor). */
-const VERSAO = "one-v22-2";
+const VERSAO = "one-v23-1";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (e) => {

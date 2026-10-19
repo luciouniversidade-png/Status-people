@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
-import { audit, str, strOrNull, int, hoje, addDays, addMonths, getSettings } from "@/lib/utils";
+import { audit, str, strOrNull, int, hoje, addDays, addMonths, getSettings, caminhoSeguro } from "@/lib/utils";
 import { FREQ_DIAS } from "@/lib/governanca";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 
@@ -36,6 +36,8 @@ export async function publicarPop(fd: FormData) {
     await db.insert(schema.procedureVersions).values({ procedureId: id, versao: novaVersao, conteudo: { ...conteudo, versao: novaVersao }, notas: strOrNull(fd, "notas"), publicadoPor: s.id });
     await db.update(schema.procedures).set({ status: "VIGENTE", versao: novaVersao, publicadoEm: new Date(), revisarEm: p.revisarEm ?? addMonths(hoje(), cfg.governanca.revisaoPopMeses), updatedAt: new Date() }).where(eq(schema.procedures.id, id));
     await audit(s, "publicar", "procedures", id, { versao: p.versao, status: p.status }, { versao: novaVersao, status: "VIGENTE" });
+    const fechadas = await sql<{ id: number }[]>`UPDATE procedure_reviews SET status='CONCLUIDA', desfecho='NOVA_VERSAO', versao_publicada=${novaVersao}, concluida_por=${s.id}, concluida_em=now(), desfecho_obs=coalesce(${strOrNull(fd, "notas")}, 'Nova versão publicada') WHERE procedure_id=${id} AND status='ABERTA' RETURNING id`;
+    if (fechadas.length) await audit(s, "concluir revisão do POP (nova versão)", "procedure_reviews", fechadas[0].id, null, { revisoes: fechadas.length, versao: novaVersao });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "POP publicado como vigente. A equipe precisa dar ciência da nova versão."));
 }
@@ -78,6 +80,7 @@ export async function decidirExcecao(fd: FormData) {
       await db.update(schema.exceptions).set({ status: decisao, aprovadorUserId: s.id, decididoEm: new Date(), motivoDecisao: strOrNull(fd, "nota"), validadeAte: strOrNull(fd, "validadeAte") ?? e.validadeAte }).where(eq(schema.exceptions.id, id));
     }
     await audit(s, decisao === "APROVADA" ? "aprovar exceção" : decisao === "REJEITADA" ? "rejeitar exceção" : "revisar exceção", "exceptions", id, { status: e.status }, { status: decisao, nota: strOrNull(fd, "nota") });
+    if (decisao === "APROVADA") { const { verificarRevisaoPop } = await import("@/lib/governanca"); await verificarRevisaoPop(e.procedureId ?? null, e.regra, e.motivo); } // CRQ-PRJ-V3-03
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", decisao === "APROVADA" ? "Exceção aprovada com validade." : decisao === "REJEITADA" ? "Exceção rejeitada." : "Exceção revisada."));
 }
@@ -114,8 +117,12 @@ export async function salvarNc(fd: FormData) {
   try { assert(GESTAO.includes(s.role) || s.role === "COMERCIAL");
     const d = { titulo: str(fd, "titulo"), origem: str(fd, "origem") || "OUTRO", descricao: strOrNull(fd, "descricao"), procedureId: int(fd, "procedureId"), caseId: int(fd, "caseId"), unitId: int(fd, "unitId"), gravidade: int(fd, "gravidade") ?? 2, causaRaiz: strOrNull(fd, "causaRaiz"), acaoCorretiva: strOrNull(fd, "acaoCorretiva"), acaoPreventiva: strOrNull(fd, "acaoPreventiva"), responsavelUserId: int(fd, "responsavelUserId") ?? s.id, prazo: strOrNull(fd, "prazo") ?? addDays(hoje(), 15), status: str(fd, "status") || "ABERTA", eficaciaVerificada: str(fd, "eficaciaVerificada") === "1" };
     if (!d.titulo) throw new Error("Informe o título."); if (d.unitId) assertScope(s, d.unitId);
-    if (d.status === "ENCERRADA") { if (!d.causaRaiz || !d.acaoCorretiva) throw new Error("Só encerra com causa raiz e ação corretiva."); if (!d.eficaciaVerificada) throw new Error("Confirme a verificação de eficácia antes de encerrar."); }
-    const upd = { ...d, encerradaEm: d.status === "ENCERRADA" ? new Date() : null };
+    const evidencia = str(fd, "eficaciaEvidencia");
+    if (d.status === "ENCERRADA") { if (!d.causaRaiz || !d.acaoCorretiva) throw new Error("Só encerra com causa raiz e ação corretiva."); if (!d.eficaciaVerificada) throw new Error("Confirme a verificação de eficácia antes de encerrar.");
+      // v24 · CRQ-PRJ-V3-04: fechar exige a evidência de eficácia (o que foi medido/observado)
+      const [ja] = id ? await sql<{ ev: string | null; status: string }[]>`SELECT eficacia_evidencia AS ev, status FROM nonconformities WHERE id=${id}` : [];
+      if (!(ja?.status === "ENCERRADA" && ja.ev) && evidencia.length < 15) throw new Error("Para encerrar, descreva a evidência de eficácia (mín. 15 caracteres)."); }
+    const upd = { ...d, encerradaEm: d.status === "ENCERRADA" ? new Date() : null, ...(d.status === "ENCERRADA" && evidencia.length >= 15 ? { eficaciaEvidencia: evidencia, eficaciaEm: hoje() } : {}) };
     if (id) { const [antes] = await db.select().from(schema.nonconformities).where(eq(schema.nonconformities.id, id)); await db.update(schema.nonconformities).set(upd).where(eq(schema.nonconformities.id, id)); await audit(s, "editar NC", "nonconformities", id, { status: antes?.status }, { status: d.status }); }
     else { const [r] = await db.insert(schema.nonconformities).values({ ...upd, createdBy: s.id }).returning({ id: schema.nonconformities.id }); await audit(s, "abrir NC", "nonconformities", r.id, null, d); }
   } catch (e) { redirect(go("/governanca/controles", "erro", e instanceof Error ? e.message : "Erro") + "#ncs"); }
@@ -148,4 +155,17 @@ export async function salvarParamGovernanca(fd: FormData) {
     await sql`INSERT INTO settings (key, value) VALUES ('governanca', ${JSON.stringify(novo)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`; await audit(s, "editar", "settings", null, cfg.governanca, novo);
   } catch (e) { redirect(go("/configuracoes", "erro", e instanceof Error ? e.message : "Erro") + "#governanca"); }
   redirect(go("/configuracoes", "ok", "Parâmetros de governança salvos.") + "#governanca");
+}
+
+/** CRQ-PRJ-V3-03 · concluir a revisão sem mudar o POP: só com justificativa (o motivo das exceções vira regra, NC ou é aceito como exceção legítima). */
+export async function concluirRevisaoPop(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = caminhoSeguro(str(fd, "voltar"), "/governanca/excecoes#revisoes");
+  try {
+    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops) || GESTAO.includes(s.role), "Revisão de POP: quem aprova POPs ou a gestão.");
+    const [r] = await sql<{ status: string; dono_user_id: number | null }[]>`SELECT status, dono_user_id FROM procedure_reviews WHERE id=${id}`; assert(!!r && r.status === "ABERTA", "Revisão não está aberta.");
+    const desfecho = str(fd, "desfecho"); assert(["MANTIDO", "VIROU_REGRA", "NC_ABERTA"].includes(desfecho), "Escolha o desfecho."); const obs = str(fd, "obs"); assert(obs.length >= 15, "Justifique (mínimo 15 caracteres): por que o POP não muda.");
+    await sql`UPDATE procedure_reviews SET status='CONCLUIDA', desfecho=${desfecho}, desfecho_obs=${obs}, concluida_por=${s.id}, concluida_em=now() WHERE id=${id}`;
+    await audit(s, "concluir revisão do POP", "procedure_reviews", id, { status: "ABERTA" }, { desfecho, obs });
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", "Revisão concluída com justificativa."));
 }

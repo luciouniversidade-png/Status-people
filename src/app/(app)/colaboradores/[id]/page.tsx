@@ -43,7 +43,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
   const treinos = (await matrizTreinamento(emp.unitId)).linhas.find(l => l.emp.id === id);
   const vigentes = leaves.filter(l => l.status === "APROVADA" && l.inicio <= h && l.fim >= h);
   const situacao = situacaoDerivada(emp.situacao, vigentes);
-  const periodos = periodosFerias(emp.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodoRef).map(l => ({ periodoRef: l.periodoRef, dias: l.dias })));
+  const periodos = periodosFerias(emp.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodoRef).map(l => ({ periodoRef: l.periodoRef, dias: l.dias })), undefined, emp.feriasQuitadasAte);
   const podeAprovarFerias = can.aprovar(s, cfg.alcadas.ferias); const podeAprovarBanco = can.aprovar(s, cfg.alcadas.banco);
   const sensivel = can.verSensivel(s);
   const docStatus = (d: typeof docs[number]) => d.validade && d.validade < h ? "VENCIDO" : d.validade && d.validade <= addDays(h, 30) ? "VENCE_EM_BREVE" : d.recebidoEm ? "RECEBIDO" : d.obrigatorio ? "PENDENTE" : "OPCIONAL";

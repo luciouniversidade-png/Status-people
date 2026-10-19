@@ -1,5 +1,6 @@
 import { sql } from "@/db";
 import { hoje, addDays, getSettings } from "./utils";
+import { fmtPct, fmtNumero } from "./formato";
 import { matrizTreinamento } from "./clima-academy";
 
 export const PRONTIDAO: Record<string, string> = { PRONTO: "Pronto agora", UM_DOIS_ANOS: "Pronto em 1–2 anos", EM_DESENVOLVIMENTO: "Em desenvolvimento" };
@@ -31,8 +32,8 @@ export async function busFactor(unitId: number | null) {
 /** Sinais por colaborador para o talent review e o People Risk Center. */
 export async function sinaisPessoas(unitId: number | null) {
   const cfg = await getSettings(); const h = hoje();
-  const rows = await sql<{ id: number; nome: string; unidade: string; cargo: string | null; nivel: string | null; admissao: string; salario: number | null; g_min: number | null; g_medio: number | null; g_max: number | null; nota: number | null; potencial: number | null; desempenho: number | null; ultimo_reajuste: string | null; faltas_90: number; saldo_banco: number; pdi_atrasado: number; venc_trein: number; ultimo_1a1: string | null; classificacao: string | null }[]>`
-    SELECT e.id, e.nome, un.nome AS unidade, p.nome AS cargo, e.nivel, e.admissao::text, e.salario::float, g.minimo::float AS g_min, g.medio::float AS g_medio, g.maximo::float AS g_max,
+  const rows = await sql<{ id: number; nome: string; unidade: string; cargo: string | null; area: string | null; nivel: string | null; admissao: string; salario: number | null; g_min: number | null; g_medio: number | null; g_max: number | null; nota: number | null; potencial: number | null; desempenho: number | null; ultimo_reajuste: string | null; faltas_90: number; saldo_banco: number; pdi_atrasado: number; venc_trein: number; ultimo_1a1: string | null; classificacao: string | null }[]>`
+    SELECT e.id, e.nome, un.nome AS unidade, p.nome AS cargo, p.area, e.nivel, e.admissao::text, e.salario::float, g.minimo::float AS g_min, g.medio::float AS g_medio, g.maximo::float AS g_max,
       r.nota_final::float AS nota, r.potencial, r.desempenho_nivel AS desempenho,
       (SELECT max(data)::text FROM salary_history sh WHERE sh.employee_id=e.id AND sh.motivo <> 'ADMISSAO') AS ultimo_reajuste,
       (SELECT count(*) FROM timesheet_days t WHERE t.employee_id=e.id AND t.status='FALTA' AND t.data >= ${h}::date - 90)::int AS faltas_90,
@@ -82,18 +83,19 @@ export async function peopleHealth(unitId: number | null) {
   ]);
   const { pesos, metas } = cfg.analytics; const m = await matrizTreinamento(unitId);
   const turnover = hc.ativos ? Math.round(1000 * tv.desligados_12 / hc.ativos) / 10 : null;
-  const absenteismo = abs.esperados ? Math.round(1000 * abs.faltas / abs.esperados) / 10 : null;
+  // base mínima: sem a folha de ponto importada (só dias avulsos do Painel do dia), o índice não é representativo — fica "sem fonte", nunca 100%
+  const absenteismo = abs.esperados >= 20 ? Math.round(1000 * abs.faltas / abs.esperados) / 10 : null;
   const debitoH = banco.debito_medio ? Math.round(-banco.debito_medio / 60 * 10) / 10 : 0;
   const fatores: { peso: number; texto: string }[] = [];
   const desconta = (peso: number, ratio: number, texto: string) => { const d = Math.round(Math.min(1, Math.max(0, ratio)) * peso); if (d > 0) fatores.push({ peso: -d, texto }); };
-  if (turnover !== null && turnover > metas.turnoverAnualPct) desconta(pesos.turnover, (turnover - metas.turnoverAnualPct) / metas.turnoverAnualPct, `turnover 12 meses ${turnover}% (meta ≤ ${metas.turnoverAnualPct}%)`);
-  if (absenteismo !== null && absenteismo > metas.absenteismoPct) desconta(pesos.absenteismo, (absenteismo - metas.absenteismoPct) / metas.absenteismoPct, `absenteísmo ${absenteismo}% (meta ≤ ${metas.absenteismoPct}%)`);
-  if (debitoH > metas.debitoMedioHoras) desconta(pesos.bancoHoras, (debitoH - metas.debitoMedioHoras) / metas.debitoMedioHoras, `débito médio no banco ${debitoH} h (meta ≤ ${metas.debitoMedioHoras} h)`);
-  if (enps?.enps !== null && enps?.enps !== undefined && enps.enps < metas.enps) desconta(pesos.enps, (metas.enps - enps.enps) / 50, `eNPS ${enps.enps} (meta ≥ ${metas.enps})`);
-  if (des?.media && des.media < metas.desempenho) desconta(pesos.desempenho, (metas.desempenho - des.media) / 1.5, `desempenho médio ${des.media.toFixed(2)} (meta ≥ ${metas.desempenho})`);
-  if (m.conformidade !== null && m.conformidade < metas.treinamentoPct) desconta(pesos.treinamento, (metas.treinamentoPct - m.conformidade) / metas.treinamentoPct, `treinamentos obrigatórios ${m.conformidade}% (meta ≥ ${metas.treinamentoPct}%)`);
+  if (turnover !== null && turnover > metas.turnoverAnualPct) desconta(pesos.turnover, (turnover - metas.turnoverAnualPct) / metas.turnoverAnualPct, `turnover 12 meses ${fmtPct(turnover)} (meta ≤ ${fmtPct(metas.turnoverAnualPct)})`);
+  if (absenteismo !== null && absenteismo > metas.absenteismoPct) desconta(pesos.absenteismo, (absenteismo - metas.absenteismoPct) / metas.absenteismoPct, `absenteísmo ${fmtPct(absenteismo)} (meta ≤ ${fmtPct(metas.absenteismoPct)})`);
+  if (debitoH > metas.debitoMedioHoras) desconta(pesos.bancoHoras, (debitoH - metas.debitoMedioHoras) / metas.debitoMedioHoras, `débito médio no banco ${fmtNumero(debitoH, 1)} h (meta ≤ ${fmtNumero(metas.debitoMedioHoras, 0)} h)`);
+  if (enps?.enps !== null && enps?.enps !== undefined && enps.enps < metas.enps) desconta(pesos.enps, (metas.enps - enps.enps) / 50, `eNPS ${fmtNumero(enps.enps)} (meta ≥ ${fmtNumero(metas.enps)})`);
+  if (des?.media && des.media < metas.desempenho) desconta(pesos.desempenho, (metas.desempenho - des.media) / 1.5, `desempenho médio ${fmtNumero(des.media, 2)} (meta ≥ ${fmtNumero(metas.desempenho, 1)})`);
+  if (m.conformidade !== null && m.conformidade < metas.treinamentoPct) desconta(pesos.treinamento, (metas.treinamentoPct - m.conformidade) / metas.treinamentoPct, `treinamentos obrigatórios ${fmtPct(m.conformidade)} (meta ≥ ${fmtPct(metas.treinamentoPct)})`);
   const vagasPct = hc.ativos ? Math.round(1000 * vagas.abertas / hc.ativos) / 10 : 0;
-  if (vagasPct > metas.vagasAbertasPct) desconta(pesos.vagas, (vagasPct - metas.vagasAbertasPct) / metas.vagasAbertasPct, `vagas abertas ${vagasPct}% do quadro (meta ≤ ${metas.vagasAbertasPct}%)`);
+  if (vagasPct > metas.vagasAbertasPct) desconta(pesos.vagas, (vagasPct - metas.vagasAbertasPct) / metas.vagasAbertasPct, `vagas abertas ${fmtPct(vagasPct)} do quadro (meta ≤ ${fmtPct(metas.vagasAbertasPct)})`);
   const score = Math.max(0, 100 + fatores.reduce((a, f) => a + f.peso, 0));
   return { score, fatores, hc, turnover, desligados12: tv.desligados_12, absenteismo, faltas90: abs.faltas, debitoH, devedores: banco.devedores, enps: enps?.enps ?? null, enpsNome: enps?.nome ?? null, desempenho: des?.media ?? null, ciclo: des?.ciclo ?? null, treinamento: m.conformidade, vagas: vagas.abertas, vagasPct, meses, custo, porCargo, custoReposicao: custo.media ? Math.round(custo.media * cfg.analytics.custoReposicaoSalarios) : null, semMedicao: { turnover: turnover === null, absenteismo: absenteismo === null, enps: enps?.enps === null || enps?.enps === undefined, desempenho: !des?.media, treinamento: m.conformidade === null } };
 }

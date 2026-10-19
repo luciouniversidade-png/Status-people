@@ -22,7 +22,7 @@ export default async function Casos({ searchParams }: { searchParams: Promise<Re
   const units = scope ? [] : await db.select().from(schema.units).orderBy(asc(schema.units.nome));
   const agora = Date.now();
   return (
-    <Page title="Casos de atendimento" sub="Solicitações, dúvidas, reclamações, elogios e pedidos de saída — com responsável e prazo (SLA)." actions={<Btn kind="ghost" href="/api/export/casos">Exportar CSV</Btn>}>
+    <Page title="Casos de atendimento" sub="Solicitações, dúvidas, reclamações, elogios e pedidos de saída — com responsável e prazo (SLA)." actions={<><Btn kind="ghost" href="/atendimento/casos/quadro">Ver em quadro</Btn><Btn kind="ghost" href="/api/export/casos">Exportar CSV</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div>

@@ -21,6 +21,12 @@ export async function alternarItem(fd: FormData) {
     const [it] = await db.select().from(schema.processItems).where(and(eq(schema.processItems.id, itemId), eq(schema.processItems.processId, pid)));
     if (!it) throw new Error("Item não encontrado.");
     const concluido = !it.concluido;
+    // v24 · SST: o item do exame só conclui com o ASO registrado (T-101: sem ASO admissional não conclui admissão)
+    if (concluido && e) {
+      const cfg = await getSettings();
+      if (p.tipo === "ADMISSAO" && cfg.sst.exigirAsoAdmissional && /exame admissional|\bASO\b/i.test(it.titulo)) { const { temAsoAdmissional } = await import("@/lib/sst"); assert(await temAsoAdmissional(e.id), "Registre o ASO admissional (apto) em Saúde e segurança → Exames ocupacionais antes de concluir este item."); }
+      if (p.tipo === "DESLIGAMENTO" && /exame demissional/i.test(it.titulo)) { const { temAsoDemissional } = await import("@/lib/sst"); assert(await temAsoDemissional(e.id, String(p.inicio), Number(cfg.sst.dispensaDemissionalDias) || 135), "Registre o exame demissional em Saúde e segurança → Exames ocupacionais (ou um exame dentro do prazo de dispensa da NR-7)."); }
+    }
     await db.update(schema.processItems).set({ concluido, concluidoEm: concluido ? new Date() : null, concluidoPor: concluido ? s.id : null }).where(eq(schema.processItems.id, itemId));
     await audit(s, concluido ? "concluir item" : "reabrir item", "process_items", itemId, { concluido: it.concluido }, { concluido, titulo: it.titulo, processo: pid });
   } catch (e) { redirect(`/processos/${pid}?erro=${erroMsg(e)}`); }
@@ -52,7 +58,7 @@ export async function concluirProcesso(fd: FormData) {
     if (pendentes.length) throw new Error(`Ainda há ${pendentes.length} item(ns) obrigatório(s) pendente(s): ${pendentes.map(i => i.titulo).join("; ")}`);
     await db.update(schema.processes).set({ status: "CONCLUIDO", concluidoEm: new Date() }).where(eq(schema.processes.id, pid));
     if (e) {
-      if (p.tipo === "ADMISSAO") await db.update(schema.employees).set({ situacao: "ATIVO", updatedAt: new Date() }).where(eq(schema.employees.id, e.id));
+      if (p.tipo === "ADMISSAO") { await db.update(schema.employees).set({ situacao: "ATIVO", updatedAt: new Date() }).where(eq(schema.employees.id, e.id)); try { const { criarPlanoOnboarding } = await import("@/lib/onboarding"); await criarPlanoOnboarding(e.id, s); } catch { /* onboarding é complemento: não trava a admissão */ } }
       if (p.tipo === "DESLIGAMENTO") await db.update(schema.employees).set({ situacao: "DESLIGADO", desligamento: e.desligamento ?? p.inicio, updatedAt: new Date() }).where(eq(schema.employees.id, e.id));
       await audit(s, "concluir processo", "employees", e.id, { situacao: e.situacao }, { situacao: p.tipo === "ADMISSAO" ? "ATIVO" : "DESLIGADO", processo: pid });
     }

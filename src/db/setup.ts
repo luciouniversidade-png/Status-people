@@ -326,6 +326,25 @@ DROP TRIGGER IF EXISTS privacy_incidents_no_delete ON privacy_incidents;
 CREATE TRIGGER privacy_incidents_no_delete BEFORE DELETE ON privacy_incidents FOR EACH ROW EXECUTE FUNCTION registro_sem_exclusao();
 DROP TRIGGER IF EXISTS ethics_reports_no_delete ON ethics_reports;
 CREATE TRIGGER ethics_reports_no_delete BEFORE DELETE ON ethics_reports FOR EACH ROW EXECUTE FUNCTION registro_sem_exclusao();
+-- v23 · ONE Insights: base de indicadores com série histórica (unit_id 0 = rede), metas, comentários, resumo semanal
+CREATE TABLE IF NOT EXISTS kpi_series (chave text NOT NULL, periodo text NOT NULL, unit_id integer NOT NULL DEFAULT 0, valor numeric, num numeric, den numeric, origem text NOT NULL DEFAULT 'CALCULADO', calculado_em timestamp NOT NULL DEFAULT now(), PRIMARY KEY (chave, periodo, unit_id));
+CREATE INDEX IF NOT EXISTS kpi_series_periodo_idx ON kpi_series(periodo, unit_id);
+CREATE TABLE IF NOT EXISTS kpi_targets (id serial PRIMARY KEY, chave text NOT NULL, ano integer NOT NULL, unit_id integer NOT NULL DEFAULT 0, meta numeric NOT NULL, alerta numeric, periodicidade text NOT NULL DEFAULT 'MENSAL', obs text, user_id integer, user_nome text, updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (chave, ano, unit_id));
+CREATE TABLE IF NOT EXISTS kpi_comments (id serial PRIMARY KEY, chave text NOT NULL, periodo text NOT NULL, unit_id integer NOT NULL DEFAULT 0, texto text NOT NULL, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS kpi_comments_idx ON kpi_comments(chave, periodo);
+CREATE TABLE IF NOT EXISTS kpi_subscriptions (user_id integer PRIMARY KEY, unit_id integer, ativo boolean NOT NULL DEFAULT true, email boolean NOT NULL DEFAULT true, ultimo_envio date, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS kpi_weekly (semana text NOT NULL, chave text NOT NULL, unit_id integer NOT NULL DEFAULT 0, valor numeric, created_at timestamp NOT NULL DEFAULT now(), PRIMARY KEY (semana, chave, unit_id));
+-- v23 · FP&A: orçamento mês a mês (sobrepõe o valor mensal fixo de budgets) e explicação de desvios
+CREATE TABLE IF NOT EXISTS budget_months (id serial PRIMARY KEY, ano integer NOT NULL, unit_id integer NOT NULL, tipo text NOT NULL, categoria text NOT NULL, mes integer NOT NULL CHECK (mes BETWEEN 1 AND 12), valor numeric(14,2) NOT NULL, user_id integer, updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (ano, unit_id, tipo, categoria, mes));
+CREATE TABLE IF NOT EXISTS budget_comments (id serial PRIMARY KEY, ano integer NOT NULL, mes integer NOT NULL, unit_id integer, tipo text NOT NULL, categoria text NOT NULL, texto text NOT NULL, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS budget_comments_idx ON budget_comments(ano, mes);
+CREATE INDEX IF NOT EXISTS cash_entries_data_idx ON cash_entries(data, tipo);
+CREATE INDEX IF NOT EXISTS receivables_venc_idx ON receivables(vencimento);
+-- v23 · mural de reconhecimento e início personalizável
+CREATE TABLE IF NOT EXISTS recognitions (id serial PRIMARY KEY, de_user_id integer, de_nome text NOT NULL, para_employee_id integer NOT NULL, valor text, mensagem text NOT NULL, unit_id integer, status text NOT NULL DEFAULT 'PUBLICADO', oculto_por integer, oculto_motivo text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS recognitions_data_idx ON recognitions(created_at);
+CREATE TABLE IF NOT EXISTS recognition_reactions (recognition_id integer NOT NULL, user_id integer NOT NULL, created_at timestamp NOT NULL DEFAULT now(), PRIMARY KEY (recognition_id, user_id));
+CREATE TABLE IF NOT EXISTS user_prefs (user_id integer PRIMARY KEY, inicio jsonb, atalhos jsonb, updated_at timestamp NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS login_attempts (id serial PRIMARY KEY, email text NOT NULL, ip text, ok boolean NOT NULL, at timestamp NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS login_attempts_email_idx ON login_attempts(email, at);
 CREATE INDEX IF NOT EXISTS employees_unit_idx ON employees(unit_id);
@@ -333,6 +352,149 @@ CREATE INDEX IF NOT EXISTS leave_emp_idx ON leave_requests(employee_id);
 CREATE INDEX IF NOT EXISTS hour_emp_idx ON hour_entries(employee_id);
 CREATE INDEX IF NOT EXISTS docs_emp_idx ON documents(employee_id);
 CREATE INDEX IF NOT EXISTS audit_at_idx ON audit_log(at);
+-- v24 · Nova Arquitetura: entidade da unidade e contexto global (T-100)
+ALTER TABLE units ADD COLUMN IF NOT EXISTS company_id integer;
+ALTER TABLE user_prefs ADD COLUMN IF NOT EXISTS contexto jsonb;
+ALTER TABLE user_prefs ADD COLUMN IF NOT EXISTS favoritos jsonb;
+-- v24 · central de alertas persistente (T-003): escopo 0 = rede, senão a unidade da varredura
+CREATE TABLE IF NOT EXISTS alerts (id serial PRIMARY KEY, chave text NOT NULL, escopo integer NOT NULL DEFAULT 0, unit_id integer, regra text NOT NULL, modulo text NOT NULL, severidade text NOT NULL DEFAULT 'MEDIO', titulo text NOT NULL, href text, dono_user_id integer, defeito text, sla_ate timestamp, status text NOT NULL DEFAULT 'ABERTO', desfecho text, silenciado_ate date, motivo_silencio text, escalonamento integer NOT NULL DEFAULT 0, ocorrencias integer NOT NULL DEFAULT 1, primeiro_em timestamp NOT NULL DEFAULT now(), visto_em timestamp NOT NULL DEFAULT now(), tratado_em timestamp, tratado_por integer, resolvido_em timestamp, updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (chave, escopo));
+CREATE INDEX IF NOT EXISTS alerts_status_idx ON alerts(status, severidade);
+CREATE TABLE IF NOT EXISTS alert_events (id serial PRIMARY KEY, alert_id integer NOT NULL, at timestamp NOT NULL DEFAULT now(), user_id integer, user_nome text, tipo text NOT NULL, texto text);
+CREATE INDEX IF NOT EXISTS alert_events_idx ON alert_events(alert_id);
+CREATE TABLE IF NOT EXISTS alert_sweeps (escopo integer PRIMARY KEY, at timestamp NOT NULL DEFAULT now(), n integer NOT NULL DEFAULT 0);
+-- v24 · aprovação em lote com exceção (C10)
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS lote text;
+ALTER TABLE hour_entries ADD COLUMN IF NOT EXISTS lote text;
+ALTER TABLE hour_entries ADD COLUMN IF NOT EXISTS decidido_em timestamp;
+ALTER TABLE hour_entries ADD COLUMN IF NOT EXISTS motivo_decisao text;
+-- v24 · posições × FTE (T-043) e gate de reposição (T-069)
+CREATE TABLE IF NOT EXISTS position_slots (id serial PRIMARY KEY, position_id integer NOT NULL, unit_id integer NOT NULL, jornada_min_dia integer NOT NULL DEFAULT 528, autorizada boolean NOT NULL DEFAULT false, autorizada_por integer, autorizada_em timestamp, employee_id integer, prevista_ate date, ativa boolean NOT NULL DEFAULT true, motivo text, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS position_slots_idx ON position_slots(unit_id, position_id);
+CREATE UNIQUE INDEX IF NOT EXISTS position_slots_emp_idx ON position_slots(employee_id) WHERE employee_id IS NOT NULL AND ativa;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS slot_id integer;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS gate jsonb;
+-- v24 · Payroll Bridge (T-055…T-057): o cálculo segue com o contador; o sistema fecha o ponto, envia o pacote, confere, importa e arquiva
+CREATE TABLE IF NOT EXISTS timesheet_locks (id serial PRIMARY KEY, unit_id integer NOT NULL, mes text NOT NULL, status text NOT NULL DEFAULT 'FECHADO', fechado_por integer, fechado_por_nome text, fechado_em timestamp NOT NULL DEFAULT now(), ressalva text, resumo jsonb, reaberto_por integer, reaberto_em timestamp, motivo_reabertura text, UNIQUE (unit_id, mes));
+CREATE TABLE IF NOT EXISTS payroll_cycles (id serial PRIMARY KEY, competencia text NOT NULL, company_id integer NOT NULL, status text NOT NULL DEFAULT 'ABERTO', pacote jsonb, pacote_em timestamp, pacote_por integer, pacote_por_nome text, previa jsonb, conferencia jsonb, conferido_em timestamp, conferido_por integer, conferido_por_nome text, resultado_em timestamp, resultado_por integer, resultado_por_nome text, total numeric(14,2), total_anterior numeric(14,2), variacao_pct numeric(8,2), aceito_em timestamp, aceito_por integer, arquivado_em timestamp, arquivado_por integer, obs text, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (competencia, company_id));
+CREATE TABLE IF NOT EXISTS payroll_results (id serial PRIMARY KEY, cycle_id integer NOT NULL, unit_id integer, area text, headcount integer, salarios numeric(14,2) NOT NULL DEFAULT 0, inss numeric(14,2) NOT NULL DEFAULT 0, fgts numeric(14,2) NOT NULL DEFAULT 0, irrf numeric(14,2) NOT NULL DEFAULT 0, provisao_13 numeric(14,2) NOT NULL DEFAULT 0, provisao_ferias numeric(14,2) NOT NULL DEFAULT 0, beneficios numeric(14,2) NOT NULL DEFAULT 0, rescisoes numeric(14,2) NOT NULL DEFAULT 0, outros numeric(14,2) NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS payroll_results_idx ON payroll_results(cycle_id);
+CREATE TABLE IF NOT EXISTS payroll_events (id serial PRIMARY KEY, cycle_id integer, competencia text NOT NULL, company_id integer, at timestamp NOT NULL DEFAULT now(), user_id integer, user_nome text, tipo text NOT NULL, texto text);
+CREATE INDEX IF NOT EXISTS payroll_events_idx ON payroll_events(competencia);
+CREATE TABLE IF NOT EXISTS payroll_explanations (id serial PRIMARY KEY, cycle_id integer NOT NULL, motivo text NOT NULL, valor numeric(14,2), texto text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS payroll_divergences (id serial PRIMARY KEY, cycle_id integer NOT NULL, employee_id integer, descricao text NOT NULL, status text NOT NULL DEFAULT 'DEVOLVIDA', resolvida_em timestamp, resolvida_por integer, user_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS payroll_docs (id serial PRIMARY KEY, cycle_id integer NOT NULL, tipo text NOT NULL, employee_id integer, attachment_id integer NOT NULL, obligation_id integer, user_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS payroll_doc_views (id serial PRIMARY KEY, doc_id integer NOT NULL, user_id integer, user_nome text, at timestamp NOT NULL DEFAULT now());
+-- v24 · obrigações e fiscalizações (T-031)
+CREATE TABLE IF NOT EXISTS obligations (id serial PRIMARY KEY, company_id integer, unit_id integer, tipo text NOT NULL, descricao text, competencia text, vencimento date NOT NULL, valor numeric(14,2), status text NOT NULL DEFAULT 'PENDENTE', pago_em date, responsavel_user_id integer, origem text NOT NULL DEFAULT 'MANUAL', cycle_id integer, baixado_por integer, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS obligations_venc_idx ON obligations(vencimento, status);
+CREATE TABLE IF NOT EXISTS fiscal_cases (id serial PRIMARY KEY, titulo text NOT NULL, orgao text, tipo text, company_ids jsonb, abertura date, prazo date, status text NOT NULL DEFAULT 'ABERTO', responsavel_user_id integer, descricao text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS fiscal_case_events (id serial PRIMARY KEY, case_id integer NOT NULL, data date NOT NULL, tipo text NOT NULL, texto text NOT NULL, prazo date, cumprido_em date, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+-- v24 · SST (T-101…T-103): ASO sem dado clínico, incidentes/CAT, CIPA, EPI
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS aso_meses integer;
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS epis jsonb;
+CREATE TABLE IF NOT EXISTS sst_exams (id serial PRIMARY KEY, employee_id integer NOT NULL, tipo text NOT NULL, data date NOT NULL, validade date, resultado text NOT NULL DEFAULT 'APTO', restricao text, clinica text, situacao text NOT NULL DEFAULT 'REALIZADO', user_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS sst_exams_emp_idx ON sst_exams(employee_id, data);
+CREATE TABLE IF NOT EXISTS sst_incidents (id serial PRIMARY KEY, unit_id integer NOT NULL, employee_id integer, data date NOT NULL, hora text, tipo text NOT NULL, gravidade text NOT NULL DEFAULT 'LEVE', com_afastamento boolean NOT NULL DEFAULT false, local text, descricao text NOT NULL, cat_necessaria boolean NOT NULL DEFAULT false, cat_prazo date, cat_numero text, cat_emitida_em date, causas text, medidas text, investigacao_prazo date, investigado_em date, action_plan_id integer, status text NOT NULL DEFAULT 'ABERTO', escalado_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS cipa_members (id serial PRIMARY KEY, unit_id integer NOT NULL, employee_id integer NOT NULL, representacao text NOT NULL DEFAULT 'EMPREGADOS', funcao text NOT NULL DEFAULT 'MEMBRO', titular boolean NOT NULL DEFAULT true, mandato_inicio date NOT NULL, mandato_fim date NOT NULL, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS cipa_meetings (id serial PRIMARY KEY, unit_id integer NOT NULL, data date NOT NULL, tipo text NOT NULL DEFAULT 'ORDINARIA', pauta text, ata text, realizada boolean NOT NULL DEFAULT false, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS epi_items (id serial PRIMARY KEY, nome text NOT NULL, ca text, troca_dias integer, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS epi_deliveries (id serial PRIMARY KEY, employee_id integer NOT NULL, epi_id integer NOT NULL, data date NOT NULL, quantidade integer NOT NULL DEFAULT 1, termo_assinado boolean NOT NULL DEFAULT false, proxima_troca date, devolvido_em date, user_id integer, created_at timestamp NOT NULL DEFAULT now());
+-- v24 · onboarding 30-60-90 (T-072)
+CREATE TABLE IF NOT EXISTS onboarding_plans (id serial PRIMARY KEY, employee_id integer NOT NULL UNIQUE, inicio date NOT NULL, gestor_user_id integer, buddy_employee_id integer, status text NOT NULL DEFAULT 'EM_ANDAMENTO', concluido_em timestamp, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS onboarding_items (id serial PRIMARY KEY, plan_id integer NOT NULL, marco integer NOT NULL, titulo text NOT NULL, tipo text NOT NULL DEFAULT 'TAREFA', responsavel text NOT NULL DEFAULT 'GESTOR', prazo date NOT NULL, concluido_em timestamp, concluido_por integer, nota text, lembrado_em date, ordem integer NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS onboarding_items_idx ON onboarding_items(plan_id, prazo);
+CREATE TABLE IF NOT EXISTS onboarding_surveys (id serial PRIMARY KEY, plan_id integer NOT NULL, marco integer NOT NULL, nota integer NOT NULL, comentario text, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (plan_id, marco));
+-- v24 · etapas do ciclo de avaliação com janelas (T-058/T-059)
+CREATE TABLE IF NOT EXISTS perf_cycle_stages (id serial PRIMARY KEY, cycle_id integer NOT NULL, etapa text NOT NULL, inicio date NOT NULL, fim date NOT NULL, status text NOT NULL DEFAULT 'PLANEJADA', fechada_em timestamp, fechada_por integer, ordem integer NOT NULL DEFAULT 0, UNIQUE (cycle_id, etapa));
+CREATE TABLE IF NOT EXISTS perf_stage_changes (id serial PRIMARY KEY, stage_id integer NOT NULL, de_fim date, para_fim date, motivo text NOT NULL, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS perf_reminders (id serial PRIMARY KEY, cycle_id integer NOT NULL, etapa text NOT NULL, employee_id integer NOT NULL, n integer NOT NULL DEFAULT 1, escalado boolean NOT NULL DEFAULT false, user_id integer, at timestamp NOT NULL DEFAULT now(), UNIQUE (cycle_id, etapa, employee_id));
+-- v24 · auditorias e CAPA (T-080)
+CREATE TABLE IF NOT EXISTS audits (id serial PRIMARY KEY, titulo text NOT NULL, tipo text NOT NULL DEFAULT 'INTERNA', area text, unit_id integer, lead_user_id integer, planejada_para date NOT NULL, realizada_em date, prazo_relatorio date, status text NOT NULL DEFAULT 'PLANEJADA', escopo text, conclusao text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+ALTER TABLE nonconformities ADD COLUMN IF NOT EXISTS audit_id integer;
+ALTER TABLE nonconformities ADD COLUMN IF NOT EXISTS eficacia_evidencia text;
+ALTER TABLE nonconformities ADD COLUMN IF NOT EXISTS eficacia_em date;
+ALTER TABLE nonconformities ADD COLUMN IF NOT EXISTS reincidencia_de integer;
+ALTER TABLE nonconformities ADD COLUMN IF NOT EXISTS reincidencias integer NOT NULL DEFAULT 0;
+-- v24 · linha de base do cronograma (T-077)
+ALTER TABLE milestones ADD COLUMN IF NOT EXISTS baseline_prazo date;
+ALTER TABLE milestones ADD COLUMN IF NOT EXISTS depende_de integer;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS titular_employee_id integer;
+CREATE TABLE IF NOT EXISTS student_documents (id serial PRIMARY KEY, student_id integer NOT NULL, tipo text NOT NULL, status text NOT NULL DEFAULT 'PENDENTE', validade date, solicitado_em date, solicitacoes integer NOT NULL DEFAULT 0, recebido_em date, verificado_por integer, verificado_em timestamp, motivo text, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (student_id, tipo));
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS baseline_versao integer NOT NULL DEFAULT 0;
+CREATE TABLE IF NOT EXISTS project_baselines (id serial PRIMARY KEY, project_id integer NOT NULL, versao integer NOT NULL, motivo text NOT NULL, decision_id integer, marcos jsonb NOT NULL, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (project_id, versao));
+-- v24 · explicação de desvio do orçamento (T-025), relatórios agendados (T-045), contato do painel do dia (T-048), go-live (Ap. F)
+CREATE TABLE IF NOT EXISTS budget_explain_requests (id serial PRIMARY KEY, ano integer NOT NULL, mes integer NOT NULL, escopo integer NOT NULL DEFAULT 0, categoria text NOT NULL, executado_pct numeric(8,2), responsavel_user_id integer, status text NOT NULL DEFAULT 'ABERTA', respondida_em timestamp, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (ano, mes, escopo, categoria));
+CREATE TABLE IF NOT EXISTS report_schedules (id serial PRIMARY KEY, user_id integer NOT NULL, relatorio text NOT NULL, params jsonb, dia integer NOT NULL DEFAULT 1, ativo boolean NOT NULL DEFAULT true, ultimo_envio date, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (user_id, relatorio));
+CREATE TABLE IF NOT EXISTS daily_contacts (id serial PRIMARY KEY, employee_id integer NOT NULL, data date NOT NULL, desfecho text NOT NULL, obs text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS daily_contacts_idx ON daily_contacts(data);
+CREATE TABLE IF NOT EXISTS golive_items (chave text PRIMARY KEY, feito boolean NOT NULL DEFAULT false, evidencia text, responsavel text, user_id integer, user_nome text, updated_at timestamp NOT NULL DEFAULT now());
+-- v24.1 · carga inicial: férias quitadas antes do sistema (períodos aquisitivos encerrados até a data contam como quitados)
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ferias_quitadas_ate date;
+-- v25 · Cobrança & Recebimentos: contas bancárias, extratos, relatório da Cielo, pares, pendências e fechamento da competência (T-026, T-033…T-035, T-039)
+CREATE TABLE IF NOT EXISTS bank_accounts (id serial PRIMARY KEY, apelido text NOT NULL, banco text, agencia text, conta text, company_id integer, unit_id integer, tipo text NOT NULL DEFAULT 'CORRENTE', ativo boolean NOT NULL DEFAULT true, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS recon_imports (id serial PRIMARY KEY, tipo text NOT NULL, bank_account_id integer, arquivo text, linhas integer NOT NULL DEFAULT 0, novas integer NOT NULL DEFAULT 0, repetidas integer NOT NULL DEFAULT 0, travadas integer NOT NULL DEFAULT 0, periodo_ini date, periodo_fim date, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS bank_lines (id serial PRIMARY KEY, bank_account_id integer NOT NULL, import_id integer, data date NOT NULL, valor numeric(12,2) NOT NULL, forma text NOT NULL DEFAULT 'OUTRO', descricao text, documento text, pagador text, pagador_doc text, chave text NOT NULL, status text NOT NULL DEFAULT 'PENDENTE', student_id integer, classe text, observacao text, cash_entry_id integer, classificado_por integer, created_at timestamp NOT NULL DEFAULT now(), UNIQUE (bank_account_id, chave));
+CREATE INDEX IF NOT EXISTS bank_lines_data_idx ON bank_lines(data, status);
+CREATE TABLE IF NOT EXISTS card_sales (id serial PRIMARY KEY, import_id integer, unit_id integer, data_venda date NOT NULL, data_pagamento date, bandeira text NOT NULL, produto text NOT NULL, parcelas integer NOT NULL DEFAULT 1, parcela integer NOT NULL DEFAULT 1, nsu text, autorizacao text, valor_bruto numeric(12,2) NOT NULL, valor_taxa numeric(12,2) NOT NULL DEFAULT 0, valor_liquido numeric(12,2) NOT NULL, antecipado boolean NOT NULL DEFAULT false, chave text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'PENDENTE', repasse text NOT NULL DEFAULT 'A_RECEBER', created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS card_sales_venda_idx ON card_sales(data_venda);
+CREATE INDEX IF NOT EXISTS card_sales_pag_idx ON card_sales(data_pagamento);
+CREATE TABLE IF NOT EXISTS recon_matches (id serial PRIMARY KEY, tipo text NOT NULL, grupo text, receivable_id integer, bank_line_id integer, card_sale_id integer, valor numeric(12,2) NOT NULL, confianca integer NOT NULL DEFAULT 0, metodo text NOT NULL DEFAULT 'AUTO', status text NOT NULL DEFAULT 'SUGERIDO', motivo text, user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now(), confirmado_em timestamp, desfeito_em timestamp, motivo_desfazer text);
+CREATE INDEX IF NOT EXISTS recon_matches_line_idx ON recon_matches(bank_line_id);
+CREATE INDEX IF NOT EXISTS recon_matches_rec_idx ON recon_matches(receivable_id);
+CREATE INDEX IF NOT EXISTS recon_matches_sale_idx ON recon_matches(card_sale_id);
+CREATE TABLE IF NOT EXISTS recon_issues (id serial PRIMARY KEY, chave text NOT NULL UNIQUE, tipo text NOT NULL, origem text NOT NULL, unit_id integer, valor numeric(12,2), descricao text NOT NULL, bank_line_id integer, card_sale_id integer, receivable_id integer, referencia date NOT NULL DEFAULT current_date, dono_user_id integer, prazo date, status text NOT NULL DEFAULT 'ABERTA', desfecho text, desfecho_obs text, resolvido_em timestamp, resolvido_por integer, escalonamento integer NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS recon_issues_status_idx ON recon_issues(status, referencia);
+CREATE TABLE IF NOT EXISTS recon_closings (id serial PRIMARY KEY, competencia text NOT NULL, company_id integer, recebido numeric(14,2), conciliado numeric(14,2), explicado numeric(14,2), pct numeric(6,2), status text NOT NULL DEFAULT 'FECHADA', obs text, fechado_por integer, fechado_em timestamp NOT NULL DEFAULT now(), reaberto_por integer, reaberto_em timestamp, motivo_reabertura text);
+CREATE INDEX IF NOT EXISTS recon_closings_idx ON recon_closings(competencia, status);
+ALTER TABLE receivables ADD COLUMN IF NOT EXISTS forma_pagamento text;
+ALTER TABLE receivables ADD COLUMN IF NOT EXISTS conciliado_em timestamp;
+CREATE INDEX IF NOT EXISTS receivables_pago_idx ON receivables(pago_em) WHERE status='PAGO';
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS bank_account_id integer;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS bank_line_id integer;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS reclassificado_em timestamp;
+-- v25 · despesa até o pagamento (T-029): a solicitação aprovada só vira "paga" com o débito conciliado do extrato
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS pago_em date;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS pagamento_line_id integer;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS pago_por integer;
+ALTER TABLE bank_lines ADD COLUMN IF NOT EXISTS request_id integer;
+ALTER TABLE requests ADD COLUMN IF NOT EXISTS pagamento_previsto date;
+-- v25 · grade docente com vigência (T-053 · CRQ-TMP-V3-01) e auditoria do ponto (T-050)
+CREATE TABLE IF NOT EXISTS grade_versions (id serial PRIMARY KEY, unit_id integer NOT NULL, nome text NOT NULL, vigencia_inicio date NOT NULL, vigencia_fim date, status text NOT NULL DEFAULT 'RASCUNHO', origem text NOT NULL DEFAULT 'MANUAL', copiada_de integer, obs text, justificativa text, criada_por integer, criada_em timestamp NOT NULL DEFAULT now(), ativada_por integer, ativada_em timestamp, ch_aplicada_por integer, ch_aplicada_em timestamp, descartada_em timestamp);
+CREATE INDEX IF NOT EXISTS grade_versions_unit_idx ON grade_versions(unit_id, status, vigencia_inicio);
+ALTER TABLE teacher_slots ADD COLUMN IF NOT EXISTS version_id integer;
+CREATE INDEX IF NOT EXISTS teacher_slots_version_idx ON teacher_slots(version_id);
+CREATE OR REPLACE FUNCTION slot_vigente(v integer, d date) RETURNS boolean AS $$ SELECT v IS NULL OR EXISTS (SELECT 1 FROM grade_versions g WHERE g.id = v AND g.status = 'ATIVA' AND g.vigencia_inicio <= d AND (g.vigencia_fim IS NULL OR g.vigencia_fim >= d)) $$ LANGUAGE sql STABLE;
+INSERT INTO grade_versions (unit_id, nome, vigencia_inicio, status, origem, ativada_em, obs) SELECT t.unit_id, 'Grade em uso', least(min(t.created_at)::date, current_date), 'ATIVA', 'MIGRACAO', now(), 'Criada na atualização v25 com as aulas que já estavam cadastradas' FROM teacher_slots t WHERE t.version_id IS NULL AND NOT EXISTS (SELECT 1 FROM grade_versions g WHERE g.unit_id = t.unit_id) GROUP BY t.unit_id;
+UPDATE teacher_slots t SET version_id = (SELECT g.id FROM grade_versions g WHERE g.unit_id = t.unit_id AND g.status = 'ATIVA' AND g.origem = 'MIGRACAO' ORDER BY g.id LIMIT 1) WHERE t.version_id IS NULL AND EXISTS (SELECT 1 FROM grade_versions g WHERE g.unit_id = t.unit_id AND g.status = 'ATIVA' AND g.origem = 'MIGRACAO');
+CREATE TABLE IF NOT EXISTS timesheet_audit (id serial PRIMARY KEY, employee_id integer NOT NULL, unit_id integer, data date NOT NULL, tipo text NOT NULL, minutos integer NOT NULL DEFAULT 0, detalhe text, status text NOT NULL DEFAULT 'ABERTA', decisao_obs text, decidido_por integer, decidido_em timestamp, hour_entry_id integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now(), UNIQUE (employee_id, data, tipo));
+CREATE INDEX IF NOT EXISTS timesheet_audit_idx ON timesheet_audit(unit_id, data, status);
+-- v25 · portal do colaborador (T-104): contato de emergência atualizado pelo próprio colaborador
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS contato_emergencia text;
+-- v25 · portal do candidato (T-106): link pessoal por candidatura, documentos pedidos, horários de entrevista oferecidos, comunicação registrada
+CREATE TABLE IF NOT EXISTS candidate_portal_links (id serial PRIMARY KEY, application_id integer NOT NULL, token_hash text NOT NULL UNIQUE, status text NOT NULL DEFAULT 'ATIVO', expira_em date NOT NULL, criado_por integer, criado_em timestamp NOT NULL DEFAULT now(), aberto_em timestamp, ultimo_acesso timestamp, encerrado_em timestamp);
+CREATE INDEX IF NOT EXISTS candidate_portal_links_app_idx ON candidate_portal_links(application_id, status);
+CREATE TABLE IF NOT EXISTS candidate_doc_requests (id serial PRIMARY KEY, application_id integer NOT NULL, tipo text NOT NULL, obrigatorio boolean NOT NULL DEFAULT true, status text NOT NULL DEFAULT 'PENDENTE', enviado_em timestamp, conferido_por integer, conferido_em timestamp, motivo_recusa text, criado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS candidate_doc_requests_app_idx ON candidate_doc_requests(application_id);
+CREATE TABLE IF NOT EXISTS interview_slots (id serial PRIMARY KEY, application_id integer NOT NULL, etapa text NOT NULL, inicio timestamp NOT NULL, duracao_min integer NOT NULL DEFAULT 45, local text, status text NOT NULL DEFAULT 'OFERECIDO', escolhido_em timestamp, criado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS interview_slots_app_idx ON interview_slots(application_id, status);
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS retirada_em timestamp;
+ALTER TABLE application_events ADD COLUMN IF NOT EXISTS origem text NOT NULL DEFAULT 'RH';
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS exclusao_pedida_em timestamp;
+-- v25 · CRQ-COM-V3-01: comunicação em massa é ação crítica — segundo aprovador, modelo aprovado e horário comercial
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'PUBLICADO';
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS destinatarios integer;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS aprovado_por integer;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS aprovado_em timestamp;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS motivo_rejeicao text;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS disparo_em timestamp;
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS disparado_em timestamp;
+CREATE TABLE IF NOT EXISTS message_campaigns (id serial PRIMARY KEY, titulo text NOT NULL, canal text NOT NULL, template_id integer NOT NULL, publico text NOT NULL, filtro jsonb NOT NULL, assunto text, total integer NOT NULL DEFAULT 0, status text NOT NULL DEFAULT 'AGUARDANDO_APROVACAO', autor_user_id integer NOT NULL, autor_nome text, aprovado_por integer, aprovado_em timestamp, motivo_rejeicao text, disparo_em timestamp, disparado_em timestamp, enviadas integer NOT NULL DEFAULT 0, registradas integer NOT NULL DEFAULT 0, falhas integer NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now());
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS campaign_id integer;
+CREATE INDEX IF NOT EXISTS messages_campaign_idx ON messages(campaign_id);
+-- v25 · CRQ-PRJ-V3-03: três exceções iguais abrem revisão do POP com evidências e prazo
+CREATE TABLE IF NOT EXISTS procedure_reviews (id serial PRIMARY KEY, chave text NOT NULL, procedure_id integer, regra text NOT NULL, motivo text NOT NULL, evidencias jsonb NOT NULL, prazo date NOT NULL, dono_user_id integer, status text NOT NULL DEFAULT 'ABERTA', desfecho text, desfecho_obs text, versao_publicada integer, concluida_por integer, concluida_em timestamp, escalada_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS procedure_reviews_aberta_idx ON procedure_reviews(chave) WHERE status='ABERTA';
+UPDATE request_types SET descricao='Itens ou serviços a comprar. A aprovação libera a compra; o Financeiro registra o pagamento com o débito do extrato.' WHERE codigo='COMPRA' AND descricao='Itens ou serviços a comprar. A aprovação libera a compra; pagamento e nota seguem no financeiro.';
 CREATE OR REPLACE FUNCTION audit_log_imutavel() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'audit_log é imutável: não é permitido alterar nem apagar registros'; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
 CREATE TRIGGER audit_log_no_update BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_log_imutavel();
@@ -413,6 +575,10 @@ export const DEFAULT_SETTINGS = {
     categoriasTemplate: ["COBRANCA", "MATRICULA", "ATENDIMENTO", "PEDAGOGICO", "RH", "GERAL"],
     assinatura: "Colégio Status",
     digestEmailHora: 7, // hora do resumo diário por e-mail (quando RESEND configurado e a rotina /api/tarefas é chamada)
+    // v25 · CRQ-COM-V3-01: massa = comunicado para N pessoas ou mais / qualquer envio para lista de famílias ou equipe
+    massaMinDestinatarios: 20,
+    aprovadoresMassa: ["DIRECAO", "RH"] as string[],     // segundo humano (nunca o autor)
+    horarioComercial: { inicio: "07:00", fim: "19:00", dias: [1, 2, 3, 4, 5, 6] as number[] }, // fora disso o disparo fica agendado
   },
   plataforma: {
     anexoMaxMb: 8,
@@ -445,6 +611,41 @@ export const DEFAULT_SETTINGS = {
     categoriasEntrada: ["Mensalidades", "Material e taxas", "Integral", "Eventos", "Outras receitas"],
     categoriasSaida: ["Pessoal", "Encargos e benefícios", "Aluguel e condomínio", "Serviços e terceiros", "Materiais e insumos", "Manutenção", "Marketing", "Impostos e taxas", "Financeiras", "Outras despesas"],
     encargosPct: 35, // estimativa de encargos sobre salários para custo de pessoal
+  },
+  // v25 · conciliação (Cap. 21 da Nova Arquitetura). As taxas abaixo são EXEMPLO: troque pelas do contrato com a operadora.
+  conciliacao: {
+    limiarAuto: 90,               // confiança a partir da qual o par é confirmado sem intervenção (abaixo: fila de confirmação humana)
+    janelaDias: 5,                // diferença máxima entre a baixa no ActiveSoft e o crédito (PIX/TED/depósito; boleto tem +3 dias)
+    janelaCartaoDias: 2,          // venda na Cielo × baixa do título por cartão
+    toleranciaCentavos: 0.05,     // diferença por item tratada como centavos (vira achado único, não pendência solta)
+    centavosMinOcorrencias: 3,    // a partir de quantas ocorrências no mês o padrão de centavos vira achado
+    toleranciaTaxaPp: 0.05,       // pontos percentuais acima da taxa contratada que abrem divergência de taxa
+    taxasCartao: [
+      { bandeira: "*", categoria: "Débito", taxa: 1.19 }, { bandeira: "*", categoria: "Crédito à vista", taxa: 2.49 },
+      { bandeira: "*", categoria: "Crédito parcelado 2–6x", taxa: 2.99 }, { bandeira: "*", categoria: "Crédito parcelado 7–12x", taxa: 3.49 },
+      { bandeira: "AMEX", categoria: "Crédito à vista", taxa: 3.19 },
+    ],
+    metaConciliadoPct: 100,       // KPI-09: conciliado (+ explicado com alçada) ÷ recebido para fechar a competência
+    diaLimiteFechamento: 10,      // meta: competência fechada até o dia 10 do mês seguinte
+    escalonamentoDias: [15, 30],  // pendência aberta há 15 dias escala ao gestor financeiro; 30 dias, à Direção (CRQ-COB-V3-02)
+    perdaAlcadaFinanceiro: 500,   // perda assumida acima deste valor (R$) só com a Direção
+    palavras: {                   // histórico do extrato → forma (sem acento, maiúsculas; a primeira regra que bate vale)
+      transferencia: ["TRANSF ENTRE CONTAS", "MESMA TITULARIDADE", "APLICACAO", "RESGATE", "APLIC ", "RESG "],
+      tarifa: ["TARIFA", "TAR ", "CESTA", "IOF", "JUROS", "ENCARGO"],
+      cartao: ["CIELO", "REDECARD", "GETNET", "STONE", "PAGSEGURO"],
+      pix: ["PIX"],
+      boleto: ["COBRANCA", "BOLETO", "LIQ TIT", "LIQUIDACAO"],
+      ted: ["TED", "DOC "],
+      deposito: ["DEPOSITO", "DEP DINH", "DEP ESPECIE"],
+    },
+  },
+  despesas: {                     // T-029 · política de despesas (Central de solicitações → pagamento com débito conciliado)
+    categoriaPorTipo: { COMPRA: "Materiais e insumos", MATERIAL: "Materiais e insumos", REEMBOLSO: "Outras despesas", PASSEIO: "Serviços e terceiros" } as Record<string, string>, // tipo de solicitação → categoria do caixa
+    loteAte: 1000,                // aprovação em lote só até este valor (R$); acima, decisão item a item
+    exigirDocumento: true,        // despesa com valor e sem anexo é exceção: nunca entra no lote
+    excecaoOrcamento: true,       // categoria sem orçamento (na unidade que orça) ou com o mês estourado é exceção
+    categoriasBloqueadas: [] as string[], // categorias que sempre pedem decisão item a item
+    alertaPagamentoDias: 7,       // aprovada há mais de N dias sem pagamento: alerta no painel financeiro
   },
   remuneracao: {
     fatores: ["Complexidade das tarefas", "Autonomia e decisão", "Impacto no resultado", "Formação e experiência exigidas", "Liderança e relacionamento"],
@@ -488,14 +689,22 @@ export const DEFAULT_SETTINGS = {
     etapas: ["TRIAGEM", "ENTREVISTA_RH", "TESTE", "ENTREVISTA_GESTOR", "PROPOSTA", "CONTRATADO"],
     criterios: ["Formação e requisitos", "Experiência relevante", "Aderência à cultura Status", "Comunicação", "Motivação e disponibilidade"],
     origens: ["INDICACAO", "SITE", "LINKEDIN", "BANCO_TALENTOS", "OUTRO"],
+    portal: {                     // v25 · T-106 portal do candidato
+      validadeDias: 30,           // link pessoal vale N dias (o RH gera de novo quando precisar)
+      documentos: ["Currículo atualizado", "Documento de identidade (RG ou CNH)", "CPF", "Comprovante de escolaridade", "Comprovante de residência"] as string[],
+      retencaoMeses: 12,          // dados de candidatos não contratados guardados por até N meses (aviso no portal)
+    },
   },
   governanca: {
     areas: ["Atendimento e Comercial", "Matrículas e Secretaria", "Financeiro", "Pedagógico", "Pessoas e RH", "Operações e Infraestrutura", "Comunicação e Marketing", "Direção e Governança"],
     motivosExcecao: ["Caso excepcional da família", "Erro operacional a corrigir", "Prazo legal ou regulatório", "Decisão comercial pontual", "Indisponibilidade de sistema", "Situação de saúde ou emergência", "Outro"],
     revisaoPopMeses: 12,
+    excecaoRecorrenteLimiar: 3,   // CRQ-PRJ-V3-03: exceções iguais (mesmo POP/regra e motivo) na janela que abrem revisão do POP
+    excecaoJanelaDias: 90,
+    revisaoPopPrazoDias: 30,
     excecaoValidadeDias: 30,
   },
-  matriculas: { anoLetivo: 2027, reservaDias: 3, ofertaFilaDias: 2 },
+  matriculas: { anoLetivo: 2027, reservaDias: 3, ofertaFilaDias: 2, fimCampanha: "", metaRematriculaPct: 85 }, // v23: fimCampanha vazio = 31/01 do ano letivo (previsão); meta padrão da rematrícula
   // Rematrícula por link (v22): validade do link, prazo da reserva criada pelo aceite (até o financeiro confirmar) e texto do convite
   rematricula: {
     validadeLinkDias: 30,
@@ -543,6 +752,99 @@ export const DEFAULT_SETTINGS = {
   },
   // Contratos e licenças (v22): avisos antes do fim do contrato
   contratos: { avisos: [60, 30] as number[] },
+  insights: {
+    toleranciaPct: 10,          // indicador com meta e sem limite de atenção: "atenção" até 10% da meta; além disso, "fora do alvo"
+    resumoSemanal: true,        // envia o resumo executivo semanal (segunda-feira) para quem assinou
+    mesesHistorico: 24,         // meses guardados na base de indicadores
+    lembretePendencias: true,   // dias úteis: avisa (notificação e celular) quem tem pendência vencida ou para hoje
+  },
+  fpa: {
+    cenarioPessimistaPct: 85,   // caixa projetado: recebimento no cenário pessimista (% do esperado)
+    cenarioOtimistaPct: 100,
+  },
+  fluxos: {
+    riscoPct: 25,               // "em risco" quando resta até 25% do prazo (ou menos de 1 dia num prazo de 2 dias ou mais)
+    prazoDecisaoDias: 2,        // prazo para decidir pedidos sem prazo próprio: vagas, descontos e exceções
+    prazoFeriasDias: 3,         // prazo para aprovar férias e afastamentos (nunca depois da véspera do início)
+  },
+  // v24 · Nova Arquitetura
+  alertas: {
+    slaHoras: { ALTO: 24, MEDIO: 72 } as Record<string, number>, // prazo para tratar; estourou, sobe um degrau (dono → gestor → Direção)
+    reabrirTratadoDias: 7,      // tratado e a condição persiste: reabre depois de N dias
+    // dono padrão por módulo (primeiro perfil com usuário ativo; alerta de unidade prefere quem é da unidade). Sem dono resolvível = defeito de configuração
+    donos: { "Pessoas": ["RH", "DIRECAO"], "Processos": ["DIRECAO", "RH"], "Matrículas": ["COMERCIAL", "DIRETOR_UNIDADE", "DIRECAO"], "Atendimento": ["COMERCIAL", "DIRETOR_UNIDADE", "DIRECAO"], "Financeiro": ["FINANCEIRO", "DIRECAO"], "Operações": ["OPERACOES", "DIRETOR_UNIDADE", "DIRECAO"], "Segurança": ["OPERACOES", "DIRETOR_UNIDADE", "DIRECAO"], "Privacidade": ["DIRECAO", "RH"], "Governança de IA": ["DIRECAO"], "Estratégia": ["DIRECAO"], "Folha": ["RH", "FINANCEIRO"], "SST": ["RH", "DIRECAO"] } as Record<string, string[]>,
+    donoUsuario: {} as Record<string, number>, // módulo → usuário fixo (sobrepõe o perfil)
+  },
+  aprovacoes: {
+    limiteHeMensalMin: 600,     // hora extra acima de 10 h no mês (por pessoa, somando o pedido) nunca entra no lote
+    maxLancamentoMin: 240,      // lançamento de banco acima de 4 h é exceção
+    feriasMinimoPresentesPct: 70, // setor (cargo na unidade) com menos de 70% presentes no período: conflito de cobertura
+  },
+  quadro: { jornadaPlenaMin: 528 }, // FTE = jornada diária ÷ jornada plena (528 min = 44 h semanais em 5 dias)
+  folha: {
+    variacaoMaxPct: 5,          // variação do total sobre o mês anterior acima disso exige explicação antes do aceite (CRQ-FOL-V3-02)
+    amostraHolerites: 5,        // holerites sorteados na conferência (Four-Eyes)
+    docsObrigatorios: ["HOLERITES", "GUIA_INSS", "GUIA_FGTS", "GUIA_IRRF"] as string[],
+    exigirLockTodas: true,      // pacote só sai com o ponto de todas as unidades da entidade fechado (CRQ-FOL-V3-01)
+  },
+  // T-048 · Painel do dia: início do turno quando a escala não traz horário e tolerância do no-show
+  ponto: { inicioPadrao: "07:00", toleranciaNoShowMin: 15 },
+  // v25 · T-053 grade docente com vigência (CRQ-TMP-V3-01) e T-050 auditoria do ponto
+  grade: {
+    duracoesAula: [45, 50, 60] as number[],      // durações válidas (múltiplos = aula dupla); fora disso a validação avisa
+    rotulosPlantao: ["PLANTAO"] as string[],     // turma/disciplina com este rótulo é plantão (conta na CH)
+  },
+  auditoriaPonto: {
+    toleranciaDiaMin: 10,         // diferença até este total no dia não é divergência (CLT art. 58 §1º: 5 min por marcação, 10 no dia)
+    heMinimaMin: 15,              // trabalho além da CH a partir disto é hora extra a decidir
+    exigirAnexoAtestado: true,    // atestado sem documento anexado é divergência
+  },
+  // T-013 · Ação requerida: documentos de matrícula exigidos (validade em meses; null = não vence) e janelas de alerta
+  acaoRequerida: {
+    documentos: [
+      { tipo: "Certidão de nascimento", validadeMeses: null }, { tipo: "Documento de identidade do responsável", validadeMeses: null }, { tipo: "Comprovante de residência", validadeMeses: 6 },
+      { tipo: "Declaração de transferência / histórico", validadeMeses: null }, { tipo: "Carteira de vacinação", validadeMeses: 12 }, { tipo: "Foto 3×4", validadeMeses: null },
+    ] as { tipo: string; validadeMeses: number | null }[],
+    vencendoDias: 30,   // documento a 30 dias do vencimento entra na fila (reenvio em um clique)
+    reservaHoras: 48,   // reserva que vence nas próximas 48 h entra na fila
+  },
+  obrigacoes: {
+    // calendário-modelo por entidade (dia do vencimento no mês seguinte à competência; null = informar). Datas legais prevalecem: confira com o contador.
+    modelos: [
+      { tipo: "INSS (DCTFWeb)", dia: 20 }, { tipo: "FGTS Digital", dia: 20 }, { tipo: "IRRF (DARF)", dia: 20 }, { tipo: "ISS", dia: null }, { tipo: "Simples Nacional (DAS)", dia: 20 },
+    ] as { tipo: string; dia: number | null }[],
+    avisosDias: [7, 3, 0] as number[],
+  },
+  sst: {
+    asoMesesPadrao: 12,         // periodicidade do exame periódico quando o cargo não define (o PCMSO prevalece)
+    exigirAsoAdmissional: true, // item "Exame admissional (ASO)" da admissão só conclui com o ASO registrado
+    areasCursos: ["Segurança e saúde"] as string[], // cursos da Academy dessas áreas entram na matriz de conformidade
+    investigacaoDias: 15,       // prazo para concluir a investigação do incidente com a CIPA
+    afastamentoRetornoDias: 30, // afastamento por saúde a partir de N dias pede ASO de retorno
+    dispensaDemissionalDias: 135, // NR-7: último exame dentro deste prazo dispensa o demissional (grau de risco 1 e 2; 90 dias para 3 e 4)
+  },
+  onboarding: {
+    modelo: [
+      { marco: 7, titulo: "Boas-vindas, apresentação à equipe e ao buddy", tipo: "TAREFA", responsavel: "GESTOR" },
+      { marco: 7, titulo: "Integração institucional (cultura, regimento, POPs da função)", tipo: "TRILHA", responsavel: "RH" },
+      { marco: 7, titulo: "Acessos, materiais e rotina da primeira semana conferidos", tipo: "TAREFA", responsavel: "GESTOR" },
+      { marco: 30, titulo: "Check-in de 30 dias com o gestor", tipo: "CHECKIN", responsavel: "GESTOR" },
+      { marco: 30, titulo: "Pesquisa do novato — 30 dias", tipo: "PESQUISA", responsavel: "NOVATO" },
+      { marco: 60, titulo: "Check-in de 60 dias: expectativas do cargo e primeiros resultados", tipo: "CHECKIN", responsavel: "GESTOR" },
+      { marco: 60, titulo: "Treinamentos obrigatórios da função concluídos", tipo: "TRILHA", responsavel: "RH" },
+      { marco: 90, titulo: "Avaliação de experiência (fim do contrato de experiência)", tipo: "CHECKIN", responsavel: "GESTOR" },
+      { marco: 90, titulo: "Pesquisa do novato — 90 dias", tipo: "PESQUISA", responsavel: "NOVATO" },
+    ] as { marco: number; titulo: string; tipo: string; responsavel: string }[],
+  },
+  board: { pesosFunil: { CONFIRMADA: 1, RESERVADA: 0.6, FILA: 0.15 } as Record<string, number> }, // Funil 2027 ponderado (KPI-03)
+  orcamento: { faixaMinPct: 90, faixaMaxPct: 105, donosCategoria: {} as Record<string, number> }, // banda de execução saudável (KPI-15); acima do teto, o dono explica
+  // DRE gerencial (T-024): onde cada categoria de saída entra nas linhas canônicas (o resto vai para despesas operacionais)
+  dre: {
+    deducoes: ["Impostos e taxas"] as string[],          // tributos sobre a receita e taxas → Receita líquida
+    pessoal: ["Pessoal", "Encargos e benefícios"] as string[], // substituídas pelo resultado aceito da folha (REAL) no mês/unidade em que ele existir
+    financeiras: ["Financeiras"] as string[],             // abaixo do EBITDA
+    internas: ["Transferência entre unidades", "Transferências internas"] as string[], // movimentos entre unidades do grupo: fora da DRE e eliminados no Consolidado
+  },
   atendimento: {
     slaHoras: { URGENTE: 4, ALTA: 24, NORMAL: 48, BAIXA: 120 },
     categorias: ["Pedagógico", "Atendimento e comunicação", "Financeiro", "Infraestrutura e limpeza", "Segurança", "Alimentação", "Transporte", "Convivência e disciplina", "Outro"],
@@ -698,6 +1000,33 @@ const DECISOES_PENDENTES: [string, string, string][] = [
   ["Definir as políticas de retenção e descarte de dados", "Direção e Governança", "Por quanto tempo guardar candidatos, alunos desligados, pesquisas, logs."],
   ["Aprovar o orçamento do DOM-15 (plataforma) para 2027", "Financeiro", "Hospedagem, IA, integrações (ActiveSoft, WhatsApp) e suporte."],
 ];
+// v24 · as 14 decisões da Direção consolidadas na Nova Arquitetura (Cap. 39.1) — entram como pendências do Command Center se ainda não existirem
+export const DECISOES_V3: [number, string, string, string][] = [
+  [1, "Unidade e segmento do piloto (se o faseamento por unidade for adotado)", "Estratégia de rollout", "Adendo v3"],
+  [2, "Product Owner nomeado", "Cadência de produto", "Adendo v3"],
+  [3, "Tech Lead / responsável técnico", "Gate B contínuo", "Adendo v3"],
+  [4, "Política real de desconto e alçadas (valores)", "T-020/T-029/T-038 com números oficiais", "Adendo v3"],
+  [5, "SLA comercial real por fila/etapa", "Metas das filas (KPI-28/29)", "Adendo v3"],
+  [6, "Janela de Data Freeze/cutover da carga real", "Onda 0 (pós-GO)", "Adendo v3"],
+  [7, "Fornecedores/integrações iniciais (e-mail, provedor de WhatsApp, assinatura)", "T-074/T-089 em produção plena", "Adendo v3"],
+  [8, "Critério formal de Go/No-Go (quem assina, com que evidências)", "Encerramento da Onda 0", "Adendo v3"],
+  [9, "Pesos do Health Geral por domínio", "KPI-38 oficial", "Adendo v3"],
+  [10, "Metas dos KPIs marcados \"Direção define\" (Cap. 34)", "Princípio 9 pleno no cockpit", "v3 (Mapa)"],
+  [11, "Provedor e chave de IA (AI_API_KEY) + orçamento FinOps", "People AI; narrativas C3/C4; T-099", "v3 (Mapa)"],
+  [12, "Data da semana de homologação com logins por área", "Fase 19 da Onda 0", "v3 (Mapa)"],
+  [13, "Exportação real do ActiveSoft para calibrar importadores", "Leiaute definitivo das integrações", "v3 (Mapa)"],
+  [14, "De-para oficial: organograma da Bíblia (Diretoria Geral + 4 áreas) × 22 cargos carregados", "Carga definitiva de posições; fichas espelhadas (CRQ-PEO-V3-06)", "v3 (Bíblia)"],
+];
+export async function seedV24() {
+  const log: string[] = []; let n = 0;
+  for (const [num, titulo, bloqueia, origem] of DECISOES_V3) {
+    const t = `Decisão nº ${num} — ${titulo}`;
+    const [ja] = await sql`SELECT 1 FROM exec_pending WHERE titulo=${t}`;
+    if (!ja) { await sql`INSERT INTO exec_pending (titulo, area, descricao) VALUES (${t}, 'Direção e Governança', ${`Bloqueia: ${bloqueia} · Origem: ${origem} · Nova Arquitetura, Cap. 39.1`})`; n++; }
+  }
+  if (n) log.push(`${n} decisão(ões) da Nova Arquitetura (Cap. 39) incluídas nas pendências da Direção.`);
+  return log;
+}
 // OKRs 2027 sugeridos a partir do plano de capacidade e dos indicadores que o sistema já mede — a Direção edita, apaga ou substitui
 export async function seedEstrategia() {
   const [{ n }] = await sql`SELECT count(*)::int AS n FROM objectives`;
@@ -787,7 +1116,7 @@ const TIPOS_SOLICITACAO: [string, string, string, number, CampoSeed[], EtapaSeed
   ["REEMBOLSO", "Reembolso de despesa", "Despesa paga do próprio bolso a serviço da escola. Anexe o comprovante na solicitação.", 2,
     [c("descricao", "O que foi pago e por quê", "TEXTO_LONGO"), c("data", "Data da despesa", "DATA"), c("valor", "Valor (R$)", "VALOR"), c("forma", "Como prefere receber", "SELECAO", true, ["PIX", "Depósito em conta", "Junto do pagamento"])],
     [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "Financeiro", perfis: ["FINANCEIRO"] }, { nome: "Direção (acima de R$ 1.000)", perfis: ["DIRECAO"], acimaDe: 1000 }]],
-  ["COMPRA", "Pedido de compra", "Itens ou serviços a comprar. A aprovação libera a compra; pagamento e nota seguem no financeiro.", 3,
+  ["COMPRA", "Pedido de compra", "Itens ou serviços a comprar. A aprovação libera a compra; o Financeiro registra o pagamento com o débito do extrato.", 3,
     [c("item", "Item ou serviço", "TEXTO"), c("quantidade", "Quantidade", "NUMERO"), c("valor", "Valor estimado (R$)", "VALOR"), c("fornecedor", "Fornecedor sugerido", "TEXTO", false), c("justificativa", "Justificativa", "TEXTO_LONGO"), c("prazo", "Precisa até", "DATA", false)],
     [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "Direção (acima de R$ 2.000)", perfis: ["DIRECAO"], acimaDe: 2000 }]],
   ["PASSEIO", "Passeio ou evento", "Atividade fora da rotina. A autorização de cada família é feita na Agenda Eletrônica.", 3,
@@ -884,6 +1213,23 @@ const FKS: [string, string, string, string][] = [
   ["teacher_slots", "employee_id", "employees", "CASCADE"], ["teacher_slots", "unit_id", "units", "RESTRICT"], ["teacher_slots", "space_id", "spaces", "SET NULL"], ["cover_absences", "employee_id", "employees", "CASCADE"], ["cover_absences", "leave_request_id", "leave_requests", "SET NULL"], ["cover_assignments", "absence_id", "cover_absences", "CASCADE"], ["cover_assignments", "slot_id", "teacher_slots", "SET NULL"], ["cover_assignments", "ausente_employee_id", "employees", "CASCADE"], ["cover_assignments", "cobertura_employee_id", "employees", "SET NULL"], ["cover_assignments", "hour_entry_id", "hour_entries", "SET NULL"],
   ["spaces", "unit_id", "units", "RESTRICT"], ["classes", "space_id", "spaces", "SET NULL"], ["space_bookings", "space_id", "spaces", "CASCADE"], ["visits", "unit_id", "units", "RESTRICT"], ["pickup_authorizations", "student_id", "students", "CASCADE"], ["early_departures", "student_id", "students", "CASCADE"], ["early_departures", "authorization_id", "pickup_authorizations", "SET NULL"], ["early_departures", "emergency_event_id", "emergency_events", "SET NULL"], ["brigade_members", "employee_id", "employees", "CASCADE"], ["emergency_events", "unit_id", "units", "RESTRICT"], ["emergency_checks", "event_id", "emergency_events", "CASCADE"], ["emergency_failures", "event_id", "emergency_events", "CASCADE"], ["emergency_failures", "action_plan_id", "action_plans", "SET NULL"],
   ["consents", "student_id", "students", "CASCADE"], ["consents", "purpose_id", "consent_purposes", "RESTRICT"], ["privacy_requests", "student_id", "students", "SET NULL"], ["privacy_requests", "employee_id", "employees", "SET NULL"], ["ethics_messages", "report_id", "ethics_reports", "CASCADE"], ["requests", "type_id", "request_types", "RESTRICT"], ["request_events", "request_id", "requests", "CASCADE"], ["contracts", "supplier_id", "suppliers", "RESTRICT"], ["licenses", "unit_id", "units", "RESTRICT"], ["push_subscriptions", "user_id", "users", "CASCADE"],
+  ["kpi_comments", "user_id", "users", "SET NULL"], ["kpi_targets", "user_id", "users", "SET NULL"], ["kpi_subscriptions", "user_id", "users", "CASCADE"], ["budget_months", "unit_id", "units", "RESTRICT"], ["budget_comments", "user_id", "users", "SET NULL"], ["recognitions", "para_employee_id", "employees", "CASCADE"], ["recognitions", "de_user_id", "users", "SET NULL"], ["recognition_reactions", "recognition_id", "recognitions", "CASCADE"], ["recognition_reactions", "user_id", "users", "CASCADE"], ["user_prefs", "user_id", "users", "CASCADE"],
+  // v25
+  ["bank_accounts", "company_id", "companies", "SET NULL"], ["bank_accounts", "unit_id", "units", "SET NULL"], ["bank_lines", "bank_account_id", "bank_accounts", "RESTRICT"], ["bank_lines", "import_id", "recon_imports", "SET NULL"], ["bank_lines", "student_id", "students", "SET NULL"],
+  ["card_sales", "unit_id", "units", "SET NULL"], ["card_sales", "import_id", "recon_imports", "SET NULL"], ["recon_matches", "receivable_id", "receivables", "CASCADE"], ["recon_matches", "bank_line_id", "bank_lines", "CASCADE"], ["recon_matches", "card_sale_id", "card_sales", "CASCADE"],
+  ["recon_issues", "unit_id", "units", "SET NULL"], ["recon_issues", "dono_user_id", "users", "SET NULL"], ["recon_issues", "bank_line_id", "bank_lines", "SET NULL"], ["recon_issues", "card_sale_id", "card_sales", "SET NULL"], ["recon_issues", "receivable_id", "receivables", "SET NULL"],
+  ["recon_closings", "company_id", "companies", "SET NULL"], ["cash_entries", "bank_account_id", "bank_accounts", "SET NULL"],
+  ["requests", "pagamento_line_id", "bank_lines", "SET NULL"], ["bank_lines", "request_id", "requests", "SET NULL"],
+  ["grade_versions", "unit_id", "units", "RESTRICT"], ["grade_versions", "copiada_de", "grade_versions", "SET NULL"], ["teacher_slots", "version_id", "grade_versions", "CASCADE"],
+  ["timesheet_audit", "employee_id", "employees", "CASCADE"], ["timesheet_audit", "hour_entry_id", "hour_entries", "SET NULL"],
+  ["message_campaigns", "template_id", "message_templates", "RESTRICT"], ["messages", "campaign_id", "message_campaigns", "SET NULL"], ["procedure_reviews", "procedure_id", "procedures", "SET NULL"],
+  ["candidate_portal_links", "application_id", "applications", "CASCADE"], ["candidate_doc_requests", "application_id", "applications", "CASCADE"], ["interview_slots", "application_id", "applications", "CASCADE"],
+  // v24
+  ["units", "company_id", "companies", "SET NULL"], ["alerts", "dono_user_id", "users", "SET NULL"], ["alert_events", "alert_id", "alerts", "CASCADE"], ["position_slots", "position_id", "positions", "RESTRICT"], ["position_slots", "unit_id", "units", "RESTRICT"], ["position_slots", "employee_id", "employees", "SET NULL"], ["requisitions", "slot_id", "position_slots", "SET NULL"],
+  ["timesheet_locks", "unit_id", "units", "CASCADE"], ["payroll_cycles", "company_id", "companies", "RESTRICT"], ["payroll_results", "cycle_id", "payroll_cycles", "CASCADE"], ["payroll_results", "unit_id", "units", "SET NULL"], ["payroll_explanations", "cycle_id", "payroll_cycles", "CASCADE"], ["payroll_divergences", "cycle_id", "payroll_cycles", "CASCADE"], ["payroll_divergences", "employee_id", "employees", "SET NULL"], ["payroll_docs", "cycle_id", "payroll_cycles", "CASCADE"], ["payroll_docs", "attachment_id", "attachments", "CASCADE"], ["payroll_docs", "employee_id", "employees", "SET NULL"], ["payroll_doc_views", "doc_id", "payroll_docs", "CASCADE"],
+  ["obligations", "company_id", "companies", "SET NULL"], ["obligations", "unit_id", "units", "SET NULL"], ["obligations", "responsavel_user_id", "users", "SET NULL"], ["fiscal_case_events", "case_id", "fiscal_cases", "CASCADE"], ["sst_exams", "employee_id", "employees", "CASCADE"], ["sst_incidents", "unit_id", "units", "RESTRICT"], ["sst_incidents", "employee_id", "employees", "SET NULL"], ["cipa_members", "employee_id", "employees", "CASCADE"], ["cipa_members", "unit_id", "units", "CASCADE"], ["cipa_meetings", "unit_id", "units", "CASCADE"], ["epi_deliveries", "employee_id", "employees", "CASCADE"], ["epi_deliveries", "epi_id", "epi_items", "RESTRICT"],
+  ["onboarding_plans", "employee_id", "employees", "CASCADE"], ["onboarding_items", "plan_id", "onboarding_plans", "CASCADE"], ["onboarding_surveys", "plan_id", "onboarding_plans", "CASCADE"], ["perf_cycle_stages", "cycle_id", "perf_cycles", "CASCADE"], ["perf_stage_changes", "stage_id", "perf_cycle_stages", "CASCADE"], ["perf_reminders", "cycle_id", "perf_cycles", "CASCADE"], ["perf_reminders", "employee_id", "employees", "CASCADE"],
+  ["audits", "unit_id", "units", "SET NULL"], ["nonconformities", "audit_id", "audits", "SET NULL"], ["project_baselines", "project_id", "projects", "CASCADE"], ["milestones", "depende_de", "milestones", "SET NULL"], ["classes", "titular_employee_id", "employees", "SET NULL"], ["student_documents", "student_id", "students", "CASCADE"], ["report_schedules", "user_id", "users", "CASCADE"], ["daily_contacts", "employee_id", "employees", "CASCADE"],
   // tabela, coluna, tabela referenciada, ação
   ["employees", "unit_id", "units", "RESTRICT"], ["employees", "position_id", "positions", "SET NULL"], ["employees", "company_id", "companies", "SET NULL"], ["employees", "gestor_id", "employees", "SET NULL"],
   ["users", "unit_id", "units", "SET NULL"], ["password_resets", "user_id", "users", "CASCADE"], ["announcement_acks", "announcement_id", "announcements", "CASCADE"], ["announcement_acks", "user_id", "users", "CASCADE"], ["notifications", "user_id", "users", "CASCADE"], ["messages", "template_id", "message_templates", "SET NULL"], ["users", "employee_id", "employees", "SET NULL"],
@@ -965,6 +1311,7 @@ export async function seedBase(adminPassword: string) {
   log.push(...(await seedDesempenho()));
   log.push(...(await seedGestao()));
   log.push(...(await seedV22()));
+  log.push(...(await seedV24()));
   const [{ u }] = await sql`SELECT count(*)::int AS u FROM users`;
   if (u === 0) {
     const hash = await bcrypt.hash(adminPassword, 10);

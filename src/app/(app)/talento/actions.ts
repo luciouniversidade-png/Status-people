@@ -85,6 +85,8 @@ export async function gerarAvaliacoes(fd: FormData) {
 export async function mudarStatusCiclo(fd: FormData) {
   const s = await requireSession(); const cid = Number(fd.get("cycleId")); const novo = str(fd, "status"); const b = `/desempenho/ciclos/${cid}`;
   try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Mudar fase do ciclo exige: " + cfg.alcadas.calibracao.join(", ")); if (!["ABERTO", "CALIBRACAO", "ENCERRADO"].includes(novo)) throw new Error("Fase inválida.");
+    // v24.1: ciclo por critérios muda de fase só pela barra de fases (Planejamento → … → Conclusão), que exige as avaliações publicadas
+    const [cc] = await sql<{ criterios: unknown }[]>`SELECT criterios FROM perf_cycles WHERE id=${cid}`; if (cc?.criterios) throw new Error("Ciclo por critérios: avance pela barra de fases (Avaliação → Calibração → Feedback → Conclusão).");
     if (novo === "ENCERRADO") { const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM perf_reviews WHERE cycle_id=${cid} AND status IN ('PENDENTE','AUTOAVALIADA')`; if (n) throw new Error(`${n} avaliação(ões) ainda sem nota do gestor.`); await sql`UPDATE perf_reviews SET status='CONCLUIDA', concluida_em=now() WHERE cycle_id=${cid} AND status IN ('AVALIADA','CALIBRADA')`; }
     await db.update(schema.perfCycles).set({ status: novo }).where(eq(schema.perfCycles.id, cid)); await audit(s, "fase do ciclo", "perf_cycles", cid, null, { status: novo });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -145,8 +147,22 @@ export async function registrarCheckin(fd: FormData) {
 export async function salvarRequisicao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); let rid = id ?? 0;
   try { assert(GESTAO.includes(s.role), "Seu perfil não solicita vagas."); const titulo = str(fd, "titulo"); const unitId = int(fd, "unitId"); if (!titulo || !unitId) throw new Error("Informe título e unidade."); assertScope(s, unitId);
-    const d = { titulo, positionId: int(fd, "positionId"), unitId, quantidade: int(fd, "quantidade") ?? 1, tipo: str(fd, "tipo") || "SUBSTITUICAO", justificativa: strOrNull(fd, "justificativa"), requisitos: strOrNull(fd, "requisitos"), regime: str(fd, "regime") || "CLT", jornada: strOrNull(fd, "jornada"), faixa: strOrNull(fd, "faixa"), prazo: strOrNull(fd, "prazo") };
-    if (id) { await db.update(schema.requisitions).set(d).where(eq(schema.requisitions.id, id)); } else { const [r] = await db.insert(schema.requisitions).values({ ...d, solicitanteUserId: s.id, responsavelUserId: s.id }).returning({ id: schema.requisitions.id }); rid = r.id; }
+    const d: Record<string, unknown> & typeof schema.requisitions.$inferInsert = { titulo, positionId: int(fd, "positionId"), unitId, quantidade: int(fd, "quantidade") ?? 1, tipo: str(fd, "tipo") || "SUBSTITUICAO", justificativa: strOrNull(fd, "justificativa"), requisitos: strOrNull(fd, "requisitos"), regime: str(fd, "regime") || "CLT", jornada: strOrNull(fd, "jornada"), faixa: strOrNull(fd, "faixa"), prazo: strOrNull(fd, "prazo") };
+    // v24 · gate de reposição (T-069 · CRQ-REC-V3-01): vaga nova exige posição de origem (com o quadro montado), motivo, orçamento e alternativa avaliada
+    if (!id) {
+      const { existeQuadro, posicoesParaGate, MOTIVOS_GATE, ALTERNATIVAS_GATE } = await import("@/lib/quadro");
+      const motivo = str(fd, "gateMotivo") || (d.tipo === "AUMENTO_QUADRO" ? "AUMENTO" : "REPOSICAO"); const alternativa = str(fd, "gateAlternativa") || "CONTRATAR";
+      if (!MOTIVOS_GATE[motivo] || !ALTERNATIVAS_GATE[alternativa]) throw new Error("Preencha o motivo e a alternativa avaliada do gate.");
+      const slotId = int(fd, "slotId");
+      if (await existeQuadro()) {
+        if (!slotId) throw new Error(motivo === "AUMENTO" ? "Aumento de quadro: crie a posição em Posições e quadro (a Direção autoriza) e depois abra a vaga a partir dela." : "Vincule a vaga a uma posição de origem (vaga ou vaga em breve) — vaga órfã não existe.");
+        const livre = (await posicoesParaGate(null)).find(p => p.id === slotId); if (!livre) throw new Error("Posição de origem indisponível (não autorizada, ocupada ou já com vaga aberta).");
+        if (livre.unit_id !== unitId) throw new Error("A unidade da vaga precisa ser a da posição de origem.");
+        d.positionId = d.positionId ?? livre.position_id;
+      }
+      d.slotId = slotId; d.gate = { motivo, alternativa, orcada: str(fd, "gateOrcada") !== "0", registradoEm: new Date().toISOString(), por: s.nome };
+    }
+    if (id) { const { slotId: _s, gate: _g, ...resto } = d; void _s; void _g; await db.update(schema.requisitions).set(resto).where(eq(schema.requisitions.id, id)); } else { const [r] = await db.insert(schema.requisitions).values({ ...d, solicitanteUserId: s.id, responsavelUserId: s.id }).returning({ id: schema.requisitions.id }); rid = r.id; }
     await audit(s, id ? "editar vaga" : "solicitar vaga", "requisitions", rid, null, d);
     if (!id) await notificar(await usuariosPorPerfil((await getSettings()).alcadas.vagas), "Requisição de vaga aguardando aprovação", d.titulo, `/recrutamento/vagas/${rid}`, "ACAO");
   } catch (e) { redirect(go("/recrutamento", "erro", e instanceof Error ? e.message : "Erro")); }
@@ -155,13 +171,14 @@ export async function salvarRequisicao(fd: FormData) {
 export async function decidirRequisicao(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const decisao = str(fd, "decisao"); const b = `/recrutamento/vagas/${id}`;
   try { const cfg = await getSettings(); const [r] = await db.select().from(schema.requisitions).where(eq(schema.requisitions.id, id)); if (!r) throw new Error("Vaga não encontrada.");
-    if (decisao === "ABERTA") { assert(can.aprovar(s, cfg.alcadas.vagas), "Aprovar vaga exige: " + cfg.alcadas.vagas.join(", ")); assert(r.status === "SOLICITADA", "Vaga já decidida."); await db.update(schema.requisitions).set({ status: "ABERTA", aprovadorUserId: s.id, abertaEm: hoje(), responsavelUserId: int(fd, "responsavelUserId") ?? r.responsavelUserId }).where(eq(schema.requisitions.id, id)); }
+    if (decisao === "ABERTA") { assert(can.aprovar(s, cfg.alcadas.vagas), "Aprovar vaga exige: " + cfg.alcadas.vagas.join(", ")); assert(r.status === "SOLICITADA", "Vaga já decidida."); await db.update(schema.requisitions).set({ status: "ABERTA", aprovadorUserId: s.id, abertaEm: hoje(), responsavelUserId: int(fd, "responsavelUserId") ?? r.responsavelUserId, gate: { ...((r.gate as object | null) ?? {}), decisao: "APROVADO", decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
+    else if (decisao === "NEGADA") { assert(can.aprovar(s, cfg.alcadas.vagas), "Negar o gate exige: " + cfg.alcadas.vagas.join(", ")); assert(r.status === "SOLICITADA", "Vaga já decidida."); const motivo = str(fd, "motivoGate"); assert(motivo.length >= 5, "Explique por que o gate negou a vaga."); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje(), gate: { ...((r.gate as object | null) ?? {}), decisao: "NEGADO", motivo, decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
     else if (decisao === "CANCELADA") { assert(can.aprovar(s, cfg.alcadas.vagas) || r.solicitanteUserId === s.id); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje() }).where(eq(schema.requisitions.id, id)); }
     else if (decisao === "PREENCHIDA") { assert(can.editar(s)); await db.update(schema.requisitions).set({ status: "PREENCHIDA", fechadaEm: hoje() }).where(eq(schema.requisitions.id, id)); }
     else throw new Error("Decisão inválida.");
     await audit(s, "decidir vaga", "requisitions", id, { status: r.status }, { status: decisao });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
-  redirect(go(b, "ok", decisao === "ABERTA" ? "Vaga aprovada e aberta para seleção." : decisao === "CANCELADA" ? "Vaga cancelada." : "Vaga marcada como preenchida."));
+  redirect(go(b, "ok", decisao === "ABERTA" ? "Vaga aprovada e aberta para seleção." : decisao === "NEGADA" ? "Gate negado: a vaga não foi aberta (decisão registrada)." : decisao === "CANCELADA" ? "Vaga cancelada." : "Vaga marcada como preenchida."));
 }
 export async function salvarCandidato(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const reqId = int(fd, "requisitionId"); let cid = id ?? 0;
@@ -194,6 +211,7 @@ export async function moverEtapa(fd: FormData) {
         const [emp] = await db.insert(schema.employees).values({ nome: c.nome, email: c.email, telefone: c.telefone, unitId: r.unitId, positionId: r.positionId, vinculo: r.regime, admissao, situacao: "EM_ADMISSAO", salario: pv !== null ? String(pv) : a.propostaValor }).returning({ id: schema.employees.id });
         await db.insert(schema.documents).values(cfg.documentos.map(([tipo, obrigatorio]) => ({ employeeId: emp.id, tipo: String(tipo), obrigatorio: Boolean(obrigatorio) })));
         const pid = await abrirProcesso(s.id, emp.id, "ADMISSAO", admissao, cfg.admissao); upd.employeeId = emp.id;
+        if (r.slotId) await sql`UPDATE position_slots s SET employee_id=${emp.id}, updated_at=now() WHERE s.id=${r.slotId} AND (s.employee_id IS NULL OR EXISTS (SELECT 1 FROM employees x WHERE x.id=s.employee_id AND (x.situacao='DESLIGADO' OR x.desligamento IS NOT NULL)))`; // v24: o contratado ocupa a posição de origem
         if (pv !== null || a.propostaValor) await sql`INSERT INTO salary_history (employee_id, data, salario, motivo, obs, user_id) VALUES (${emp.id}, ${admissao}, ${pv ?? Number(a.propostaValor)}, 'ADMISSAO', ${`Proposta aceita — vaga #${reqId}`}, ${s.id})`;
         msg = ` Colaborador pré-cadastrado (admissão #${pid}).`;
       }

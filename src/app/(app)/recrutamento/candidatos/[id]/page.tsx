@@ -7,6 +7,7 @@ import { Page, Card, Table, Td, Badge, Flash, Field, Input, Select, Textarea, Bt
 import { fmtDataHora, getSettings } from "@/lib/utils";
 import { ETAPA_LABEL, ORIGEM_CAND, REQ_STATUS } from "@/lib/talento";
 import { salvarCandidato } from "../../../talento/actions";
+import { PortalCandidato } from "./_portal";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export default async function Candidato({ params, searchParams }: { params: Prom
         </Card>
         <Card title="Dados">{gestao ? <form action={salvarCandidato} className="space-y-2"><input type="hidden" name="id" value={cid} /><Field label="Nome"><Input name="nome" defaultValue={c.nome} required /></Field><div className="grid grid-cols-2 gap-2"><Field label="Telefone"><Input name="telefone" defaultValue={c.telefone ?? ""} /></Field><Field label="E-mail"><Input name="email" defaultValue={c.email ?? ""} /></Field></div><div className="grid grid-cols-2 gap-2"><Field label="Origem"><Select name="origem" defaultValue={c.origem ?? ""}>{cfg.recrutamento.origens.map(o => <option key={o} value={o}>{ORIGEM_CAND[o] ?? o}</option>)}</Select></Field><Field label="Cidade"><Input name="cidade" defaultValue={c.cidade ?? ""} /></Field></div><Field label="Formação"><Input name="formacao" defaultValue={c.formacao ?? ""} /></Field><Field label="Tags"><Input name="tags" defaultValue={c.tags ?? ""} /></Field><Field label="Currículo (link)"><Input name="curriculoLink" defaultValue={c.curriculoLink ?? ""} /></Field><Field label="Observações"><Textarea name="obs" className="min-h-[50px]" defaultValue={c.obs ?? ""} /></Field><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="consentimentoLgpd" value="1" defaultChecked={c.consentimentoLgpd} /> Consentimento LGPD</label><Btn small>Salvar</Btn></form> : <p className="text-sm">{c.telefone} {c.email}</p>}</Card>
       </div>
+      <PortalCandidato s={s} cid={cid} apps={apps.map(a => ({ id: a.id, vaga: a.vaga, etapa: a.etapa, requisition_id: a.requisition_id }))} />
     </Page>
   );
 }

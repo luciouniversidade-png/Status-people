@@ -28,7 +28,7 @@ def login(sess, email, senha):
 unq = requests.utils.unquote
 
 login(S, "rh@colegiostatus", "Status2026!"); r = S.get(B + "/api/setup?token=setup-homologacao-2026-status"); assert r.json()["ok"], r.text
-html = page("/command-center"); assert "Health Geral" in html and "Decisões pendentes da Direção (9)" in html and "Nomear o DPO" in html; print("command center + 9 decisões pendentes ok")
+html = page("/command-center"); assert "Health Geral" in html and "Decisões pendentes da Direção (23)" in html and "Nomear o DPO" in html and "Decisão nº 14" in html; print("command center + 23 decisões pendentes ok (9 do Adendo v3 + 14 da Nova Arquitetura, Cap. 39.1)")
 for d in ["Pessoas", "Processos", "Matrículas", "Atendimento e retenção", "Financeiro"]: assert d in html
 geral = int(re.search(r'Health Geral</div><div class="text-5xl font-semibold [^"]*">(\d+)</div>', html).group(1)); print("health geral inicial", geral)
 assert "Por unidade" in html and "Carandá" in html
@@ -46,7 +46,7 @@ assert psql("SELECT count(*) FROM health_snapshots WHERE unit_id IS NULL") == "1
 # decidir pendência → Decision Log
 aid = find_form_aid(html, "Decidir"); pid = re.search(r'name="id" value="(\d+)"', html[html.find("Nomear o DPO"):]).group(1)
 loc = post("/command-center", aid, {"id": pid, "status": "DECIDIDA", "decisao": "DPO: Coordenadora de RH, a partir de 01/10/2026", "revisarEm": "2027-10-01"}); assert "Decision Log" in unq(loc), unq(loc)
-html = page("/command-center"); assert "Decisões pendentes da Direção (8)" in html and "decisão #" in html
+html = page("/command-center"); assert "Decisões pendentes da Direção (22)" in html and "decisão #" in html
 html = page("/governanca/decisoes"); assert "Nomear o DPO" in html and "Coordenadora de RH" in html; print("pendência decidida → Decision Log ok")
 # adiar + nova pendência
 html = page("/command-center"); aid = find_form_aid(html, "Decidir"); pid2 = re.search(r'name="id" value="(\d+)"', html[html.find("AI Owner"):]).group(1)

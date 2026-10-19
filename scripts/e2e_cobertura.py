@@ -67,16 +67,30 @@ cab = "professor;unidade;dia;inicio;fim;turma;disciplina"
 L = [f"Ana Matemática;Carandá;{DIAS[W]};07:00;07:50;5º ano A;Matemática", f"Ana Matemática;CAR;{W};08:00;08:50;5º ano B;Matemática",
      f"Beto Matemática;Carandá;{DIAS[W][:3]};07:00;07:50;4º ano A;Matemática", f"Beto Matemática;Carandá;{DIAS[W]};9:00;09:50;4º ano B;Matemática",
      f"Clara Português;Carandá;{DIAS[W]};10:00;10:50;3º ano A;Português", f"Eli Ciências;Carandá;{DIAS[W]};13:00;13:50;2º ano A;Ciências"]
-erro(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, *L, "Zé Ninguém;Carandá;Segunda;07:00;07:50;1º ano;Arte"])}, sess=CO), "nada foi importado")
+def importar(sess, linhas, ignorar=(), confirmar=True):
+    """v25: importação em 2 etapas — lê/valida e propõe o de-para; a coordenação confirma nome a nome (CRQ-TMP-V3-01)."""
+    loc = post("/cobertura/grade", aid_imp, {"csv": "\n".join(linhas)}, sess=sess)
+    if "erro=" in loc: return loc
+    m = re.search(r"/cobertura/grade/importar/(\d+)", loc); assert m, loc
+    hi = page(f"/cobertura/grade/importar/{m.group(1)}", sess=sess); aid_c = aid_of(hi, "Aplicar importação"); dados = {"batchId": m.group(1)}
+    for sel in re.finditer(r'<select[^>]*name="dp_(\d+)"[^>]*>(.*?)</select>', hi, flags=re.S):
+        i, ops = sel.group(1), sel.group(2)
+        sug = re.search(r'<option[^>]*selected=""[^>]*value="(\d+)"|<option[^>]*value="(\d+)"[^>]*selected=""', ops)
+        dados[f"dp_{i}"] = (sug.group(1) or sug.group(2)) if sug else ""
+        if confirmar: dados[f"ok_{i}"] = "1"
+    for i in ignorar: dados[f"dp_{i}"] = "0"
+    return post(f"/cobertura/grade/importar/{m.group(1)}", aid_c, dados, sess=sess)
+erro(importar(CO, [cab, *L, "Zé Ninguém;Carandá;Segunda;07:00;07:50;1º ano;Arte"]), "Confirme o de-para")
 erro(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, *L, f"Ana Matemática;Carandá;{DIAS[W]};07:30;08:20;5º ano C;Matemática"])}, sess=CO), "choque de horário")
+erro(importar(CO, [cab, *L], confirmar=False), "Confirme o de-para")
 erro(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, f"Davi Cultura;Cultura;{DIAS[W]};07:00;07:50;Jardim II;Recreação"])}, sess=CO), "fora do seu escopo")
 erro(post("/cobertura/grade", aid_imp, {"csv": "professor;dia\nAna;Segunda"}, sess=CO), "Cabeçalho")
 assert psql("SELECT count(*) FROM teacher_slots") == "0"
-okmsg(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, *L])}, sess=CO), "6 aula(s) importada(s)")
-okmsg(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, f"Davi Cultura;Cultura;{DIAS[W]};07:00;07:50;Jardim II;Recreação"])}, sess=GC), "1 aula(s)")
+okmsg(importar(CO, [cab, *L]), "6 aula(s) importada(s)")
+okmsg(importar(GC, [cab, f"Davi Cultura;Cultura;{DIAS[W]};07:00;07:50;Jardim II;Recreação"]), "1 aula(s)")
 assert psql("SELECT inicio || '|' || turno FROM teacher_slots WHERE turma='4º ano B'") == "09:00|Matutino" and psql("SELECT turno FROM teacher_slots WHERE turma='2º ano A'") == "Vespertino"
-erro(post("/cobertura/grade", aid_imp, {"csv": "\n".join([cab, L[0]])}, sess=CO), "choque com a aula já cadastrada")
-ok("importação tudo-ou-nada: professor desconhecido, choque no arquivo, unidade fora do escopo e cabeçalho incompleto barram tudo; 6 + 1 aulas; turno derivado do horário")
+erro(importar(CO, [cab, L[0]]), "choque com a aula já cadastrada")
+ok("importação tudo-ou-nada em 2 etapas: choque no arquivo, unidade fora do escopo e cabeçalho barram a leitura; professor sem par e de-para não confirmado barram a gravação; 6 + 1 aulas; turno derivado do horário")
 html = page("/cobertura/grade", sess=CO); assert "Ana Matemática" in html and "Davi Cultura" not in html; aid_sal = aid_of(html, "Incluir aula")
 erro(post("/cobertura/grade", aid_sal, {"employeeId": A, "unitId": CAR, "dia": W, "inicio": "07:20", "fim": "08:10", "turma": "X"}, sess=CO), "Choque de horário")
 erro(post("/cobertura/grade", aid_sal, {"employeeId": A, "unitId": CAR, "dia": W, "inicio": "11:00", "fim": "10:00", "turma": "X"}, sess=CO), "Horário inválido")

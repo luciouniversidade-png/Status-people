@@ -17,7 +17,7 @@ export default async function Chamados({ searchParams }: { searchParams: Promise
     ORDER BY (w.status = ANY(${ABERTAS})) DESC, (w.prioridade='URGENTE') DESC, w.sla_ate NULLS LAST, w.created_at DESC LIMIT 400`;
   const units = scope ? [] : await db.select().from(schema.units).orderBy(asc(schema.units.nome)); const agora = Date.now();
   return (
-    <Page title="Chamados e ordens de serviço" sub={meus ? "Seus chamados. Abra um novo ao lado e acompanhe a situação." : "Todos os chamados. Urgente = risco à segurança; o SLA vem da prioridade."} actions={can.operacoes(s) ? <Btn kind="ghost" href="/api/export/chamados">Exportar CSV</Btn> : undefined}>
+    <Page title="Chamados e ordens de serviço" sub={meus ? "Seus chamados. Abra um novo ao lado e acompanhe a situação." : "Todos os chamados. Urgente = risco à segurança; o SLA vem da prioridade."} actions={<><Btn kind="ghost" href="/operacoes/chamados/quadro">Ver em quadro</Btn>{can.operacoes(s) ? <Btn kind="ghost" href="/api/export/chamados">Exportar CSV</Btn> : null}</>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div>

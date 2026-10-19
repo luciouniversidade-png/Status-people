@@ -86,7 +86,8 @@ html = page("/governanca/controles"); assert "não conforme" in html and "18/09/
 ncid = re.search(r"#(\d+)", msg).group(1)
 aid = find_form_aid(html, "Tratar")
 loc = post("/governanca/controles", aid, {"id": ncid, "titulo": "Não conformidade em: Conferência semanal de reservas vencidas", "origem": "CONTROLE", "gravidade": 2, "status": "ENCERRADA", "causaRaiz": "sem rotina diária", "acaoCorretiva": "alerta no painel"}); assert "eficácia" in unq(loc), unq(loc)
-loc = post("/governanca/controles", aid, {"id": ncid, "titulo": "Não conformidade em: Conferência semanal de reservas vencidas", "origem": "CONTROLE", "gravidade": 2, "status": "ENCERRADA", "causaRaiz": "sem rotina diária", "acaoCorretiva": "alerta no painel", "acaoPreventiva": "POP-003 v3", "eficaciaVerificada": "1"}); assert "salva" in unq(loc), unq(loc)
+loc = post("/governanca/controles", aid, {"id": ncid, "titulo": "Não conformidade em: Conferência semanal de reservas vencidas", "origem": "CONTROLE", "gravidade": 2, "status": "ENCERRADA", "causaRaiz": "sem rotina diária", "acaoCorretiva": "alerta no painel", "acaoPreventiva": "POP-003 v3", "eficaciaVerificada": "1"}); assert "evidência de eficácia" in unq(loc), unq(loc); print("v24: NC não encerra sem evidência de eficácia ok")
+loc = post("/governanca/controles", aid, {"id": ncid, "titulo": "Não conformidade em: Conferência semanal de reservas vencidas", "origem": "CONTROLE", "gravidade": 2, "status": "ENCERRADA", "causaRaiz": "sem rotina diária", "acaoCorretiva": "alerta no painel", "acaoPreventiva": "POP-003 v3", "eficaciaVerificada": "1", "eficaciaEvidencia": "Quatro conferências semanais seguidas sem reserva vencida esquecida"}); assert "salva" in unq(loc), unq(loc)
 html = page("/governanca/controles?nc=ENCERRADA"); assert "Encerrada" in html; print("NC com causa raiz + eficácia ok")
 
 # ---- decisões

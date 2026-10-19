@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, assertEmployeeAccess } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings, hoje, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
+import { assertMesAberto } from "@/lib/folha";
 
 const voltar = (fd: FormData, fallback: string) => str(fd, "voltar") || fallback;
 const go = (back: string, k: "ok" | "erro", msg: string) => `${back}${back.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}#banco`;
@@ -23,6 +24,7 @@ export async function lancarHoras(fd: FormData) {
     const [e] = await db.select().from(schema.employees).where(eq(schema.employees.id, employeeId));
     if (!e) throw new Error("Colaborador não encontrado.");
     assertEmployeeAccess(s, e);
+    await assertMesAberto(employeeId, [data]); // v24: mês fechado não recebe lançamento (CRQ-TMP-V3-04)
     const cfg = await getSettings();
     const autoAprova = can.aprovar(s, cfg.alcadas.banco);
     const [r] = await db.insert(schema.hourEntries).values({ employeeId, data, tipo, minutos, descricao: strOrNull(fd, "descricao"), lancadoPor: s.id, status: autoAprova ? "APROVADO" : "PENDENTE", aprovadoPor: autoAprova ? s.id : null }).returning({ id: schema.hourEntries.id });
@@ -41,6 +43,7 @@ export async function decidirHoras(fd: FormData) {
     const [e] = await db.select().from(schema.employees).where(eq(schema.employees.id, r.employeeId));
     if (e) assertScope(s, e.unitId);
     assert(r.status === "PENDENTE", "Lançamento já decidido.");
+    await assertMesAberto(r.employeeId, [String(r.data)]);
     await db.update(schema.hourEntries).set({ status: decisao, aprovadoPor: s.id }).where(eq(schema.hourEntries.id, id));
     await audit(s, decisao === "APROVADO" ? "aprovar" : "rejeitar", "hour_entries", id, { status: r.status }, { status: decisao });
   } catch (e) { redirect(go(back, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -53,6 +56,7 @@ export async function excluirHoras(fd: FormData) {
     assert(can.editar(s));
     const [r] = await db.select().from(schema.hourEntries).where(eq(schema.hourEntries.id, id));
     if (!r) throw new Error("Lançamento não encontrado.");
+    await assertMesAberto(r.employeeId, [String(r.data)]);
     await db.delete(schema.hourEntries).where(eq(schema.hourEntries.id, id));
     await audit(s, "excluir", "hour_entries", id, r, null);
   } catch (e) { redirect(go(back, "erro", e instanceof Error ? e.message : "Erro")); }

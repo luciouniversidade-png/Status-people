@@ -99,6 +99,16 @@ for item in re.findall(r'name="itemId" value="(\d+)"', html):
     post(f"/processos/{pr}", aid, {"processId": pr, "itemId": item})
 html = page(f"/processos/{pr}"); assert "Reabrir item" in html
 aid = find_form_aid(html, "Ao concluir, o colaborador")
+# v24 · SST (T-101): o item "Exame admissional (ASO)" só conclui com o ASO apto registrado — sem ele a admissão não fecha
+loc = post(f"/processos/{pr}", aid, {"processId": pr}); assert "erro=" in loc and "ASO" in unq(loc), loc; print("v24: admissão bloqueada sem ASO admissional ok")
+html = page(f"/processos/{pr}"); assert "Conclui com o ASO admissional" in html and "registrar em Saúde e segurança" in html
+html = page("/sst?sit=SEM_ADMISSIONAL"); aid = find_form_aid(html, f'name="employeeId" value="{emp}"')
+loc = post("/sst", aid, {"employeeId": emp, "voltar": "/sst", "tipo": "ADMISSIONAL", "data": (date.today() - timedelta(days=1)).isoformat(), "resultado": "APTO"}); assert "ok=" in loc, unq(loc); print("ASO admissional registrado (sem dado clínico)")
+html = page(f"/processos/{pr}"); aid = find_form_aid(html, 'aria-label="Concluir item"')
+for item in re.findall(r'name="itemId" value="(\d+)"/><button[^>]*?aria-label="Concluir item"', html):
+    post(f"/processos/{pr}", aid, {"processId": pr, "itemId": item})
+html = page(f"/processos/{pr}"); assert 'aria-label="Concluir item"' not in html
+aid = find_form_aid(html, "Ao concluir, o colaborador")
 loc = post(f"/processos/{pr}", aid, {"processId": pr}); assert "ok=" in loc, loc
 html = page(f"/colaboradores/{emp}"); assert ">Ativo<" in html or "Em férias" in html; print("admission concluded -> ativo")
 
@@ -170,7 +180,7 @@ joao = re.search(r'<option value="(\d+)">João Import</option>', html).group(1)
 loc = post("/configuracoes", aid, {"nome": "João Import", "email": "joao@self", "role": "COLABORADOR", "employeeId": joao, "senha": "senha12345"}); assert "ok=" in loc, loc
 S3 = requests.Session(); S3.headers.update({"Origin": B}); html = S3.get(B + "/login").text; aid = action_ids(html)[0]
 loc = post("/login", aid, {"email": "joao@self", "senha": "senha12345"}, sess=S3)
-r = S3.get(B + "/", allow_redirects=False); assert r.status_code in (302, 303, 307) and r.headers["location"].endswith(f"/colaboradores/{joao}"), (r.status_code, r.headers.get("location")); print("self-service redirect ok")
+r = S3.get(B + "/", allow_redirects=False); assert r.status_code in (302, 303, 307) and r.headers["location"].endswith("/eu"), (r.status_code, r.headers.get("location")); print("self-service redirect ok")
 html = S3.get(B + f"/colaboradores/{joao}").text; assert "Nova solicitação" in html and ">Editar<" not in html and ">Desligar<" not in html and "Salário base" not in html
 assert S3.get(B + f"/colaboradores/{emp}", allow_redirects=False).status_code == 404
 assert S3.get(B + "/colaboradores", allow_redirects=False).status_code in (302, 303, 307)

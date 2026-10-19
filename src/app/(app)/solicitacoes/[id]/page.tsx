@@ -1,11 +1,12 @@
 import { notFound } from "next/navigation";
 import { requireSession } from "@/lib/auth";
 import { sql } from "@/db";
-import { Page, Card, Badge, Flash, Btn, Field, Textarea } from "@/components/ui";
+import { Page, Card, Badge, Flash, Btn, Field, Textarea, Input } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { fmtData, fmtDataHora, hoje } from "@/lib/utils";
 import { SOL_STATUS, SOL_TOM, podeDecidir, vePainel, fmtValorBr, type Campo, type EtapaSnap } from "@/lib/solicitacoes";
-import { decidirSolicitacao, reenviarSolicitacao, cancelarSolicitacao, comentarSolicitacao } from "../actions";
+import { decidirSolicitacao, reenviarSolicitacao, cancelarSolicitacao, comentarSolicitacao, registrarPagamento, desfazerPagamento, programarPagamento } from "../actions";
+import { excecoesDespesa, EXCECAO_ROTULO } from "@/lib/despesas";
 import { CamposForm, valorCampo } from "../_ui";
 import { Anexos } from "@/components/Anexos";
 
@@ -21,6 +22,11 @@ export default async function Solicitacao({ params, searchParams }: { params: Pr
   const eventos = await sql<{ tipo: string; texto: string | null; user_nome: string | null; created_at: string }[]>`SELECT tipo, texto, user_nome, created_at::text FROM request_events WHERE request_id=${r.id} ORDER BY id`;
   const decide = podeDecidir(s, r) && r.solicitante_user_id !== s.id; const dono = r.solicitante_user_id === s.id; const aberta = ["EM_APROVACAO", "DEVOLVIDA"].includes(r.status);
   const atraso = r.status === "EM_APROVACAO" && r.prazo_etapa && r.prazo_etapa < hoje();
+  const fin = ["FINANCEIRO", "DIRECAO"].includes(s.role); const comValor = r.valor !== null && Number(r.valor) > 0;
+  const excecoes = decide || (fin && r.status === "EM_APROVACAO") ? (await excecoesDespesa([r.id])).get(r.id) ?? [] : [];
+  const [pg] = await sql<{ pago_em: string | null; previsto: string | null; line_id: number | null; apelido: string | null; data: string | null; valor: number | null; por: string | null }[]>`SELECT r.pago_em::text, r.pagamento_previsto::text AS previsto, r.pagamento_line_id AS line_id, a.apelido, l.data::text, l.valor::float, u.nome AS por FROM requests r LEFT JOIN bank_lines l ON l.id=r.pagamento_line_id LEFT JOIN bank_accounts a ON a.id=l.bank_account_id LEFT JOIN users u ON u.id=r.pago_por WHERE r.id=${r.id}`;
+  const debitos = fin && comValor && r.status === "APROVADA" && !pg?.pago_em ? await sql<{ id: number; data: string; valor: number; descricao: string | null; apelido: string }[]>`SELECT l.id, l.data::text, l.valor::float, l.descricao, a.apelido FROM bank_lines l JOIN bank_accounts a ON a.id=l.bank_account_id
+    WHERE l.valor < 0 AND abs(l.valor) = ${Number(r.valor)} AND l.request_id IS NULL AND l.data >= ${r.concluida_em ? r.concluida_em.slice(0, 10) : r.created_at.slice(0, 10)}::date - 7 ORDER BY l.data LIMIT 20` : [];
   return (
     <Page title={r.titulo} sub={`${r.numero} · ${r.tipo} · ${r.solicitante_nome}${r.unidade ? ` · ${r.unidade}` : ""} · aberta ${fmtDataHora(r.created_at)}`} actions={<Btn kind="ghost" href="/solicitacoes">Solicitações</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
@@ -29,21 +35,33 @@ export default async function Solicitacao({ params, searchParams }: { params: Pr
           <form action={decidirSolicitacao} className="flex-1 sm:flex-none"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="decisao" value="APROVAR" /><Btn>Aprovar{r.valor !== null ? ` ${fmtValorBr(r.valor)}` : ""}</Btn></form>
           <Modal label="Devolver para ajuste" small={false} title="Devolver para ajuste"><form action={decidirSolicitacao} className="space-y-2"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="decisao" value="DEVOLVER" /><Field label="O que precisa ser ajustado"><Textarea name="obs" required /></Field><Btn small>Devolver</Btn></form></Modal>
           <Modal label="Rejeitar" kind="danger" small={false} title="Rejeitar"><form action={decidirSolicitacao} className="space-y-2"><input type="hidden" name="id" value={r.id} /><input type="hidden" name="decisao" value="REJEITAR" /><Field label="Motivo"><Textarea name="obs" required /></Field><Btn small danger>Rejeitar</Btn></form></Modal>
-        </div>{atraso && <p className="mt-2 text-xs text-aviso">Prazo desta etapa venceu em {fmtData(r.prazo_etapa)}.</p>}</Card>}
+        </div>{atraso && <p className="mt-2 text-xs text-aviso">Prazo desta etapa venceu em {fmtData(r.prazo_etapa)}.</p>}
+        {excecoes.length > 0 && <div className="mt-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-aviso"><p className="font-semibold">Exceção da política de despesas — decisão item a item (não entra no lote):</p><ul className="mt-1 list-disc pl-4">{excecoes.map(e => <li key={e.codigo}><b>{EXCECAO_ROTULO[e.codigo]}:</b> {e.texto}</li>)}</ul></div>}</Card>}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div className="space-y-4">
           <Card title="Pedido" actions={<Badge v={SOL_TOM[r.status]} label={SOL_STATUS[r.status]} />}>
             <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">{r.campos.map(c => <div key={c.id} className={c.tipo === "TEXTO_LONGO" ? "sm:col-span-2" : ""}><dt className="text-xs text-slate-500">{c.rotulo}</dt><dd className="whitespace-pre-wrap">{valorCampo(c, r.dados[c.id])}</dd></div>)}</dl>
-            {r.status === "APROVADA" && <p className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-ok">Aprovada em {fmtDataHora(r.concluida_em)}. {r.valor !== null ? "Siga com o financeiro para o pagamento (fora do ONE)." : ""}</p>}
+            {r.status === "APROVADA" && <p className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-2 text-sm text-ok">Aprovada em {fmtDataHora(r.concluida_em)}. {comValor ? (pg?.pago_em ? `Paga em ${fmtData(pg.pago_em)}.` : "O Financeiro registra o pagamento com o débito do extrato.") : ""}</p>}
           </Card>
           {dono && r.status === "DEVOLVIDA" && <Card title="Ajustar e reenviar" className="border-amber-300"><form action={reenviarSolicitacao} className="space-y-2"><input type="hidden" name="id" value={r.id} /><CamposForm campos={r.campos} dados={r.dados} /><Field label="O que mudou"><Textarea name="obs" className="min-h-[50px]" /></Field><Btn small>Reenviar</Btn></form></Card>}
           <Anexos entidade="request" id={r.id} voltar={`/solicitacoes/${r.id}`} titulo="Comprovantes e anexos" podeEnviar={dono || decide || ["DIRECAO", "RH"].includes(s.role)} />
           <Card title="Histórico">
-            <ul className="space-y-1.5 text-sm">{eventos.map((e, i) => <li key={i}><span className="text-xs text-slate-500">{fmtDataHora(e.created_at)} · {e.user_nome}</span> — <b>{e.tipo === "CRIADA" ? "Aberta" : e.tipo === "APROVADA" ? "Aprovou" : e.tipo === "REJEITADA" ? "Rejeitou" : e.tipo === "DEVOLVIDA" ? "Devolveu" : e.tipo === "REENVIADA" ? "Reenviou" : e.tipo === "CANCELADA" ? "Cancelou" : "Comentário"}</b>{e.texto ? `: ${e.texto}` : ""}</li>)}</ul>
+            <ul className="space-y-1.5 text-sm">{eventos.map((e, i) => <li key={i}><span className="text-xs text-slate-500">{fmtDataHora(e.created_at)} · {e.user_nome}</span> — <b>{e.tipo === "CRIADA" ? "Aberta" : e.tipo === "APROVADA" ? "Aprovou" : e.tipo === "REJEITADA" ? "Rejeitou" : e.tipo === "DEVOLVIDA" ? "Devolveu" : e.tipo === "REENVIADA" ? "Reenviou" : e.tipo === "CANCELADA" ? "Cancelou" : e.tipo === "PAGA" ? "Pagou" : "Comentário"}</b>{e.texto ? `: ${e.texto}` : ""}</li>)}</ul>
             <form action={comentarSolicitacao} className="mt-3 flex flex-wrap items-end gap-2 border-t border-line pt-3"><input type="hidden" name="id" value={r.id} /><Field label="Comentário" className="min-w-0 flex-1"><Textarea name="texto" className="min-h-[40px]" /></Field><Btn small kind="ghost">Comentar</Btn></form>
           </Card>
         </div>
         <div className="space-y-4">
+          {comValor && r.status === "APROVADA" && <Card title="Pagamento" actions={pg?.pago_em ? <Badge v="APROVADA" label="paga" /> : <Badge v="PENDENTE" label="a pagar" />}>
+            {pg?.pago_em ? <div className="space-y-2 text-sm"><p>Paga em <b>{fmtData(pg.pago_em)}</b>{pg.apelido ? <> com o débito de {fmtValorBr(Math.abs(pg.valor ?? 0))} da conta {pg.apelido} (conciliado)</> : ""}{pg.por ? ` · registrado por ${pg.por}` : ""}.</p>
+                {fin && <Modal label="Desfazer pagamento" title="Desfazer o pagamento"><form action={desfazerPagamento} className="space-y-2"><input type="hidden" name="id" value={r.id} /><Field label="Motivo"><Input name="motivo" required minLength={5} /></Field><Btn small>Desfazer</Btn></form></Modal>}</div>
+              : fin ? (debitos.length ? <form action={registrarPagamento} className="space-y-2"><input type="hidden" name="id" value={r.id} />
+                  <p className="text-xs text-slate-600">Escolha o débito do extrato que pagou esta despesa (mesmo valor, a partir de 7 dias antes da aprovação):</p>
+                  <div className="space-y-1">{debitos.map((d, i) => <label key={d.id} className="flex items-start gap-2 text-xs"><input type="radio" name="lineId" value={d.id} defaultChecked={i === 0} className="mt-0.5" /><span>{fmtData(d.data)} · {fmtValorBr(Math.abs(d.valor))} · {d.apelido}<span className="block text-[11px] text-slate-500">{d.descricao}</span></span></label>)}</div>
+                  <Btn small>Registrar pagamento</Btn></form>
+                : <p className="text-sm text-slate-600">Nenhum débito de {fmtValorBr(r.valor)} no extrato depois da aprovação. Importe o extrato da conta que pagou (Financeiro → Conciliação) e volte aqui.</p>)
+              : <p className="text-sm text-slate-600">{pg?.pago_em ? "" : `Aguardando o pagamento pelo Financeiro${pg?.previsto ? ` (programado para ${fmtData(pg.previsto)})` : ""}.`}</p>}
+            {fin && !pg?.pago_em && <form action={programarPagamento} className="mt-3 flex flex-wrap items-end gap-2 border-t border-line pt-3"><input type="hidden" name="id" value={r.id} /><Field label={pg?.previsto ? `Programado para ${fmtData(pg.previsto)} — mudar` : "Programar o pagamento (entra na projeção de caixa)"}><Input type="date" name="data" min={hoje()} defaultValue={pg?.previsto ?? ""} required /></Field><Btn small kind="ghost">Programar</Btn></form>}
+          </Card>}
           <Card title="Etapas de aprovação"><ol className="space-y-2">{r.etapas.map((e, i) => <li key={i} className={`rounded-md border p-2 text-sm ${i === r.etapa_atual && r.status === "EM_APROVACAO" ? "border-acao bg-sky-50" : "border-line"}`}>
             <div className="flex items-center justify-between gap-2"><b>{i + 1}. {e.nome}</b>{e.decisao ? <Badge v={e.decisao === "APROVADA" ? "APROVADA" : e.decisao === "REJEITADA" ? "REJEITADA" : "PENDENTE"} label={e.decisao === "APROVADA" ? "aprovada" : e.decisao === "REJEITADA" ? "rejeitada" : "devolvida"} /> : i === r.etapa_atual && r.status === "EM_APROVACAO" ? <Badge v="PENDENTE" label="aguardando" /> : null}</div>
             <div className="text-[11px] text-slate-500">{e.decisao ? `${e.porNome} · ${fmtDataHora(e.em)}${e.obs ? ` · ${e.obs}` : ""}` : `aprovadores: ${e.aprovadores.map(a => nomes.get(a) ?? `#${a}`).join(", ")}`}</div></li>)}</ol></Card>

@@ -20,7 +20,7 @@ export default async function Importar({ searchParams }: { searchParams: Promise
         <Card title="Como preparar a planilha">
           <ul className="space-y-2 text-sm text-slate-700">
             <li>Primeira linha = cabeçalho. Obrigatórios: <b>nome</b>, <b>unidade</b>, <b>admissao</b>.</li>
-            <li>Opcionais: cargo, empresa, vinculo (CLT, HORISTA, ESTAGIARIO, PJ, TEMPORARIO), email, telefone, jornada_min_dia, turno.</li>
+            <li>Opcionais: cargo, empresa, vinculo (CLT, HORISTA, ESTAGIARIO, PJ, TEMPORARIO), email, telefone, jornada_min_dia, turno, nivel (Júnior, Pleno, Sênior), gestor (nome do gestor direto), regime (docente) e ferias_quitadas_ate (períodos aquisitivos encerrados até essa data contam como quitados).</li>
             <li>Unidade aceita nome (Carandá, TV Morena I…) ou código (CAR, TVM1, TVM2, CUL).</li>
             <li>Cargo e empresa são casados pelo nome cadastrado em Configurações; se não bater, ficam em branco para você completar depois.</li>
             <li>Data em DD/MM/AAAA ou AAAA-MM-DD. Cabeçalho pode ter acento e maiúsculas (Admissão, E-mail, Vínculo…).</li>

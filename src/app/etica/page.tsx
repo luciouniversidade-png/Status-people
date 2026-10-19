@@ -19,7 +19,6 @@ export default async function CanalEtica({ searchParams }: { searchParams: Promi
         <div className="mb-2 text-xs tracking-wide text-slate-500">COLÉGIO STATUS · CANAL DE ÉTICA</div>
         <h1 className="text-xl font-semibold text-navy">Relate com segurança</h1>
         <p className="mt-2 text-sm text-slate-700">Use este canal para relatar assédio sexual ou moral, discriminação, violência, situações de risco a crianças e adolescentes, fraude ou outra conduta contrária às regras da escola. <b>Você pode relatar sem se identificar:</b> não pedimos login e não registramos seu endereço de rede. Um comitê de triagem analisa cada relato; quem é citado não tem acesso ao caso.</p>
-        <p className="mt-2 text-sm text-slate-700">Em situação de perigo imediato, ligue <b>190</b>. Suspeita de violência contra criança ou adolescente também pode ser comunicada ao <b>Disque 100</b>.</p>
         <p className="mt-2 text-xs"><a className="text-acao underline" href="/etica/acompanhar">Acompanhar um relato</a></p>
       </div>
       {sp.enviado ? <div className="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm sm:p-6"><h2 className="text-lg font-semibold text-ok">Relato recebido</h2>

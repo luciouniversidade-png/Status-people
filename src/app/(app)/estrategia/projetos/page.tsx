@@ -17,7 +17,7 @@ export default async function Projetos({ searchParams }: { searchParams: Promise
   const rows = filtro === "ATIVOS" ? pf.rows.filter(r => ["PLANEJADO", "EM_ANDAMENTO", "PAUSADO"].includes(r.status)) : filtro === "TODOS" ? pf.rows : pf.rows.filter(r => r.status === filtro);
   const gestao = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "FINANCEIRO", "OPERACOES", "COMERCIAL"].includes(s.role);
   return (
-    <Page title="Portfólio de projetos" sub="Cada projeto tem dono, prazo, marcos, riscos e um status report periódico com saúde (no rumo · atenção · em risco). Ligue ao objetivo que ele serve." actions={<><Btn kind="ghost" href="/api/export/projetos">Exportar CSV</Btn><Btn kind="ghost" href="/estrategia">Painel</Btn></>}>
+    <Page title="Portfólio de projetos" sub="Cada projeto tem dono, prazo, marcos, riscos e um status report periódico com saúde (no rumo · atenção · em risco). Ligue ao objetivo que ele serve." actions={<><Btn kind="ghost" href="/estrategia/cronograma">Cronograma (Gantt)</Btn><Btn kind="ghost" href="/api/export/projetos">Exportar CSV</Btn><Btn kind="ghost" href="/estrategia">Painel</Btn></>}>
       <SubNav atual="projetos" />
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className={`grid grid-cols-1 gap-4 ${gestao ? "lg:grid-cols-[minmax(0,1fr)_340px]" : ""} lg:items-start`}>

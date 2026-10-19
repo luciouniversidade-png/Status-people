@@ -6,6 +6,8 @@
 html { font-family: var(--font-plex); }
 body { @apply bg-mist text-ink antialiased; }
 table td, table th { font-variant-numeric: tabular-nums; }
+/* v24 · com o menu completo aberto no celular, o menu inferior sai da frente (o “Sair” e os últimos itens ficam tocáveis) */
+body:has(#menu-celular[open]) .menu-inferior { display: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 @media print {

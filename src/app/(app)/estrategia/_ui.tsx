@@ -6,12 +6,12 @@ import { fmtNum, fmtValor } from "@/lib/gestao-estrategica";
 /** Navegação interna da Estratégia (rolagem horizontal no celular). */
 const SECOES: [string, string, string][] = [
   ["painel", "/estrategia", "Painel"], ["identidade", "/estrategia/identidade", "Identidade"], ["mapa", "/estrategia/mapa", "Mapa estratégico"], ["indicadores", "/estrategia/indicadores", "Indicadores"],
-  ["okrs", "/estrategia/okrs", "OKRs"], ["projetos", "/estrategia/projetos", "Projetos"], ["acoes", "/estrategia/acoes", "Plano de ação"], ["rituais", "/estrategia/rituais", "Rituais"],
+  ["okrs", "/estrategia/okrs", "OKRs"], ["projetos", "/estrategia/projetos", "Projetos"], ["cronograma", "/estrategia/cronograma", "Cronograma"], ["acoes", "/estrategia/acoes", "Plano de ação"], ["quadro", "/estrategia/acoes/quadro", "Quadro de ações"], ["alinhamento", "/estrategia/alinhamento", "Alinhamento"], ["rituais", "/estrategia/rituais", "Rituais"],
   ["marketing", "/estrategia/marketing", "Marketing"], ["relatorio", "/estrategia/relatorio", "Relatório executivo"], ["assistente", "/estrategia/assistente", "Assistente IA"],
 ];
 export function SubNav({ atual }: { atual: string }) {
   return (
-    <nav aria-label="Seções da estratégia" className="-mx-1 mb-4 flex gap-1 overflow-x-auto px-1 pb-1 print:hidden [-webkit-overflow-scrolling:touch]">
+    <nav aria-label="Seções da estratégia" className="-mx-1 mb-4 flex gap-1 overflow-x-auto px-1 pb-1 print:hidden [-webkit-overflow-scrolling:touch] lg:flex-wrap lg:overflow-visible">
       {SECOES.map(([k, href, nome]) => <Link key={k} href={href} className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium ${k === atual ? "border-acao bg-acao text-white" : "border-line bg-white text-navy hover:bg-mist"}`}>{nome}</Link>)}
     </nav>
   );

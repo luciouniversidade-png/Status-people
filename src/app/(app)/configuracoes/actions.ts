@@ -12,8 +12,9 @@ const erro = (e: unknown, tab = "") => `/configuracoes?erro=${erroMsg(e)}${tab ?
 export async function salvarUnidade(fd: FormData) {
   const s = await requireSession();
   try { assert(can.configurar(s)); const id = int(fd, "id"); const nome = str(fd, "nome"); const codigo = str(fd, "codigo").toUpperCase(); if (!nome || !codigo) throw new Error("Informe nome e código.");
-    if (id) { await db.update(schema.units).set({ nome, codigo }).where(eq(schema.units.id, id)); await audit(s, "editar", "units", id, null, { nome, codigo }); }
-    else { const [r] = await db.insert(schema.units).values({ nome, codigo }).returning({ id: schema.units.id }); await audit(s, "criar", "units", r.id, null, { nome, codigo }); }
+    const companyId = int(fd, "companyId"); // v24: entidade (CNPJ) da unidade — base do Consolidado e das visões por entidade
+    if (id) { const [antes] = await db.select().from(schema.units).where(eq(schema.units.id, id)); await db.update(schema.units).set({ nome, codigo, companyId }).where(eq(schema.units.id, id)); await audit(s, "editar", "units", id, antes ?? null, { nome, codigo, companyId }); }
+    else { const [r] = await db.insert(schema.units).values({ nome, codigo, companyId }).returning({ id: schema.units.id }); await audit(s, "criar", "units", r.id, null, { nome, codigo, companyId }); }
   } catch (e) { redirect(erro(e, "unidades")); }
   redirect(ok("Unidade salva.", "unidades"));
 }
@@ -134,3 +135,48 @@ export async function redefinir2FA(fd: FormData) {
   catch (e) { redirect(`/configuracoes?erro=${encodeURIComponent(e instanceof Error ? e.message : "Erro")}#usuarios`); }
   redirect(`/configuracoes?ok=${encodeURIComponent("Verificação em duas etapas redefinida; o usuário configura de novo no próximo acesso.")}#usuarios`);
 }
+
+/** Parâmetros do ONE Insights (v23): farol dos indicadores, resumo semanal, lembrete de pendências, prazos da central de fluxos e cenários do caixa. */
+export async function salvarParamInsights(fd: FormData) {
+  const s = await requireSession();
+  try {
+    assert(can.configurar(s), "Só Direção e RH configuram."); const cfg = await getSettings();
+    const num = (k: string, min: number, max: number, rotulo: string) => { const v = Number(str(fd, k).replace(",", ".")); if (!Number.isFinite(v) || v < min || v > max) throw new Error(`${rotulo}: use um número entre ${min} e ${max}.`); return v; };
+    const insights = { ...cfg.insights, toleranciaPct: num("toleranciaPct", 1, 50, "Tolerância do farol"), resumoSemanal: str(fd, "resumoSemanal") === "1", lembretePendencias: str(fd, "lembretePendencias") === "1" };
+    const fluxos = { ...cfg.fluxos, riscoPct: Math.round(num("riscoPct", 5, 90, "Em risco")), prazoDecisaoDias: Math.round(num("prazoDecisaoDias", 1, 30, "Prazo para decidir")), prazoFeriasDias: Math.round(num("prazoFeriasDias", 1, 30, "Prazo para aprovar férias")) };
+    const pess = num("cenarioPessimistaPct", 0, 100, "Cenário pessimista"), otim = num("cenarioOtimistaPct", 0, 100, "Cenário otimista");
+    if (pess > otim) throw new Error("O cenário pessimista não pode passar do otimista.");
+    const fpa = { ...cfg.fpa, cenarioPessimistaPct: pess, cenarioOtimistaPct: otim };
+    await sql.begin(async tx => {
+      for (const [key, value] of [["insights", insights], ["fluxos", fluxos], ["fpa", fpa]] as const) await tx`INSERT INTO settings (key, value) VALUES (${key}, ${JSON.stringify(value)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
+    });
+    await audit(s, "editar", "settings", null, { insights: cfg.insights, fluxos: cfg.fluxos, fpa: cfg.fpa }, { insights, fluxos, fpa });
+  } catch (e) { redirect(erro(e, "insights")); }
+  redirect(ok("Parâmetros do Insights salvos.", "insights"));
+}
+
+/**
+ * v24.1 · carga inicial: cria de uma vez o acesso de autoatendimento (perfil Colaborador) de quem tem e-mail válido na ficha
+ * e ainda não tem usuário. A senha é aleatória e ninguém a conhece: a pessoa entra por “Esqueci minha senha” (com o envio de
+ * e-mail configurado) ou recebe do RH uma senha temporária — nos dois casos troca no primeiro acesso.
+ */
+export async function criarAcessosAutoatendimento(fd: FormData) {
+  const s = await requireSession(); let msg = "";
+  try {
+    assert(can.configurar(s)); const unitId = int(fd, "unitId");
+    const emps = await sql<{ id: number; nome: string; email: string | null; unit_id: number }[]>`SELECT e.id, e.nome, lower(trim(e.email)) AS email, e.unit_id FROM employees e WHERE e.situacao IN ('ATIVO','EM_ADMISSAO') AND (${unitId ?? null}::int IS NULL OR e.unit_id=${unitId ?? null}::int) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id) ORDER BY e.nome`;
+    const { randomBytes } = await import("crypto");
+    let criados = 0; const semEmail: string[] = []; const emUso: string[] = [];
+    for (const e of emps) {
+      if (!e.email || !/^[^@\s:]+@[^@\s:]+\.[^@\s:]+$/.test(e.email)) { semEmail.push(e.nome); continue; }
+      const [ja] = await sql<{ id: number }[]>`SELECT id FROM users WHERE email=${e.email}`; if (ja) { emUso.push(e.nome); continue; }
+      await db.insert(schema.users).values({ email: e.email, nome: e.nome, role: "COLABORADOR", unitId: e.unit_id, employeeId: e.id, ativo: true, senhaHash: await bcrypt.hash(randomBytes(24).toString("hex"), 10), trocarSenha: true });
+      criados++;
+    }
+    await audit(s, "criar acessos de autoatendimento em lote", "users", null, null, { criados, semEmail: semEmail.length, emailEmUso: emUso.length, unitId });
+    const lista = (xs: string[]) => `${xs.slice(0, 8).join(", ")}${xs.length > 8 ? "…" : ""}`;
+    msg = `${criados} acesso(s) de autoatendimento criado(s).` + (semEmail.length ? ` Sem e-mail válido na ficha (${semEmail.length}): ${lista(semEmail)}.` : "") + (emUso.length ? ` E-mail já usado por outro acesso (${emUso.length}): ${lista(emUso)}.` : "") + (criados ? " Para entrar, cada pessoa usa “Esqueci minha senha” ou recebe do RH uma senha temporária." : "");
+  } catch (e) { redirect(erro(e, "usuarios")); }
+  redirect(ok(msg, "usuarios"));
+}
+

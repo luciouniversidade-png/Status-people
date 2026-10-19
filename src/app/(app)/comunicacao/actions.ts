@@ -6,21 +6,50 @@ import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth"
 import { audit, str, strOrNull, int, getSettings } from "@/lib/utils";
 import { foneWa, enviarWhatsApp, preencher, notificar } from "@/lib/comunicacao";
 import { enviarEmail } from "@/lib/notify";
+import { alvoComunicado, aprovadoresMassa, emHorarioComercial, proximaJanela, fmtJanela, dispararComunicado } from "@/lib/massa";
 
 const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
 const GESTAO = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES"];
 
 // ---------- Comunicados internos ----------
 export async function publicarComunicado(fd: FormData) {
-  const s = await requireSession(); const id = int(fd, "id"); const b = "/comunicacao/comunicados";
+  const s = await requireSession(); const id = int(fd, "id"); const b = "/comunicacao/comunicados"; let msg = "Comunicado publicado.";
   try { assert(["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role), "Comunicados são publicados por Direção, RH e diretores."); const titulo = str(fd, "titulo"); const texto = str(fd, "texto"); if (!titulo || !texto) throw new Error("Informe título e texto.");
     const publico = str(fd, "publico") || "TODOS"; const unitId = publico === "UNIDADE" ? (int(fd, "unitId") ?? scopeUnit(s)) : null; if (s.role === "DIRETOR_UNIDADE" && (publico !== "UNIDADE" || unitId !== s.unitId)) throw new Error("Diretor publica só para a própria unidade.");
     const d = { titulo, texto, publico, unitId, role: publico === "PERFIL" ? strOrNull(fd, "role") : null, requerCiencia: str(fd, "requerCiencia") === "1", prazoCiencia: strOrNull(fd, "prazoCiencia"), fixado: str(fd, "fixado") === "1", expiraEm: strOrNull(fd, "expiraEm"), autorUserId: s.id, autorNome: s.nome };
-    let cid = id ?? 0; if (id) await db.update(schema.announcements).set(d).where(eq(schema.announcements.id, id)); else { const [r] = await db.insert(schema.announcements).values(d).returning({ id: schema.announcements.id }); cid = r.id;
-      const alvo = await sql<{ id: number }[]>`SELECT id FROM users WHERE ativo AND role <> 'LEITURA' ${publico === "UNIDADE" ? sql`AND (unit_id=${unitId} OR (unit_id IS NULL AND role IN ('DIRECAO','RH')))` : publico === "PERFIL" ? sql`AND role=${d.role}` : sql``}`; await notificar(alvo.map(x => x.id), `Comunicado: ${titulo}`, d.requerCiencia ? "Requer sua ciência." : null, `/comunicacao/comunicados#c${cid}`, d.requerCiencia ? "ACAO" : "INFO"); }
-    await audit(s, id ? "editar comunicado" : "publicar comunicado", "announcements", cid, null, { titulo, publico });
+    // v25 · CRQ-COM-V3-01: para muita gente, é comunicação em massa — só sai com um segundo aprovador e em horário comercial
+    const cfg = await getSettings(); const alvo = await alvoComunicado(publico, unitId, d.role); const massa = alvo.length >= Number(cfg.comunicacao.massaMinDestinatarios ?? 20);
+    let cid = id ?? 0;
+    if (id) { const [old] = await sql<{ status: string; autor_user_id: number | null }[]>`SELECT status, autor_user_id FROM announcements WHERE id=${id}`; if (!old) throw new Error("Comunicado não encontrado."); assert(old.autor_user_id === s.id || can.editar(s), "Só o autor, o RH ou a Direção editam.");
+      await db.update(schema.announcements).set(d).where(eq(schema.announcements.id, id)); }
+    else {
+      const [r] = await db.insert(schema.announcements).values({ ...d, status: massa ? "AGUARDANDO_APROVACAO" : "PUBLICADO", destinatarios: alvo.length, disparadoEm: massa ? null : new Date() }).returning({ id: schema.announcements.id }); cid = r.id;
+      if (massa) { const ap = await aprovadoresMassa(cfg, s.id); assert(ap.length > 0, "Comunicação em massa precisa de um segundo aprovador (Direção ou RH) com acesso ativo — cadastre antes de publicar.");
+        await notificar(ap, "Comunicado em massa aguardando aprovação", `${alvo.length} destinatário(s) · ${titulo}`, `/comunicacao/comunicados#c${cid}`, "ACAO"); msg = `Comunicado para ${alvo.length} pessoas: é comunicação em massa — enviado para aprovação de um segundo responsável (Direção ou RH).`; }
+      else await notificar(alvo, `Comunicado: ${titulo}`, d.requerCiencia ? "Requer sua ciência." : null, `/comunicacao/comunicados#c${cid}`, d.requerCiencia ? "ACAO" : "INFO");
+    }
+    await audit(s, id ? "editar comunicado" : massa ? "submeter comunicado em massa" : "publicar comunicado", "announcements", cid, null, { titulo, publico, destinatarios: alvo.length, massa });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
-  redirect(go(b, "ok", "Comunicado publicado."));
+  redirect(go(b, "ok", msg));
+}
+/** Segundo humano aprova (ou rejeita) o comunicado em massa; fora do horário comercial o disparo fica agendado. */
+export async function decidirComunicado(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = "/comunicacao/comunicados"; let msg = "";
+  try {
+    const cfg = await getSettings(); assert((cfg.comunicacao.aprovadoresMassa as string[]).includes(s.role), "Aprovação de comunicação em massa: Direção ou RH.");
+    const [a] = await sql<{ status: string; autor_user_id: number | null; titulo: string; destinatarios: number | null }[]>`SELECT status, autor_user_id, titulo, destinatarios FROM announcements WHERE id=${id}`; assert(!!a, "Comunicado não encontrado.");
+    assert(a.status === "AGUARDANDO_APROVACAO", "Este comunicado não aguarda aprovação."); assert(a.autor_user_id !== s.id, "Quem escreveu não aprova o próprio comunicado em massa.");
+    const decisao = str(fd, "decisao");
+    if (decisao === "REJEITAR") { const motivo = str(fd, "motivo"); assert(motivo.length >= 5, "Explique o motivo da rejeição.");
+      await sql`UPDATE announcements SET status='REJEITADO', aprovado_por=${s.id}, aprovado_em=now(), motivo_rejeicao=${motivo} WHERE id=${id}`; if (a.autor_user_id) await notificar([a.autor_user_id], `Comunicado não aprovado: ${a.titulo}`, motivo, `/comunicacao/comunicados#c${id}`, "INFO"); msg = "Comunicado rejeitado; o autor foi avisado."; }
+    else if (decisao === "APROVAR") {
+      await sql`UPDATE announcements SET status='APROVADO', aprovado_por=${s.id}, aprovado_em=now() WHERE id=${id}`;
+      if (emHorarioComercial(cfg)) { await dispararComunicado(id); msg = `Aprovado e publicado para ${a.destinatarios ?? 0} pessoa(s).`; }
+      else { const j = proximaJanela(cfg); await sql`UPDATE announcements SET status='AGENDADO', disparo_em=${j.toISOString()}::timestamptz WHERE id=${id}`; msg = `Aprovado. Fora do horário comercial: publica ${fmtJanela(j)}.`; }
+    } else throw new Error("Decisão inválida.");
+    await audit(s, decisao === "APROVAR" ? "aprovar comunicado em massa" : "rejeitar comunicado em massa", "announcements", id, { status: a.status }, { decisao });
+  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
+  redirect(go(b, "ok", msg));
 }
 export async function cienciaComunicado(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id"));
