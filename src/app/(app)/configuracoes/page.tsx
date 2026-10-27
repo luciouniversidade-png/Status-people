@@ -14,6 +14,8 @@ import { salvarParamAnalytics } from "../talentos/actions";
 import { salvarParamEstrategia } from "../estrategia/gestao-actions";
 import { ParametrosV24 } from "./_v24";
 import { ParametrosV25 } from "./_v25";
+import { ParametrosV27 } from "./_v27";
+import { ParametrosV28 } from "./_v28";
 
 export const dynamic = "force-dynamic";
 const ROLES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES", "LEITURA", "COLABORADOR"];
@@ -187,13 +189,16 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
             <div className="text-sm font-semibold text-navy">Caixa projetado — recebimento esperado</div>
             <Field label="Cenário pessimista (%)"><Input name="cenarioPessimistaPct" type="number" min={0} max={100} defaultValue={Number(cfg.fpa?.cenarioPessimistaPct ?? 85)} /></Field>
             <Field label="Cenário otimista (%)"><Input name="cenarioOtimistaPct" type="number" min={0} max={100} defaultValue={Number(cfg.fpa?.cenarioOtimistaPct ?? 100)} /></Field>
-            <p className="text-xs text-slate-500">A faixa do caixa projetado vai do pessimista ao otimista sobre o que está previsto para entrar.</p>
+            <Field label="Reserva mínima de caixa da rede (R$)" hint="0 = só o alerta de saldo negativo"><Input name="reservaMinima" type="number" min={0} step={1000} defaultValue={Number(cfg.fpa?.reservaMinima ?? 0)} /></Field>
+            <p className="text-xs text-slate-500">A faixa do caixa projetado vai do pessimista ao otimista sobre o que está previsto para entrar. Abaixo da reserva no cenário pessimista, o caixa projetado e a central de alertas avisam.</p>
           </div>
           <div className="lg:col-span-3"><Btn>Salvar parâmetros do Insights</Btn></div>
         </form>
       </Card>
       <ParametrosV24 />
       <ParametrosV25 />
+      <ParametrosV27 />
+      <ParametrosV28 />
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
         <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div><div className="mb-1 text-sm font-semibold text-navy">Pesos (somam até 100)</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.pesos).map(([k, v]) => <Field key={k} label={k}><Input name={`peso_${k}`} type="number" min={0} max={40} defaultValue={v as number} /></Field>)}</div></div>

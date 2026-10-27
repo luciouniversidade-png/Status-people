@@ -35,6 +35,8 @@ with sync_playwright() as pw:
     msg = clicar_e_esperar(pg, pg.locator("main").get_by_role("button", name="Abrir", exact=True))
     ok("erro=" not in msg and "aberta" in msg.lower(), f"Abrir pesquisa → {msg[:80]}")
     enc = pg.locator("main").get_by_role("button", name=re.compile("^Encerrar"))
+    try: enc.first.wait_for(state="visible", timeout=10000)  # a página recarrega depois do redirect (?ok=): espera o botão em vez de contar na hora
+    except Exception: pass
     if enc.count():
         msg = clicar_e_esperar(pg, enc.first); ok("erro=" not in msg and "encerrada" in msg.lower(), f"Encerrar pesquisa → {msg[:80]}")
     else: ok(False, "botão Encerrar não apareceu depois de abrir")

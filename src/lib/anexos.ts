@@ -7,6 +7,8 @@ export const ENTIDADES: Record<string, { tabela: string; unidade: string | null 
   // v22
   contract: { tabela: "contracts", unidade: "unit_id" }, license: { tabela: "licenses", unidade: "unit_id" }, request: { tabela: "requests", unidade: "unit_id" }, emergency_event: { tabela: "emergency_events", unidade: "unit_id" },
   privacy_request: { tabela: "privacy_requests", unidade: null }, privacy_incident: { tabela: "privacy_incidents", unidade: "unit_id" }, ethics_report: { tabela: "ethics_reports", unidade: null },
+  // v27 · contas a pagar (boleto, nota fiscal, comprovante)
+  payable: { tabela: "payables", unidade: "unit_id" },
   // v24
   payroll_cycle: { tabela: "payroll_cycles", unidade: null }, cash_entry: { tabela: "cash_entries", unidade: "unit_id" }, obligation: { tabela: "obligations", unidade: "unit_id" }, fiscal_case: { tabela: "fiscal_cases", unidade: null },
   timesheet_day: { tabela: "timesheet_days", unidade: null }, candidate_doc: { tabela: "candidate_doc_requests", unidade: null }, sst_exam: { tabela: "sst_exams", unidade: null }, sst_incident: { tabela: "sst_incidents", unidade: "unit_id" }, audit: { tabela: "audits", unidade: "unit_id" }, nonconformity: { tabela: "nonconformities", unidade: "unit_id" },
@@ -41,6 +43,7 @@ export async function acessoAnexoRestrito(s: Session, entidade: string, id: numb
     return false;
   }
   // v24 · documento de um lançamento de caixa (drill da DRE até o documento): quem vê o financeiro vê; anexa Financeiro/Direção
+  if (entidade === "payable") return modo === "ver" ? (["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role) ? null : false) : (["DIRECAO", "FINANCEIRO"].includes(s.role) ? null : false);
   if (entidade === "cash_entry") return modo === "ver" ? (["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"].includes(s.role) ? null : false) : (["DIRECAO", "FINANCEIRO"].includes(s.role) ? null : false);
   // v24 · obrigações e fiscalizações: Financeiro e Direção (RH também, para as guias da folha)
   if (entidade === "obligation" || entidade === "fiscal_case") return (modo === "ver" ? ["FINANCEIRO", "DIRECAO", "RH", "LEITURA"] : ["FINANCEIRO", "DIRECAO"]).includes(s.role) ? true : false;

@@ -29,13 +29,16 @@ export async function resultadosPesquisa(surveyId: number, minimo: number, pergu
   const units = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM units ORDER BY nome`;
   const escala = perguntas.filter(q => q.tipo === "ESCALA"); const enpsQ = perguntas.find(q => q.tipo === "ENPS");
   const media = (vals: number[]) => vals.length ? Math.round(10 * vals.reduce((a, b) => a + b, 0) / vals.length) / 10 : null;
-  const geral = escala.map(q => { const v = rows.map(r => Number(r.respostas[q.id])).filter(n => n >= 1); return { q, n: v.length, media: v.length >= minimo ? media(v) : null, favoravel: v.length >= minimo ? Math.round(100 * v.filter(n => n >= 4).length / v.length) : null }; });
+  const geral = escala.map(q => { const v = rows.map(r => Number(r.respostas[q.id])).filter(n => n >= 1); return { q, n: v.length, media: v.length >= minimo ? media(v) : null, favoravel: v.length >= minimo ? Math.round(100 * v.filter(n => n >= 4).length / v.length) : null, neutro: v.length >= minimo ? Math.round(100 * v.filter(n => n === 3).length / v.length) : null, desfavoravel: v.length >= minimo ? Math.round(100 * v.filter(n => n <= 2).length / v.length) : null }; });
+  // v27 · favorável / neutro / desfavorável por dimensão (todas as perguntas da dimensão juntas)
+  const porDimensao = [...new Set(escala.map(q => q.dimensao))].map(d => { const v = rows.flatMap(r => escala.filter(q => q.dimensao === d).map(q => Number(r.respostas[q.id]))).filter(n => n >= 1); const ok = rows.length >= minimo && v.length > 0;
+    return { dimensao: d, n: v.length, favoravel: ok ? Math.round(100 * v.filter(n => n >= 4).length / v.length) : null, neutro: ok ? Math.round(100 * v.filter(n => n === 3).length / v.length) : null, desfavoravel: ok ? Math.round(100 * v.filter(n => n <= 2).length / v.length) : null }; });
   const enpsVals = enpsQ ? rows.map(r => Number(r.respostas[enpsQ.id])).filter(n => n >= 0 && n <= 10 && !Number.isNaN(n)) : [];
   const enps = enpsVals.length >= minimo ? enpsScore(enpsVals) : null;
   const heat = units.map(u => { const rs = rows.filter(r => r.unit_id === u.id); return { unidade: u.nome, n: rs.length, celulas: escala.map(q => { const v = rs.map(r => Number(r.respostas[q.id])).filter(n => n >= 1); return v.length >= minimo ? media(v) : null; }), enps: enpsQ ? (() => { const v = rs.map(r => Number(r.respostas[enpsQ.id])).filter(n => n >= 0 && n <= 10 && !Number.isNaN(n)); return v.length >= minimo ? enpsScore(v) : null; })() : null }; }).filter(h => h.n > 0);
   const semUnidade = rows.filter(r => !r.unit_id).length;
   const comentarios = rows.map(r => r.comentario).filter((c): c is string => !!c && c.trim().length > 0);
-  return { total: rows.length, geral, enps, enpsN: enpsVals.length, heat, semUnidade, comentarios: rows.length >= minimo ? comentarios : [], comentariosOcultos: rows.length < minimo ? comentarios.length : 0 };
+  return { total: rows.length, geral, porDimensao, enps, enpsN: enpsVals.length, heat, semUnidade, comentarios: rows.length >= minimo ? comentarios : [], comentariosOcultos: rows.length < minimo ? comentarios.length : 0 };
 }
 
 /** Matriz de treinamento: para cada colaborador ativo, cursos exigidos (obrigatórios para todos / cargo / regime) e situação. */

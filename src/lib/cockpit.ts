@@ -137,7 +137,16 @@ export async function tesouraria(ctx: Contexto, saldo: number | null) {
     projecao = { saidas30: ps.reduce((a, p) => a + (p.marcos[0]?.saidas ?? 0), 0), saidas60: ps.reduce((a, p) => a + (p.marcos[1]?.saidas ?? 0), 0), entradas30: ps.reduce((a, p) => a + (p.marcos[0]?.entradas ?? 0), 0), menor: ps.length === 1 ? ps[0].menor : null };
   } catch { projecao = null; }
   const mediaDia = sai?.v ?? null;
-  return { mediaSaidasDia: mediaDia, coberturaDias: saldo !== null && mediaDia ? saldo / mediaDia : null, pmrDias: pmr?.n ? pmr.v : null, pmrBase: pmr?.n ?? 0, projecao };
+  // v27 · contas a pagar como fonte: parcelas aprovadas a vencer em 30 dias e vencidas sem baixa (na rede, também as corporativas)
+  let contasPagar: { n30: number; v30: number; vencN: number; vencV: number } | null = null;
+  try {
+    const [cp] = await sql<{ n30: number; v30: number; venc_n: number; venc_v: number }[]>`SELECT count(*) FILTER (WHERE i.vencimento >= ${h}::date AND i.vencimento <= ${addDays(h, 30)}::date)::int AS n30,
+        coalesce(sum(i.valor) FILTER (WHERE i.vencimento >= ${h}::date AND i.vencimento <= ${addDays(h, 30)}::date), 0)::float AS v30,
+        count(*) FILTER (WHERE i.vencimento < ${h}::date)::int AS venc_n, coalesce(sum(i.valor) FILTER (WHERE i.vencimento < ${h}::date), 0)::float AS venc_v
+      FROM payable_installments i JOIN payables p ON p.id=i.payable_id WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND (p.unit_id = ANY(${units}) ${ctx.unitIds === null ? sql`OR p.unit_id IS NULL` : sql``})`;
+    contasPagar = { n30: cp.n30, v30: cp.v30, vencN: cp.venc_n, vencV: cp.venc_v };
+  } catch { contasPagar = null; /* banco anterior à v27 */ }
+  return { mediaSaidasDia: mediaDia, coberturaDias: saldo !== null && mediaDia ? saldo / mediaDia : null, pmrDias: pmr?.n ? pmr.v : null, pmrBase: pmr?.n ?? 0, projecao, contasPagar };
 }
 
 /** Maiores devedores (agrupados por aluno e responsável) e maiores despesas do mês — as listas de ação do cockpit. */

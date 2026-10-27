@@ -26,7 +26,7 @@ export default async function Planilha({ searchParams }: { searchParams: Promise
   const fmtCampo = (v: number | null) => v === null ? "" : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const nomeU = units.find(u => u.id === unitId)?.nome ?? "";
   return (
-    <Page title={`Orçamento mês a mês ${ano}`} sub={`${nomeU}. Cada célula é o valor do mês; vazia, vale o valor mensal fixo (cinza). Valores no padrão brasileiro (12.500,00).`} actions={<Btn kind="ghost" href={`/financeiro/orcamento?ano=${ano}&unidade=${unitId}`}>Orçado × realizado</Btn>}>
+    <Page title={`Orçamento mês a mês ${ano}`} sub={`${nomeU}. Cada célula é o valor do mês; vazia, vale o valor mensal fixo (cinza). Valores no padrão brasileiro (12.500,00).`} actions={<><Btn kind="ghost" href={`/financeiro/orcamento?ano=${ano}&unidade=${unitId}`}>Orçado × realizado</Btn><Btn kind="ghost" href={`/financeiro/orcamento/historico?ano=${ano}&unidade=${unitId}`}>Pelo histórico</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <form className="mb-4 flex flex-wrap items-end gap-2">{!escopo && <Field label="Unidade"><Select name="unidade" defaultValue={unitId}>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>}<Field label="Ano"><Select name="ano" defaultValue={ano}>{[anoAtual + 1, anoAtual, anoAtual - 1].map(a => <option key={a} value={a}>{a}</option>)}</Select></Field><Btn kind="ghost">Ver</Btn></form>
       <Card title={`Criar ${ano} a partir de ${ano - 1}`} className="mb-4">

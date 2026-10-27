@@ -18,6 +18,8 @@ import { radarFamilias } from "@/lib/radar-familia";
 import { exportarV22 } from "@/lib/export-v22";
 import { exportarV23 } from "@/lib/export-v23";
 import { exportarV25 } from "@/lib/export-v25";
+import { exportarV27 } from "@/lib/export-v27";
+import { exportarV28 } from "@/lib/export-v28";
 import { getSettings, ENR_STATUS } from "@/lib/utils";
 import { calcularRevisao } from "@/lib/avaliacao-server";
 import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PADRAO, type Criterio, type Memoria, type Notas, type Faixas } from "@/lib/avaliacao";
@@ -157,7 +159,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
     rows = [[`Ciclo: ${c.nome} · cálculo pelo motor oficial (pendências e não observados nunca viram zero)`], cab, ...linhas];
   } else {
     const url = new URL(req.url);
-    const v22 = (await exportarV22(tipo, s, u, url)) ?? (await exportarV23(tipo, s, u, url)) ?? (await exportarV25(tipo, s, u, url));
+    const v22 = (await exportarV22(tipo, s, u, url)) ?? (await exportarV23(tipo, s, u, url)) ?? (await exportarV25(tipo, s, u, url)) ?? (await exportarV27(tipo, s, u, url)) ?? (await exportarV28(tipo, s, u, url));
     if (v22 === "negado") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
     if (!v22) return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
     rows = v22;

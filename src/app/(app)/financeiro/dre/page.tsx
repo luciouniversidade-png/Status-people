@@ -33,7 +33,7 @@ export default async function Dre({ searchParams }: { searchParams: Promise<Reco
   const pessoalFontes = new Set(cols.map(c => dre.linha("PESSOAL", c.chave).fonte).filter(Boolean));
   return (
     <Page title="DRE gerencial" sub="Demonstração em linhas canônicas × unidade, entidade (com Consolidado) ou mês, nos modos realizado, orçado, Δ, AH e AV. Clique em qualquer valor para ver os lançamentos."
-      actions={<><a className="inline-flex items-center rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-navy hover:bg-mist" href={`/api/financeiro/dre?${qs({})}`}>Exportar CSV</a><PrintButton /></>}>
+      actions={<>{["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role) && <Btn kind="ghost" href={`/financeiro/rateio?ctx_p=${ctx.periodo}`}>Resultado por unidade (rateio)</Btn>}<a className="inline-flex items-center rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-navy hover:bg-mist" href={`/api/financeiro/dre?${qs({})}`}>Exportar CSV</a><PrintButton /></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <BarraContexto ctx={ctx} voltar={`/financeiro/dre?dim=${dim}&visao=${visao}&modo=${modo}`} />
       <CarimboContexto ctx={ctx} extra={`${MODOS.find(([m]) => m === modo)![1]} · ${nomePeriodo}`} />
@@ -73,6 +73,7 @@ export default async function Dre({ searchParams }: { searchParams: Promise<Reco
               ];
             })}
             <tr className="text-xs text-slate-500"><th scope="row" className="sticky left-0 z-[1] bg-white px-3 py-2 text-left font-normal">Movimentos internos (fora das linhas; eliminados no Consolidado)</th>{cols.map(c => { const x = dre.internas.get(c.chave); const tem = !!x && !!(x.entradas || x.saidas || x.transferencias); const partes = tem ? [x!.entradas ? `+${fmtReais(x!.entradas)}` : null, x!.saidas ? `−${fmtReais(x!.saidas)}` : null, x!.transferencias ? `⇄ ${fmtReais(x!.transferencias)}` : null].filter(Boolean).join(" ") : ""; return <td key={c.chave} className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{tem ? <>{partes}{c.consolidado && <div className="text-[10px]">saldo {fmtReais(x!.entradas - x!.saidas)} · eliminado</div>}</> : "—"}</td>; })}<td /></tr>
+            {[...dre.naoDespesa.values()].some(v => Math.abs(v) >= 0.005) && <tr className="text-xs text-slate-500"><th scope="row" className="sticky left-0 z-[1] bg-white px-3 py-2 text-left font-normal">Saídas que não são despesa (principal de dívida, adiantamentos — fora das linhas)</th>{cols.map(c => { const v = dre.naoDespesa.get(c.chave); return <td key={c.chave} className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{v ? `−${fmtReais(v)}` : "—"}</td>; })}<td /></tr>}
           </tbody>
         </table>
       </div>

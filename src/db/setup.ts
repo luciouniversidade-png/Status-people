@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { sql } from "./index";
 import { modeloInicial, FAMILIAS } from "../lib/avaliacao";
 import { SCHEMA_VERSION } from "../lib/versao";
+import { sqlSeedPlano } from "../lib/plano-contas-seed";
 
 export const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS companies (id serial PRIMARY KEY, nome text NOT NULL, cnpj text);
@@ -498,6 +499,74 @@ UPDATE request_types SET descricao='Itens ou serviços a comprar. A aprovação 
 CREATE OR REPLACE FUNCTION audit_log_imutavel() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'audit_log é imutável: não é permitido alterar nem apagar registros'; END; $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
 CREATE TRIGGER audit_log_no_update BEFORE UPDATE OR DELETE ON audit_log FOR EACH ROW EXECUTE FUNCTION audit_log_imutavel();
+-- v26 · Recrutamento: aderência com evidências (o sistema sugere), shortlist com decisão humana registrada e indicadores
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS criterios_fit jsonb;
+ALTER TABLE candidates ADD COLUMN IF NOT EXISTS curriculo_texto text;
+CREATE TABLE IF NOT EXISTS application_fit (application_id integer PRIMARY KEY, score integer NOT NULL, atende integer NOT NULL DEFAULT 0, total integer NOT NULL DEFAULT 0, obrigatorios_faltando integer NOT NULL DEFAULT 0, detalhes jsonb NOT NULL, metodo text NOT NULL, modelo text, versao text NOT NULL, mascarados integer NOT NULL DEFAULT 0, calculado_em timestamp NOT NULL DEFAULT now(), calculado_por integer);
+CREATE TABLE IF NOT EXISTS shortlist_decisions (id serial PRIMARY KEY, application_id integer NOT NULL, decisao text NOT NULL, score_no_momento integer, posicao integer, divergiu boolean NOT NULL DEFAULT false, justificativa text, decidido_por integer NOT NULL, decidido_nome text, decidido_em timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS shortlist_decisions_app_idx ON shortlist_decisions(application_id);
+CREATE INDEX IF NOT EXISTS application_events_app_at_idx ON application_events(application_id, at);
+-- v27 · Contas a pagar: títulos com parcelas (parcelado ou recorrente), aprovação por alçada e baixa só com o débito do extrato
+CREATE TABLE IF NOT EXISTS payables (id serial PRIMARY KEY, numero integer NOT NULL, unit_id integer, supplier_id integer, fornecedor_nome text NOT NULL, contract_id integer, categoria text NOT NULL, tipo_documento text NOT NULL DEFAULT 'Boleto', numero_documento text, emissao date NOT NULL, descricao text NOT NULL, recorrente boolean NOT NULL DEFAULT false, valor_total numeric(12,2) NOT NULL, parcelas integer NOT NULL, intervalo text NOT NULL DEFAULT 'MENSAL', dias_intervalo integer, primeiro_vencimento date, ajustar_dia_util boolean NOT NULL DEFAULT false, status text NOT NULL DEFAULT 'ATIVO', motivos_aprovacao jsonb, aprovado_por integer, aprovado_em timestamp, motivo_rejeicao text, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS payables_numero_idx ON payables(numero);
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS dias_intervalo integer;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS natureza text NOT NULL DEFAULT 'OPERACAO';
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS primeiro_vencimento date;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS ajustar_dia_util boolean NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS payables_status_idx ON payables(status, unit_id);
+CREATE INDEX IF NOT EXISTS payables_contract_idx ON payables(contract_id) WHERE contract_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS payable_installments (id serial PRIMARY KEY, payable_id integer NOT NULL, parcela integer NOT NULL, emissao date NOT NULL, vencimento date NOT NULL, valor numeric(12,2) NOT NULL, status text NOT NULL DEFAULT 'A_PAGAR', pago_em date, valor_pago numeric(12,2), juros numeric(12,2) NOT NULL DEFAULT 0, desconto numeric(12,2) NOT NULL DEFAULT 0, bank_line_id integer, baixa_manual boolean NOT NULL DEFAULT false, motivo_baixa text, pago_por integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS payable_installments_venc_idx ON payable_installments(status, vencimento);
+CREATE INDEX IF NOT EXISTS payable_installments_payable_idx ON payable_installments(payable_id);
+CREATE UNIQUE INDEX IF NOT EXISTS payable_installments_line_idx ON payable_installments(bank_line_id) WHERE bank_line_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS payable_events (id serial PRIMARY KEY, payable_id integer NOT NULL, at timestamp NOT NULL DEFAULT now(), user_nome text, texto text NOT NULL);
+CREATE INDEX IF NOT EXISTS payable_events_idx ON payable_events(payable_id, at);
+ALTER TABLE bank_lines ADD COLUMN IF NOT EXISTS payable_installment_id integer;
+-- v27 · contas a pagar (catálogo de controladoria): entidade/CNPJ, responsável, NF-e, dupla checagem, competência, boleto, programação e retenção
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS company_id integer;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS responsavel_user_id integer;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS chave_nfe text;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS aprovacoes jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS aprovacoes_necessarias integer NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS payables_nfe_idx ON payables(chave_nfe) WHERE chave_nfe IS NOT NULL AND status NOT IN ('REJEITADO','CANCELADO');
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS competencia text;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS codigo_barras text;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS programado_para date;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS conta_programada_id integer;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS programado_por integer;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS programado_em timestamp;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS retida boolean NOT NULL DEFAULT false;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS motivo_retencao text;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS retida_por integer;
+ALTER TABLE payable_installments ADD COLUMN IF NOT EXISTS retida_em timestamp;
+CREATE UNIQUE INDEX IF NOT EXISTS payable_installments_boleto_idx ON payable_installments(codigo_barras) WHERE codigo_barras IS NOT NULL AND status <> 'CANCELADA';
+CREATE INDEX IF NOT EXISTS payable_installments_prog_idx ON payable_installments(programado_para) WHERE programado_para IS NOT NULL;
+-- v27 · RH: contratos com prazo — experiência (45+45), estágio (TCE, limite de 2 anos) e temporário (180+90): recomendação do gestor e decisão registrada
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS termino_contrato date;
+CREATE TABLE IF NOT EXISTS employment_terms (id serial PRIMARY KEY, employee_id integer NOT NULL, tipo text NOT NULL, etapa integer NOT NULL DEFAULT 1, vence_em date NOT NULL, recomendacao text, recomendacao_motivo text, recomendado_por integer, recomendado_em timestamp, decisao text, motivo text, nova_data date, decidido_por integer, decidido_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS employment_terms_uk ON employment_terms(employee_id, tipo, etapa);
+-- v28 · plano de contas gerencial (9 macrogrupos + receitas), centros de custo, classificação dos lançamentos, rateio e orçamento pelo histórico
+CREATE TABLE IF NOT EXISTS chart_accounts (id serial PRIMARY KEY, codigo text NOT NULL, nome text NOT NULL, nivel integer NOT NULL, pai_id integer, tipo text NOT NULL DEFAULT 'SAIDA', categoria text, tipo_economico text NOT NULL DEFAULT 'OPEX', comportamento text NOT NULL DEFAULT 'FIXO', recorrencia text NOT NULL DEFAULT 'RECORRENTE', controlavel boolean NOT NULL DEFAULT true, custo text NOT NULL DEFAULT 'INDIRETO', indice text NOT NULL DEFAULT 'IPCA', driver text NOT NULL DEFAULT 'NENHUM', centro_padrao text NOT NULL DEFAULT 'UNIDADE', generica boolean NOT NULL DEFAULT false, palavras text, descricao text, ativo boolean NOT NULL DEFAULT true, ordem integer NOT NULL DEFAULT 0, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS chart_accounts_codigo_idx ON chart_accounts(codigo);
+CREATE INDEX IF NOT EXISTS chart_accounts_pai_idx ON chart_accounts(pai_id);
+${sqlSeedPlano()}
+CREATE TABLE IF NOT EXISTS cost_centers (id serial PRIMARY KEY, codigo text NOT NULL, nome text NOT NULL, tipo text NOT NULL, unit_id integer, segmento text, responsavel_user_id integer, inicio date, fim date, orcamento numeric(14,2), ativo boolean NOT NULL DEFAULT true, obs text, created_by integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS cost_centers_codigo_idx ON cost_centers(codigo);
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS conta_id integer;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS cost_center_id integer;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS classificado_por integer;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS classificado_em timestamp;
+ALTER TABLE cash_entries ADD COLUMN IF NOT EXISTS classificacao_origem text;
+CREATE INDEX IF NOT EXISTS cash_entries_conta_idx ON cash_entries(conta_id);
+CREATE INDEX IF NOT EXISTS cash_entries_cc_idx ON cash_entries(cost_center_id);
+CREATE INDEX IF NOT EXISTS cash_entries_data_idx ON cash_entries(data);
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS conta_id integer;
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS cost_center_id integer;
+CREATE TABLE IF NOT EXISTS classification_rules (id serial PRIMARY KEY, padrao text NOT NULL, conta_id integer NOT NULL, cost_center_id integer, unit_id integer, ativo boolean NOT NULL DEFAULT true, usos integer NOT NULL DEFAULT 0, created_by integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS classification_rules_uk ON classification_rules(lower(padrao), coalesce(unit_id, 0)) WHERE ativo;
+CREATE TABLE IF NOT EXISTS allocation_rules (id serial PRIMARY KEY, nome text NOT NULL, base text NOT NULL, percentuais jsonb, desde text NOT NULL, status text NOT NULL DEFAULT 'RASCUNHO', motivo text, decisao_motivo text, criado_por integer, aprovado_por integer, aprovado_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS budget_hygiene (cash_entry_id integer PRIMARY KEY, decisao text NOT NULL, sinal text, motivo text, user_id integer, user_nome text, decidido_em timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS budget_plans (ano integer PRIMARY KEY, params jsonb NOT NULL DEFAULT '{}'::jsonb, status text NOT NULL DEFAULT 'RASCUNHO', versao_aplicada text, resumo jsonb, aplicado_por integer, aplicado_em timestamp, updated_by integer, updated_at timestamp NOT NULL DEFAULT now());
 `;
 
 // Estrutura vigente ditada em 16/07/2026 (22 cargos) + Professor e Pedagoga (corpo docente).
@@ -543,6 +612,7 @@ export const DEFAULT_SETTINGS = {
     remuneracao: ["DIRECAO", "RH"],                                  // quem altera faixas e salários
     calibracao: ["DIRECAO", "RH"],                                   // quem calibra e encerra ciclos de desempenho
     financeiro: ["DIRECAO", "FINANCEIRO"],                           // quem importa títulos, caixa e gerencia orçamento
+    contasPagar: ["DIRECAO"],                                        // v27 · quem aprova conta a pagar acima da alçada ou fora do orçamento
   },
   estrategia: {
     cicloAtual: "2027",
@@ -611,6 +681,29 @@ export const DEFAULT_SETTINGS = {
     categoriasEntrada: ["Mensalidades", "Material e taxas", "Integral", "Eventos", "Outras receitas"],
     categoriasSaida: ["Pessoal", "Encargos e benefícios", "Aluguel e condomínio", "Serviços e terceiros", "Materiais e insumos", "Manutenção", "Marketing", "Impostos e taxas", "Financeiras", "Outras despesas"],
     encargosPct: 35, // estimativa de encargos sobre salários para custo de pessoal
+  },
+  contratosPrazo: {               // v27 · RH: contratos com prazo
+    experienciaPrimeiroDias: 45,  // CLT art. 445, par. único: até 90 dias, uma prorrogação (45 + 45 é o usual)
+    experienciaTotalDias: 90,
+    avisoDias: 10,                // a decisão (prorrogar, efetivar ou encerrar) aparece com N dias de antecedência
+    estagioMaxMeses: 24,          // Lei 11.788/2008, art. 11: até 2 anos na mesma parte concedente (exceto pessoa com deficiência)
+    temporarioDias: 180,          // Lei 6.019/1974, art. 10, §§ 1º e 2º (Lei 13.429/2017): 180 dias + prorrogação de até 90
+    temporarioProrrogacaoDias: 90,
+  },
+  contasPagar: {                  // v27 · contas a pagar
+    alcadaValor: 5000,            // compromisso total (parcelado: valor total · recorrente: valor × parcelas) a partir do qual a Direção aprova
+    exigirOrcamento: true,        // parcela que estoura o orçado da categoria no mês (unidade que orça) também pede aprovação
+    tiposDocumento: ["Boleto", "PIX", "Transferência", "Débito automático", "Cartão", "Nota fiscal", "Recibo", "Dinheiro", "Outro"] as string[],
+    ajustarDiaUtil: true,         // vencimento em sábado, domingo ou feriado vai para o próximo dia útil bancário
+    feriadosLocais: ["06-13", "08-26", "10-11"] as string[], // MM-DD · Campo Grande: Santo Antônio (13/06) e aniversário da cidade (26/08) · MS: criação do Estado (11/10)
+    carnavalSemBanco: true,       // segunda e terça de Carnaval sem expediente bancário
+    corpusChristiSemBanco: true,  // Corpus Christi sem expediente bancário
+    alertaDias: 3,                // parcela que vence em até N dias aparece em “vence logo”
+    janelaExtratoDias: 10,        // débitos do extrato sugeridos para a baixa: até N dias da data de vencimento
+    baixaManualPerfis: ["DIRECAO", "FINANCEIRO"] as string[], // quem pode registrar baixa manual (exceção sem débito do extrato, sempre justificada e auditada)
+    alcadaDuplaValor: 100000,     // dupla checagem: compromisso a partir deste valor pede DUAS pessoas diferentes com a alçada (0 = desligado)
+    segregarAprovarPagar: true,   // segregação de funções: quem aprovou o título não registra o pagamento dele
+    naturezaSempreAprova: ["INVESTIMENTO"] as string[], // natureza que sempre passa pela aprovação, de qualquer valor (OPERACAO · INVESTIMENTO · EXTRAORDINARIA)
   },
   // v25 · conciliação (Cap. 21 da Nova Arquitetura). As taxas abaixo são EXEMPLO: troque pelas do contrato com a operadora.
   conciliacao: {
@@ -694,6 +787,17 @@ export const DEFAULT_SETTINGS = {
       documentos: ["Currículo atualizado", "Documento de identidade (RG ou CNH)", "CPF", "Comprovante de escolaridade", "Comprovante de residência"] as string[],
       retencaoMeses: 12,          // dados de candidatos não contratados guardados por até N meses (aviso no portal)
     },
+    fit: {                        // v26 · aderência com evidências — o sistema sugere, a pessoa decide
+      pesoObrigatorio: 2, pesoDesejavel: 1,
+      tamanhoShortlist: 5,        // quantos aparecem como "sugeridos" no topo da vaga
+      minimoSugestao: 60,         // aderência mínima para entrar na sugestão (abaixo disso aparece, mas não é sugerido)
+      usarIA: true,               // com AI_API_KEY configurada, a IA aponta os trechos; sem chave, a análise é por regras
+    },
+    indicadores: {                // v26 · prazos de referência (SLA) do recrutamento
+      slaTriagemDias: 3,          // candidatura parada na triagem há mais de N dias = atraso
+      slaVagaDias: 30,            // vaga aberta há mais de N dias sem preencher = atraso (quando não há prazo)
+      retencaoDias: 90,           // contratado que sai em até N dias conta como "não ficou"
+    },
   },
   governanca: {
     areas: ["Atendimento e Comercial", "Matrículas e Secretaria", "Financeiro", "Pedagógico", "Pessoas e RH", "Operações e Infraestrutura", "Comunicação e Marketing", "Direção e Governança"],
@@ -761,6 +865,7 @@ export const DEFAULT_SETTINGS = {
   fpa: {
     cenarioPessimistaPct: 85,   // caixa projetado: recebimento no cenário pessimista (% do esperado)
     cenarioOtimistaPct: 100,
+    reservaMinima: 0,           // caixa projetado da rede: reserva mínima (R$); abaixo dela no cenário pessimista vira alerta (0 = só o alerta de saldo negativo)
   },
   fluxos: {
     riscoPct: 25,               // "em risco" quando resta até 25% do prazo (ou menos de 1 dia num prazo de 2 dias ou mais)
@@ -844,6 +949,24 @@ export const DEFAULT_SETTINGS = {
     pessoal: ["Pessoal", "Encargos e benefícios"] as string[], // substituídas pelo resultado aceito da folha (REAL) no mês/unidade em que ele existir
     financeiras: ["Financeiras"] as string[],             // abaixo do EBITDA
     internas: ["Transferência entre unidades", "Transferências internas"] as string[], // movimentos entre unidades do grupo: fora da DRE e eliminados no Consolidado
+    naoDespesa: ["Amortização de dívida", "Adiantamentos"] as string[], // v28 · saem do caixa, mas não são despesa (principal de dívida e adiantamentos): fora da DRE e do orçado × realizado
+  },
+  // v28 · plano de contas gerencial e centros de custo
+  planoContas: {
+    exigirContaContasPagar: true, // conta a pagar nasce com a conta do plano (a categoria vem da conta)
+    exigirCentroCusto: false,     // centro de custo obrigatório no lançamento (sem ele: a unidade que paga)
+    metaGenericaPct: 5,           // até quanto das saídas pode ficar em conta genérica (“outras”) — acima disso, alerta
+    janelaClassificacaoDias: 120, // fila de classificação: saídas e entradas dos últimos N dias sem conta
+  },
+  // v28 · orçamento pelo histórico (valores iniciais de cada ano; cada orçamento guarda os seus)
+  orcamentoHistorico: {
+    ipcaPct: 4.5, dissidioPct: 6, reajusteMensalidadePct: 6,   // reajustes do ano do orçamento
+    mesDissidio: 3, mesReajusteMensalidade: 1,                 // mês da data-base do dissídio e do reajuste das mensalidades
+    nivelIpcaPct: 4.5, nivelDissidioPct: 6, nivelMensalidadePct: 6, // reajustes que aconteceram DENTRO da base (para nivelar os meses anteriores a preços de hoje)
+    fatorFerias: 0.6, mesesFerias: [1, 7] as number[],          // calendário escolar: consumo nas férias (só para estimar meses sem histórico)
+    outlierFator: 3, outlierMinimo: 1000, eventoMinimo: 5000,  // higienização: pico fora do padrão (× a mediana e R$ acima dela) e evento de conta eventual a confirmar
+    usarContratos: true,                                       // piso dos contratos vigentes e títulos a pagar já assumidos para o ano
+    otimista: { alunosPct: 3, ipcaPp: -1, dissidioPp: 0, mensalidadePp: 1 }, estresse: { alunosPct: -5, ipcaPp: 2, dissidioPp: 1, mensalidadePp: -2 },
   },
   atendimento: {
     slaHoras: { URGENTE: 4, ALTA: 24, NORMAL: 48, BAIXA: 120 },
@@ -1204,6 +1327,10 @@ export async function seedMatriculas() {
 
 // Chaves estrangeiras (integridade referencial). Aplicadas de forma idempotente; RESTRICT protege contra apagar o que ainda é referenciado.
 const FKS: [string, string, string, string][] = [
+  // v28 · plano de contas e centros de custo: conta com lançamento não some (RESTRICT); a decisão de higienização acompanha o lançamento
+  ["chart_accounts", "pai_id", "chart_accounts", "RESTRICT"], ["cash_entries", "conta_id", "chart_accounts", "RESTRICT"], ["cash_entries", "cost_center_id", "cost_centers", "RESTRICT"],
+  ["payables", "conta_id", "chart_accounts", "RESTRICT"], ["payables", "cost_center_id", "cost_centers", "RESTRICT"], ["cost_centers", "unit_id", "units", "RESTRICT"], ["cost_centers", "responsavel_user_id", "users", "SET NULL"],
+  ["classification_rules", "conta_id", "chart_accounts", "CASCADE"], ["classification_rules", "cost_center_id", "cost_centers", "SET NULL"], ["budget_hygiene", "cash_entry_id", "cash_entries", "CASCADE"],
   ["eval_evidences", "review_id", "perf_reviews", "CASCADE"], ["eval_evidences", "employee_id", "employees", "CASCADE"], ["feedbacks", "employee_id", "employees", "CASCADE"], ["pdi_plans", "employee_id", "employees", "CASCADE"], ["pdi_actions", "plan_id", "pdi_plans", "CASCADE"], ["pdi_checkins", "action_id", "pdi_actions", "CASCADE"], ["behavior_profiles", "employee_id", "employees", "CASCADE"], ["perf_cycles", "model_id", "eval_models", "SET NULL"],
   ["role_profile_acks", "profile_id", "role_profiles", "CASCADE"], ["role_profile_acks", "employee_id", "employees", "CASCADE"], ["dev_needs", "employee_id", "employees", "CASCADE"], ["teaching_observations", "employee_id", "employees", "CASCADE"], ["rater_training_responses", "training_id", "rater_trainings", "CASCADE"], ["career_interests", "employee_id", "employees", "CASCADE"], ["review_raters", "review_id", "perf_reviews", "CASCADE"], ["ai_drafts", "employee_id", "employees", "CASCADE"],
   ["objective_links", "de_objective_id", "objectives", "CASCADE"], ["objective_links", "para_objective_id", "objectives", "CASCADE"], ["indicator_values", "indicator_id", "indicators", "CASCADE"], ["indicators", "objective_id", "objectives", "SET NULL"], ["indicators", "numerador_id", "indicators", "SET NULL"], ["indicators", "denominador_id", "indicators", "SET NULL"], ["indicators", "responsavel_user_id", "users", "SET NULL"],

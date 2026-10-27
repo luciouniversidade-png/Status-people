@@ -34,7 +34,7 @@ export async function dadosDre(ctx: Contexto, dim: DimDre, visao: VisaoDre) {
     cols = ents.map(e => ({ chave: `e${e}`, rotulo: e ? ctx.entidades.find(x => x.id === e)?.nome ?? "Entidade" : "Sem entidade vinculada", units: units.filter(u => (nomes.get(u)?.company_id ?? 0) === e), meses }));
     if (cols.length > 1) cols.push({ chave: "total", rotulo: "Consolidado", units, meses, consolidado: true });
   } else cols = [...meses.map(m => ({ chave: `m${m}`, rotulo: MESES_CURTOS[m - 1], units, meses: [m] })), { chave: "total", rotulo: `Acumulado ${MESES_CURTOS[0]}–${MESES_CURTOS[mesRef - 1]}`, units, meses, consolidado: units.length > 1 }];
-  const mapa: MapaDre = { deducoes: cfg.dre.deducoes as string[], pessoal: cfg.dre.pessoal as string[], financeiras: cfg.dre.financeiras as string[], internas: cfg.dre.internas as string[] };
+  const mapa: MapaDre = { deducoes: cfg.dre.deducoes as string[], pessoal: cfg.dre.pessoal as string[], financeiras: cfg.dre.financeiras as string[], internas: cfg.dre.internas as string[], naoDespesa: (cfg.dre.naoDespesa ?? []) as string[] };
   const [mov, orc, folha, movAnt, folhaAnt, [ultimo]] = await Promise.all([movimentos(ano, units), orcamentos(ano, units), folhaReal(ano, units), movimentos(ano - 1, units), folhaReal(ano - 1, units),
     sql<{ d: string | null }[]>`SELECT max(data)::text AS d FROM cash_entries WHERE unit_id = ANY(${units})`]);
   const dre = montarDre({ cols, unidadesRecorte: units, mov, orc, folha, movAnt, folhaAnt, mapa });

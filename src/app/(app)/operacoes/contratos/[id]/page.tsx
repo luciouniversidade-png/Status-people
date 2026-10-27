@@ -10,6 +10,7 @@ import { situacaoContrato, RENOVACAO, CONTRATO_STATUS, podeContratos, veContrato
 import { renovarContrato, encerrarContrato } from "../actions";
 import { FormContrato, type OpcoesContrato, type ContratoForm } from "../_form";
 import { Anexos } from "@/components/Anexos";
+import { veCP, operaCP, numeroCP, CP_STATUS } from "@/lib/contas-pagar";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,9 @@ export default async function Contrato({ params, searchParams }: { params: Promi
   const [c] = await sql<(ContratoForm & { fornecedor: string; unidade: string | null; status: string; responsavel: string | null; renovado_de: number | null; renovado_por: number | null })[]>`SELECT c.id, c.supplier_id, c.unit_id, c.objeto, c.numero, c.valor_mensal::text, c.valor_total::text, c.inicio::text, c.fim::text, c.renovacao, c.aviso_previo_dias, c.reajuste_indice, c.proximo_reajuste::text, c.responsavel_user_id, c.obs, s.nome AS fornecedor, u.nome AS unidade, c.status, us.nome AS responsavel, c.renovado_de, (SELECT id FROM contracts x WHERE x.renovado_de=c.id LIMIT 1) AS renovado_por FROM contracts c JOIN suppliers s ON s.id=c.supplier_id LEFT JOIN units u ON u.id=c.unit_id LEFT JOIN users us ON us.id=c.responsavel_user_id WHERE c.id=${Number(id)}`;
   if (!c || (escopo !== null && c.unit_id !== null && c.unit_id !== escopo)) notFound();
   const sit = situacaoContrato(c, cfg.contratos.avisos as number[], hoje()); const pode = podeContratos(s) && (escopo === null || c.unit_id === escopo);
+  // v27 · contas a pagar geradas a partir deste contrato
+  const titulosCP = veCP(s) ? await sql<{ id: number; numero: number; descricao: string; status: string; parcelas: number; pagas: number; aberto: number; proximo: string | null }[]>`SELECT p.id, p.numero, p.descricao, p.status, p.parcelas, count(i.id) FILTER (WHERE i.status='PAGA')::int AS pagas, coalesce(sum(i.valor) FILTER (WHERE i.status='A_PAGAR'), 0)::float AS aberto, min(i.vencimento) FILTER (WHERE i.status='A_PAGAR')::text AS proximo
+    FROM payables p LEFT JOIN payable_installments i ON i.payable_id=p.id WHERE p.contract_id=${c.id} GROUP BY p.id ORDER BY p.numero DESC` : [];
   const o: OpcoesContrato = { fornecedores: await sql`SELECT id, nome FROM suppliers WHERE ativo OR id=${c.supplier_id} ORDER BY nome`, units: await sql`SELECT id, nome FROM units ${escopo === null ? sql`` : sql`WHERE id=${escopo}`} ORDER BY nome`, users: await sql`SELECT id, nome FROM users WHERE ativo AND role = ANY(${PERFIS_CONTRATO}) ORDER BY nome`, podeRede: escopo === null && s.role !== "DIRETOR_UNIDADE" };
   return (
     <Page title={c.objeto} sub={`${c.fornecedor} · ${c.unidade ?? "rede"}${c.numero ? ` · contrato nº ${c.numero}` : ""}`} actions={<Btn kind="ghost" href="/operacoes/contratos">Contratos</Btn>}>
@@ -31,6 +35,10 @@ export default async function Contrato({ params, searchParams }: { params: Promi
             {c.obs && <p className="mt-3 whitespace-pre-wrap rounded bg-mist p-2 text-sm">{c.obs}</p>}
           </Card>
           <Anexos entidade="contract" id={c.id} voltar={`/operacoes/contratos/${c.id}`} titulo="Contrato assinado, aditivos e notificações" podeEnviar={pode} />
+          {veCP(s) && <Card title="Contas a pagar deste contrato" actions={operaCP(s) && c.status === "VIGENTE" ? <Btn small href={`/financeiro/contas-a-pagar/nova?contrato=${c.id}`}>Gerar contas a pagar</Btn> : undefined}>
+            {titulosCP.length === 0 ? <p className="text-sm text-slate-500">Nenhum título lançado a partir deste contrato.{operaCP(s) && c.valor_mensal ? " O botão gera as parcelas recorrentes com o valor mensal." : ""}</p>
+              : <ul className="divide-y divide-line text-sm">{titulosCP.map(t => <li key={t.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5"><span><Link className="font-medium text-acao" href={`/financeiro/contas-a-pagar/${t.id}`}>{numeroCP(t.numero)}</Link> · {t.descricao}<span className="block text-xs text-slate-500">{t.pagas}/{t.parcelas} paga(s) · em aberto {brl(t.aberto)}{t.proximo ? ` · próximo ${fmtData(t.proximo)}` : ""}</span></span><Badge v={CP_STATUS[t.status]?.tom ?? t.status} label={CP_STATUS[t.status]?.rotulo ?? t.status} /></li>)}</ul>}
+          </Card>}
         </div>
         {pode && c.status === "VIGENTE" && <div className="space-y-4">
           <Card title="Renovar"><form action={renovarContrato} className="space-y-2"><input type="hidden" name="id" value={c.id} /><div className="grid grid-cols-2 gap-2"><Field label="Novo início"><Input name="inicio" type="date" defaultValue={c.fim ? addDays(c.fim, 1) : ""} /></Field><Field label="Novo fim"><Input name="fim" type="date" required /></Field><Field label="Novo valor mensal"><Input name="valorMensal" inputMode="decimal" defaultValue={c.valor_mensal ?? ""} /></Field><Field label="Próximo reajuste"><Input name="proximoReajuste" type="date" /></Field></div><Field label="Observação"><Input name="obs" /></Field><Btn small>Renovar contrato</Btn></form></Card>

@@ -23,8 +23,9 @@ export async function orcamentoAnual(ano: number, unitId: number | null): Promis
 }
 
 export async function realizadoAnual(ano: number, unitId: number | null, ate?: string): Promise<Mapa12> {
+  const cfg = await getSettings(); const naoDespesa = ((cfg.dre?.naoDespesa ?? []) as string[]); // v28 · principal de dívida e adiantamentos não são despesa
   const rows = await sql<{ tipo: string; categoria: string; mes: number; valor: number }[]>`SELECT tipo, categoria, extract(month FROM data)::int AS mes, sum(valor)::float AS valor FROM cash_entries
-    WHERE tipo IN ('ENTRADA','SAIDA') AND data >= ${`${ano}-01-01`}::date AND data < ${`${ano + 1}-01-01`}::date ${ate ? sql`AND data <= ${ate}::date` : sql``} ${unitId === null ? sql`` : sql`AND unit_id=${unitId}`} GROUP BY 1, 2, 3`;
+    WHERE tipo IN ('ENTRADA','SAIDA') AND NOT (categoria = ANY(${naoDespesa})) AND data >= ${`${ano}-01-01`}::date AND data < ${`${ano + 1}-01-01`}::date ${ate ? sql`AND data <= ${ate}::date` : sql``} ${unitId === null ? sql`` : sql`AND unit_id=${unitId}`} GROUP BY 1, 2, 3`;
   const m: Mapa12 = new Map();
   for (const r of rows) { const k = `${r.tipo}|${r.categoria}`; if (!m.has(k)) m.set(k, vazio12()); m.get(k)![r.mes - 1] = r.valor; }
   return m;
@@ -148,6 +149,9 @@ export async function caixaProjetado(unitId: number | null, dias = 91) {
   const marcos = [30, 60, 90].map(n => ({ dias: n, ate: addDays(h, n), entradas: acum(n, "entradas"), saidas: acum(n, "saidas"), saldo: saldoHoje === null ? null : saldoHoje + acum(n, "entradas") - acum(n, "saidas"), saldoMin: saldoHoje === null ? null : saldoHoje + acum(n, "entradasMin") - acum(n, "saidas"), saldoMax: saldoHoje === null ? null : saldoHoje + acum(n, "entradasMax") - acum(n, "saidas") }));
   const semanas = Array.from({ length: Math.floor(pontos.length / 7) }, (_, i) => { const n = (i + 1) * 7; return { ate: pontos[n - 1].data, saldo: saldoHoje === null ? null : saldoHoje + acum(n, "entradas") - acum(n, "saidas"), min: saldoHoje === null ? null : saldoHoje + acum(n, "entradasMin") - acum(n, "saidas"), max: saldoHoje === null ? null : saldoHoje + acum(n, "entradasMax") - acum(n, "saidas"), entradas: pontos.slice(n - 7, n).reduce((a, p) => a + p.entradas, 0), saidas: pontos.slice(n - 7, n).reduce((a, p) => a + p.saidas, 0) }; });
   const menor = semanas.reduce<{ ate: string; min: number } | null>((acc, s) => s.min === null ? acc : !acc || s.min < acc.min ? { ate: s.ate, min: s.min } : acc, null);
+  // v27 · reserva mínima de caixa (rede): primeira semana em que o cenário pessimista fica abaixo dela
+  const reserva = unitId === null ? Math.max(0, Number(cfg.fpa?.reservaMinima ?? 0)) : 0;
+  const abaixoReserva = reserva > 0 ? semanas.find(w => w.min !== null && w.min < reserva) ?? null : null;
   const noHorizonte = comp.filter(c => c.data <= fim);
-  return { saldoHoje, semSaldo, taxa, usaTitulos, titulos90: titulos.reduce((a, t) => a + t.valor, 0), marcos, semanas, menor, pess, otim, compromissos: { n: noHorizonte.length, total: noHorizonte.reduce((a, c) => a + c.valor, 0), programadas: noHorizonte.filter(c => c.programada).length } };
+  return { saldoHoje, semSaldo, taxa, usaTitulos, titulos90: titulos.reduce((a, t) => a + t.valor, 0), marcos, semanas, menor, pess, otim, reserva, abaixoReserva, compromissos: { n: noHorizonte.filter(c => c.origem === "SOLICITACAO").length, total: noHorizonte.filter(c => c.origem === "SOLICITACAO").reduce((a, c) => a + c.valor, 0), programadas: noHorizonte.filter(c => c.origem === "SOLICITACAO" && c.programada).length }, contasPagar: { n: noHorizonte.filter(c => c.origem === "CONTA_PAGAR").length, total: noHorizonte.filter(c => c.origem === "CONTA_PAGAR").reduce((a, c) => a + c.valor, 0), vencidas: noHorizonte.filter(c => c.origem === "CONTA_PAGAR" && c.vencida).length } };
 }

@@ -32,7 +32,7 @@ export default async function Analytics({ searchParams }: { searchParams: Promis
   const trilha = podeNominal ? await sql<{ user_nome: string | null; at: Date }[]>`SELECT user_nome, at FROM audit_log WHERE acao IN ('consulta nominal: risco de saída', 'exportar lista nominal de risco') ORDER BY at DESC LIMIT 8` : [];
   const qsBase = (extra: Record<string, string>) => `/analytics?${new URLSearchParams({ ...(unitId && !scope ? { unidade: String(unitId) } : {}), ...extra })}`;
   return (
-    <Page title="People Analytics" sub="People Health Score explicável, movimentação, absenteísmo, custo de pessoal e risco de saída — por unidade e rede." actions={<><Btn kind="ghost" href="/analytics/assistente">Perguntar ao People AI</Btn><Btn kind="ghost" href="/sucessao">Sucessão</Btn></>}>
+    <Page title="People Analytics" sub="People Health Score explicável, movimentação, absenteísmo, custo de pessoal e risco de saída — por unidade e rede." actions={<><Btn href="/analytics/retencao">Movimentação e retenção</Btn><Btn kind="ghost" href="/analytics/assistente">Perguntar ao People AI</Btn><Btn kind="ghost" href="/sucessao">Sucessão</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       {!scope && <form className="mb-4 flex items-end gap-2"><Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Rede</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Btn kind="ghost">Ver</Btn></form>}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">

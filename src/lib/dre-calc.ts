@@ -16,12 +16,12 @@ export const LINHAS_DRE: { codigo: CodigoLinha; nome: string; total: boolean }[]
   { codigo: "FINANCEIRO", nome: "(−) Resultado financeiro", total: false },
   { codigo: "RESULTADO", nome: "= Resultado do período", total: true },
 ];
-export type MapaDre = { deducoes: string[]; pessoal: string[]; financeiras: string[]; internas: string[] };
+export type MapaDre = { deducoes: string[]; pessoal: string[]; financeiras: string[]; internas: string[]; naoDespesa?: string[] }; // v28 · não despesa: principal de dívida e adiantamentos
 export const FOLHA_REAL = "FOLHA|Folha — resultado aceito (REAL)";
 
 /** Em que linha canônica cada lançamento entra (null = movimento interno, fora da DRE). */
 export function linhaDaCategoria(tipo: string, categoria: string, m: MapaDre): CodigoLinha | null {
-  if (tipo === "TRANSFERENCIA" || m.internas.includes(categoria)) return null;
+  if (tipo === "TRANSFERENCIA" || m.internas.includes(categoria) || (m.naoDespesa ?? []).includes(categoria)) return null;
   if (tipo === "ENTRADA") return "RECEITA";
   if (m.deducoes.includes(categoria)) return "DEDUCOES";
   if (m.pessoal.includes(categoria)) return "PESSOAL";
@@ -51,9 +51,11 @@ export function montarDre(p: { cols: Coluna[]; unidadesRecorte: number[]; mov: M
   const colsDe = (u: number, m: number) => p.cols.filter(c => c.units.includes(u) && c.meses.includes(m));
   const serie = new Map<string, (number | null)[]>(); const somaSerie = (k: string, mes: number, v: number) => { const s = serie.get(k) ?? Array<number | null>(12).fill(null); s[mes - 1] = add(s[mes - 1], v); serie.set(k, s); };
   const internas = new Map<string, { entradas: number; saidas: number; transferencias: number }>();
+  const naoDespesa = new Map<string, number>(); // v28 · saídas que não são despesa (fora das linhas, sem eliminação)
   let substituidos = 0;
   for (const r of p.mov) {
     const linha = linhaDaCategoria(r.tipo, r.categoria, p.mapa);
+    if (linha === null && r.tipo !== "TRANSFERENCIA" && (p.mapa.naoDespesa ?? []).includes(r.categoria) && !p.mapa.internas.includes(r.categoria)) { for (const c of colsDe(r.unit_id, r.mes)) naoDespesa.set(c.chave, (naoDespesa.get(c.chave) ?? 0) + (r.tipo === "ENTRADA" ? -r.valor : r.valor)); continue; }
     if (linha === null) { for (const c of colsDe(r.unit_id, r.mes)) { const x = internas.get(c.chave) ?? { entradas: 0, saidas: 0, transferencias: 0 }; if (r.tipo === "ENTRADA") x.entradas += r.valor; else if (r.tipo === "SAIDA") x.saidas += r.valor; else x.transferencias += r.valor; internas.set(c.chave, x); } continue; }
     if (linha === "PESSOAL" && realSet.has(`${r.unit_id}|${r.mes}`)) { substituidos += r.valor; continue; }
     const k = conta(linha, r.tipo, r.categoria, r.categoria);
@@ -90,7 +92,7 @@ export function montarDre(p: { cols: Coluna[]; unidadesRecorte: number[]; mov: M
   seriesLinhas.LIQUIDA = dif(seriesLinhas.RECEITA, seriesLinhas.DEDUCOES); seriesLinhas.EBITDA = dif(seriesLinhas.LIQUIDA, seriesLinhas.PESSOAL, seriesLinhas.OPERACIONAIS); seriesLinhas.RESULTADO = dif(seriesLinhas.EBITDA, seriesLinhas.FINANCEIRO);
   const ordemLinha = (l: CodigoLinha) => LINHAS_DRE.findIndex(x => x.codigo === l);
   const listaContas = [...contas.values()].sort((a, b) => ordemLinha(a.linha) - ordemLinha(b.linha) || (a.categoria === null ? -1 : b.categoria === null ? 1 : a.nome.localeCompare(b.nome)));
-  return { contas: listaContas, celula: (k: string, c: string) => cel.get(`${k}|${c}`) ?? { real: null, orc: null, ant: null, fonte: null }, linha: (l: CodigoLinha, c: string) => linhas.get(`${l}|${c}`) ?? { real: null, orc: null, ant: null, fonte: null }, serieConta: (k: string) => serie.get(k) ?? Array<number | null>(12).fill(null), serieLinha: (l: CodigoLinha) => seriesLinhas[l], internas, substituidos };
+  return { contas: listaContas, celula: (k: string, c: string) => cel.get(`${k}|${c}`) ?? { real: null, orc: null, ant: null, fonte: null }, linha: (l: CodigoLinha, c: string) => linhas.get(`${l}|${c}`) ?? { real: null, orc: null, ant: null, fonte: null }, serieConta: (k: string) => serie.get(k) ?? Array<number | null>(12).fill(null), serieLinha: (l: CodigoLinha) => seriesLinhas[l], internas, naoDespesa, substituidos };
 }
 export type Dre = ReturnType<typeof montarDre>;
 

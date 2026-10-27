@@ -21,7 +21,7 @@ export function categoriaDoTipo(cfg: Cfg, codigo: string): string {
 }
 
 /** Orçado × realizado × comprometido do mês, por unidade e categoria de saída (só unidades que orçam o ano). */
-async function orcamentoMes(mes: string, units: number[]) {
+export async function orcamentoMes(mes: string, units: number[]) {
   const ano = Number(mes.slice(0, 4)), m = Number(mes.slice(5, 7)); const ini = `${mes}-01`; const fim = addDays(`${mes.slice(0, 4)}-${String(m).padStart(2, "0")}-28`, 4).slice(0, 7) + "-01";
   const [orc, real, orcam] = await Promise.all([
     sql<{ unit_id: number; categoria: string; valor: number }[]>`WITH cats AS (SELECT DISTINCT unit_id, categoria FROM budgets WHERE ano=${ano} AND tipo='SAIDA' AND unit_id = ANY(${units}) UNION SELECT DISTINCT unit_id, categoria FROM budget_months WHERE ano=${ano} AND tipo='SAIDA' AND unit_id = ANY(${units}))
@@ -47,6 +47,9 @@ export async function excecoesDespesa(ids: number[]): Promise<Map<number, Exceca
   const mes = hoje().slice(0, 7); const o = units.length && d.excecaoOrcamento ? await orcamentoMes(mes, units) : null;
   const pend = o ? await sql<{ unit_id: number; codigo: string; valor: number }[]>`SELECT r.unit_id, t.codigo, sum(r.valor)::float AS valor FROM requests r JOIN request_types t ON t.id=r.type_id WHERE r.status='APROVADA' AND r.valor > 0 AND r.pago_em IS NULL AND r.unit_id = ANY(${units}) GROUP BY 1, 2` : [];
   const comprometido = new Map<string, number>(); if (o) for (const p of pend) { const k = o.chave(p.unit_id, categoriaDoTipo(cfg, p.codigo)); comprometido.set(k, (comprometido.get(k) ?? 0) + p.valor); }
+  // v27 · parcelas de contas a pagar aprovadas que vencem neste mês também comprometem o orçado da categoria
+  if (o) { try { const pp = await sql<{ unit_id: number; categoria: string; valor: number }[]>`SELECT p.unit_id, p.categoria, sum(i.valor)::float AS valor FROM payable_installments i JOIN payables p ON p.id=i.payable_id WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND p.unit_id = ANY(${units}) AND to_char(i.vencimento, 'YYYY-MM')=${mes} GROUP BY 1, 2`;
+    for (const p of pp) { const k = o.chave(p.unit_id, p.categoria); comprometido.set(k, (comprometido.get(k) ?? 0) + p.valor); } } catch { /* banco anterior à v27 */ } }
   for (const r of rows) {
     const ex: Excecao[] = []; const valor = r.valor ?? 0; const cat = categoriaDoTipo(cfg, r.codigo);
     if (valor > 0) {
@@ -64,12 +67,22 @@ export async function excecoesDespesa(ids: number[]): Promise<Map<number, Exceca
   return out;
 }
 
-/** Despesas aprovadas a pagar — entram na projeção de caixa (T-027) na data programada (sem data: amanhã). */
+/**
+ * Compromissos que entram na projeção de caixa (T-027):
+ * - despesas aprovadas a pagar (solicitações) na data programada (sem data: amanhã);
+ * - v27 · parcelas em aberto das contas a pagar aprovadas, na data programada (senão no vencimento; vencida e não paga: amanhã).
+ */
 export async function compromissosAprovados(unitId: number | null) {
   const cfg = await getSettings(); const amanha = addDays(hoje(), 1);
   const r = await sql<{ id: number; codigo: string; valor: number; previsto: string | null }[]>`SELECT r.id, t.codigo, r.valor::float, r.pagamento_previsto::text AS previsto FROM requests r JOIN request_types t ON t.id=r.type_id
     WHERE r.status='APROVADA' AND r.valor > 0 AND r.pago_em IS NULL ${unitId === null ? sql`` : sql`AND r.unit_id=${unitId}`}`;
-  return r.map(x => ({ id: x.id, categoria: categoriaDoTipo(cfg, x.codigo), valor: x.valor, data: !x.previsto || x.previsto < amanha ? amanha : x.previsto, programada: !!x.previsto }));
+  const solicitacoes = r.map(x => ({ id: x.id, origem: "SOLICITACAO" as const, categoria: categoriaDoTipo(cfg, x.codigo), valor: x.valor, data: !x.previsto || x.previsto < amanha ? amanha : x.previsto, programada: !!x.previsto, vencida: false }));
+  let parcelas: { id: number; categoria: string; valor: number; vencimento: string }[] = [];
+  try {
+    parcelas = await sql<{ id: number; categoria: string; valor: number; vencimento: string }[]>`SELECT i.id, p.categoria, i.valor::float, coalesce(i.programado_para, i.vencimento)::text AS vencimento FROM payable_installments i JOIN payables p ON p.id=i.payable_id
+      WHERE i.status='A_PAGAR' AND p.status='ATIVO' ${unitId === null ? sql`` : sql`AND p.unit_id=${unitId}`}`;
+  } catch { parcelas = []; /* banco anterior à v27 */ }
+  return [...solicitacoes, ...parcelas.map(x => ({ id: x.id, origem: "CONTA_PAGAR" as const, categoria: x.categoria, valor: x.valor, data: x.vencimento < amanha ? amanha : x.vencimento, programada: true, vencida: x.vencimento < hoje() }))];
 }
 
 export type LinhaFila = { id: number; numero: string; titulo: string; tipo: string; codigo: string; status: string; valor: number | null; unidade: string | null; solicitante: string | null; etapa: string | null; prazo: string | null; criada: string; concluida: string | null; previsto: string | null; pago_em: string | null; anexos: number };

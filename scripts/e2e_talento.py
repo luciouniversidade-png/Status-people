@@ -108,7 +108,7 @@ for nome, org in [("Cand. Um", "SITE"), ("Cand. Dois", "INDICACAO")]:
 html = page(f"/recrutamento/vagas/{vid}"); assert "Cand. Um" in html and "Cand. Dois" in html and "mover / avaliar" in html; print("candidatos na triagem ok")
 aid = find_form_aid(html, "mover / avaliar")
 def app_id(nome):
-    i = html.find(nome); return re.search(r'name="id" value="(\d+)"', html[i:]).group(1)
+    i = html.find(nome, max(0, html.find("Pipeline ("))); return re.search(r'name="id" value="(\d+)"', html[i:]).group(1)  # v26: busca no pipeline (o card de aderência lista os mesmos nomes antes)
 ap1, ap2 = app_id("Cand. Um"), app_id("Cand. Dois")
 loc = post(f"/recrutamento/vagas/{vid}", aid, {"id": ap1, "etapa": "ENTREVISTA_RH", "sc_0": 4, "sc_1": 5, "notas": "boa entrevista"}); assert "movido para ENTREVISTA_RH" in unq(loc), unq(loc)
 loc = post(f"/recrutamento/vagas/{vid}", aid, {"id": ap2, "etapa": "REPROVADO", "motivo": "sem licenciatura"})

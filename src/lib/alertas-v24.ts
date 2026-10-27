@@ -16,11 +16,52 @@ export async function alertasV24(unitId: number | null, sensiveis = false): Prom
     const { caixaProjetado } = await import("./fpa"); const p = await caixaProjetado(unitId);
     const neg = p.semanas.find(s => s.saldo !== null && s.saldo < 0);
     if (neg) a.push({ nivel: "ALTO", texto: `Financeiro: saldo projetado negativo na semana até ${neg.ate.split("-").reverse().join("/")} (${Math.round(neg.saldo!).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })})`, href: "/financeiro/projecao" });
+    // v27 · reserva mínima (rede): cenário pessimista abaixo dela, sem chegar a negativo
+    else if (p.abaixoReserva) a.push({ nivel: "MEDIO", texto: `Financeiro: caixa projetado abaixo da reserva mínima (${Math.round(p.reserva).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}) na semana até ${p.abaixoReserva.ate.split("-").reverse().join("/")} no cenário pessimista`, href: "/financeiro/projecao" });
   });
   // Orçado × real: centro acima do teto da banda aguardando explicação (T-025)
   await tenta(async () => {
     const [r] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM budget_explain_requests WHERE status='ABERTA' ${unitId === null ? sql`` : sql`AND escopo=${unitId}`}`;
     if (r.n) a.push({ nivel: "MEDIO", texto: `Financeiro: ${r.n} categoria(s) acima de ${cfg.orcamento.faixaMaxPct}% do orçado aguardando explicação do responsável`, href: "/financeiro/orcamento" });
+  });
+  // v28 · plano de contas e rateio: conta genérica acima da meta, saídas sem conta, corporativo sem critério de rateio aprovado e o orçamento do próximo ano
+  await tenta(async () => {
+    const fora = [...(cfg.dre.internas as string[]), ...((cfg.dre.naoDespesa ?? []) as string[])]; const meta = Number(cfg.planoContas?.metaGenericaPct ?? 5);
+    const [r] = await sql<{ v: number | null; gen: number | null; sem: number | null; nsem: number }[]>`SELECT sum(c.valor)::float AS v, sum(c.valor) FILTER (WHERE a.generica)::float AS gen, sum(c.valor) FILTER (WHERE c.conta_id IS NULL)::float AS sem, count(*) FILTER (WHERE c.conta_id IS NULL)::int AS nsem
+      FROM cash_entries c LEFT JOIN chart_accounts a ON a.id=c.conta_id WHERE c.tipo='SAIDA' AND c.data >= ${addDays(h, -90)}::date AND NOT (c.categoria = ANY(${fora})) ${uf("c.unit_id")}`;
+    const v = r?.v ?? 0;
+    if (v > 0 && (100 * (r.gen ?? 0)) / v > meta) a.push({ nivel: "MEDIO", texto: `Plano de contas: ${((100 * (r.gen ?? 0)) / v).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}% das saídas dos últimos 90 dias em conta genérica (meta até ${meta}%)`, href: "/financeiro/plano-de-contas?aba=classificacao" });
+    if (v > 0 && (100 * (r.sem ?? 0)) / v >= 20) a.push({ nivel: "MEDIO", texto: `Plano de contas: ${r.nsem} saída(s) dos últimos 90 dias sem conta (${Math.round((100 * (r.sem ?? 0)) / v)}% do valor) — o resultado por unidade e o orçamento perdem precisão`, href: "/financeiro/plano-de-contas?aba=classificacao" });
+    if (unitId === null) {
+      const [c] = await sql<{ n: number; regra: number }[]>`SELECT (SELECT count(*) FROM cash_entries ce JOIN cost_centers cc ON cc.id=ce.cost_center_id WHERE cc.tipo='CORPORATIVO' AND ce.tipo='SAIDA' AND ce.data >= ${`${h.slice(0, 4)}-01-01`}::date)::int AS n, (SELECT count(*) FROM allocation_rules WHERE status='APROVADA' AND desde <= ${mes})::int AS regra`;
+      if (c.n && !c.regra) a.push({ nivel: "MEDIO", texto: `Rateio: ${c.n} saída(s) do corporativo em ${h.slice(0, 4)} rateadas provisoriamente por alunos — falta o critério aprovado pela Direção`, href: "/financeiro/rateio#regras" });
+      const prox = Number(h.slice(0, 4)) + 1;
+      if (h.slice(5) >= "11-15") { const [b] = await sql<{ status: string }[]>`SELECT status FROM budget_plans WHERE ano=${prox}`; if (!b || b.status !== "APLICADO") a.push({ nivel: h.slice(5) >= "12-10" ? "ALTO" : "MEDIO", texto: `Orçamento: ${prox} ainda não aplicado — o orçado × realizado de janeiro começa sem meta`, href: `/financeiro/orcamento/historico?ano=${prox}` }); }
+    }
+  });
+  // v27 · Contas a pagar: vencidas sem baixa, vencendo sem programação, programadas e não pagas, retidas, aguardando aprovação há mais de 2 dias (só contagens)
+  await tenta(async () => {
+    const j = Number(cfg.contasPagar?.alertaDias ?? 3);
+    const [r] = await sql<{ vencidas: number; vencendo: number; prog: number; retidas: number; aprov: number }[]>`SELECT
+        count(*) FILTER (WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND i.vencimento < ${h}::date)::int AS vencidas,
+        count(*) FILTER (WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND NOT i.retida AND i.programado_para IS NULL AND i.vencimento BETWEEN ${h}::date AND ${addDays(h, j)}::date)::int AS vencendo,
+        count(*) FILTER (WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND i.programado_para < ${h}::date)::int AS prog,
+        count(*) FILTER (WHERE i.status='A_PAGAR' AND p.status='ATIVO' AND i.retida)::int AS retidas,
+        count(DISTINCT p.id) FILTER (WHERE p.status='AGUARDANDO_APROVACAO' AND p.created_at < now() - interval '2 days')::int AS aprov
+      FROM payable_installments i JOIN payables p ON p.id=i.payable_id WHERE true ${uf("p.unit_id")}`;
+    if (r.vencidas) a.push({ nivel: "ALTO", texto: `Financeiro: ${r.vencidas} parcela(s) de contas a pagar vencida(s) sem baixa`, href: "/financeiro/contas-a-pagar?sit=vencidas" });
+    if (r.vencendo) a.push({ nivel: "MEDIO", texto: `Financeiro: ${r.vencendo} parcela(s) de contas a pagar vencendo em até ${j} dia(s) sem programação de pagamento`, href: "/financeiro/contas-a-pagar?sit=aprogramar" });
+    if (r.prog) a.push({ nivel: "MEDIO", texto: `Financeiro: ${r.prog} pagamento(s) programado(s) que passaram da data sem baixa pelo extrato`, href: "/financeiro/contas-a-pagar?aba=programacao" });
+    if (r.aprov) a.push({ nivel: "MEDIO", texto: `Financeiro: ${r.aprov} conta(s) a pagar aguardando aprovação há mais de 2 dias`, href: "/financeiro/contas-a-pagar?sit=aprovacao" });
+    if (r.retidas) a.push({ nivel: "MEDIO", texto: `Financeiro: ${r.retidas} parcela(s) retida(s) em contestação com fornecedor`, href: "/financeiro/contas-a-pagar?sit=retidas" });
+  });
+  // v27 · RH: contratos com prazo (experiência, estágio, temporário) — só contagens
+  await tenta(async () => {
+    const { prazosContratuais } = await import("./contratos-prazo"); const ps = await prazosContratuais({ unitId });
+    const venc = ps.filter(p => p.situacao === "VENCIDO").length, logo = ps.filter(p => p.situacao === "VENCENDO").length, semData = ps.filter(p => p.situacao === "SEM_DATA").length;
+    if (venc) a.push({ nivel: "ALTO", texto: `Pessoas: ${venc} contrato(s) com prazo (experiência, estágio ou temporário) venceram sem decisão registrada`, href: "/contratos-prazo" });
+    if (logo) a.push({ nivel: ps.some(p => p.situacao === "VENCENDO" && p.dias <= 3) ? "ALTO" : "MEDIO", texto: `Pessoas: ${logo} contrato(s) com prazo vencendo em até ${cfg.contratosPrazo?.avisoDias ?? 10} dias — decidir prorrogar, efetivar ou encerrar`, href: "/contratos-prazo" });
+    if (semData) a.push({ nivel: "MEDIO", texto: `Pessoas: ${semData} estagiário(s) sem término do TCE cadastrado`, href: "/contratos-prazo?tipo=ESTAGIO" });
   });
   // Obrigações fiscais: vencidas e vencendo em até 3 dias (T-031)
   await tenta(async () => {

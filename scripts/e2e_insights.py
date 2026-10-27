@@ -263,7 +263,7 @@ assert "erro=" in post("/configuracoes", aid_cfg, {**base, "cenarioOtimistaPct":
 assert "ok=Parâmetros do Insights salvos" in post("/configuracoes", aid_cfg, {**base, "cenarioOtimistaPct": "95", "resumoSemanal": "1"})
 cfgs = {k: json.loads(psql(f"SELECT value FROM settings WHERE key='{k}'")) for k in ["insights", "fluxos", "fpa"]}
 assert cfgs["insights"]["toleranciaPct"] == 20 and cfgs["insights"]["resumoSemanal"] is True and cfgs["insights"]["lembretePendencias"] is False and cfgs["insights"]["mesesHistorico"] == 24, cfgs
-assert cfgs["fluxos"] == {"riscoPct": 30, "prazoDecisaoDias": 3, "prazoFeriasDias": 4} and cfgs["fpa"] == {"cenarioPessimistaPct": 90, "cenarioOtimistaPct": 95}, cfgs
+assert cfgs["fluxos"] == {"riscoPct": 30, "prazoDecisaoDias": 3, "prazoFeriasDias": 4} and cfgs["fpa"] == {"cenarioPessimistaPct": 90, "cenarioOtimistaPct": 95, "reservaMinima": 0}, cfgs  # v27: reserva mínima de caixa (0 = desligada)
 assert psql(f"SELECT count(*) FROM audit_log WHERE entidade='settings' AND user_id={RH} AND depois ? 'insights' AND depois->'fluxos'->>'riscoPct' = '30'") == "1"; ok("farol, resumo, lembrete, prazos da central e cenários do caixa salvos (e auditados)")
 SEG2 = (datetime.fromisoformat(SEG) + timedelta(days=7)).date().isoformat(); assert json.loads(tsx(cmd(SEG2)))["avisados"] == 0; ok("lembrete desligado nas configurações: ninguém é avisado")
 assert status("/fluxos", S) == 200 and status("/executivo", S) == 200 and status("/financeiro/projecao", FI) == 200; ok("painel, central e caixa abrem com os parâmetros novos")

@@ -29,7 +29,7 @@ export default async function Despesas({ searchParams }: { searchParams: Promise
   const itens = p.opex.map(o => { const orc = p.orcado.get(o.categoria); return { rotulo: o.categoria, valor: o.valor, tom: tomDe(o.valor, orc), sub: orc ? `${Math.round((100 * o.valor) / orc)}% do orçado (${fmtCompacto(orc)})` : "sem orçamento no mês", href: `/financeiro/lancamentos?ano=${ano}&m1=${mes}&m2=${mes}&cat=${encodeURIComponent(o.categoria)}${uParam}` }; });
   return (
     <Page title="Despesas e aprovações" sub={`Política embutida: aprovação por etapas e alçada por valor, lote só para o normal e exceções item a item; “paga” só com o débito conciliado no extrato. ${ctx.carimbo}.`}
-      actions={<><Btn kind="ghost" href="/solicitacoes?aba=aprovar">Para eu aprovar</Btn>{fin && <Btn kind="ghost" href="/solicitacoes?aba=pagar">A pagar</Btn>}<Btn kind="ghost" href="/financeiro/projecao">Caixa projetado</Btn></>}>
+      actions={<><Btn kind="ghost" href="/solicitacoes?aba=aprovar">Para eu aprovar</Btn>{fin && <Btn kind="ghost" href="/solicitacoes?aba=pagar">A pagar</Btn>}{["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role) && <Btn kind="ghost" href="/financeiro/contas-a-pagar">Contas a pagar</Btn>}<Btn kind="ghost" href="/financeiro/projecao">Caixa projetado</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <BarraContexto ctx={ctx} voltar="/financeiro/despesas" />
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -83,6 +83,7 @@ export default async function Despesas({ searchParams }: { searchParams: Promise
           <li>Ninguém aprova a própria solicitação; cada decisão fica na linha do tempo e na auditoria (lote inclusive).</li>
           <li>Paga só com o débito do extrato (mesmo valor, a partir de 7 dias antes da aprovação); o lançamento do caixa é reclassificado para a categoria do tipo, com trilha.</li>
           <li>Competência financeira fechada bloqueia registrar ou desfazer pagamento com débito daquele mês.</li>
+          <li>Boletos, aluguéis, contratos e notas de fornecedores com vencimento (parcelados ou recorrentes) ficam em <Link className="text-acao underline" href="/financeiro/contas-a-pagar">Contas a pagar</Link>, com a mesma regra: alçada, orçamento e baixa só com o débito do extrato.</li>
         </ul>
         {s.role === "DIRECAO" && <p className="mt-2 text-xs"><Link className="text-acao underline" href="/configuracoes#v25-despesas">Ajustar a política em Configurações</Link></p>}
         <p className="mt-1 text-[11px] text-slate-500">Recorte: {ctx.rotulo.entidade} · {ctx.rotulo.unidade} · {ctx.rotulo.periodo}.</p>

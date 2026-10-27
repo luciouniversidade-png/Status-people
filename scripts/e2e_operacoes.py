@@ -35,7 +35,7 @@ post("/configuracoes", aid, {"nome": "Prof. Chamado", "email": "prof@car", "role
 
 # ---- ativos + fornecedor
 html = page("/operacoes/ativos", sess=O); aid = find_form_aid(html, "Novo ativo")
-loc = post("/operacoes/ativos", aid, {"nome": "Ar-condicionado Sala 5", "categoria": "Ar-condicionado", "unitId": car, "ambiente": "Sala 5", "aquisicao": "2024-03-01", "valor": 3200, "garantiaAte": "2026-10-20", "preventivaDias": 90, "ultimaPreventiva": "2026-05-01", "codigo": "PAT-0101"}, sess=O); assert "Ativo salvo" in unq(loc), unq(loc)
+loc = post("/operacoes/ativos", aid, {"nome": "Ar-condicionado Sala 5", "categoria": "Ar-condicionado", "unitId": car, "ambiente": "Sala 5", "aquisicao": "2024-03-01", "valor": 3200, "garantiaAte": (__import__("datetime").date.today() + __import__("datetime").timedelta(days=20)).isoformat(), "preventivaDias": 90, "ultimaPreventiva": "2026-05-01", "codigo": "PAT-0101"}, sess=O); assert "Ativo salvo" in unq(loc), unq(loc)
 html = page("/operacoes/ativos", sess=O); aid = find_form_aid(html, "Importar inventário"); loc = post("/operacoes/ativos", aid, {"unitId": car, "csv": "patrimonio;nome;categoria;ambiente;valor\nPAT-0102;Projetor Sala 3;TI e equipamentos;Sala 3;2.500,00\n;Extintor corredor;Segurança (extintores, câmeras);Corredor;"}, sess=O); assert "2 ativo(s)" in unq(loc), unq(loc); print("ativos ok")
 html = page("/operacoes/fornecedores", sess=O); aid = find_form_aid(html, "Novo fornecedor"); loc = post("/operacoes/fornecedores", aid, {"nome": "Frio Bom Refrigeração", "servico": "Ar-condicionado", "telefone": "67 9"}, sess=O); assert "Fornecedor salvo" in unq(loc)
 # ---- painel: preventiva vencida (última 01/05 + 90d = 30/07) e garantia vencendo

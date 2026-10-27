@@ -146,7 +146,7 @@ export async function salvarParamInsights(fd: FormData) {
     const fluxos = { ...cfg.fluxos, riscoPct: Math.round(num("riscoPct", 5, 90, "Em risco")), prazoDecisaoDias: Math.round(num("prazoDecisaoDias", 1, 30, "Prazo para decidir")), prazoFeriasDias: Math.round(num("prazoFeriasDias", 1, 30, "Prazo para aprovar férias")) };
     const pess = num("cenarioPessimistaPct", 0, 100, "Cenário pessimista"), otim = num("cenarioOtimistaPct", 0, 100, "Cenário otimista");
     if (pess > otim) throw new Error("O cenário pessimista não pode passar do otimista.");
-    const fpa = { ...cfg.fpa, cenarioPessimistaPct: pess, cenarioOtimistaPct: otim };
+    const fpa = { ...cfg.fpa, cenarioPessimistaPct: pess, cenarioOtimistaPct: otim, reservaMinima: str(fd, "reservaMinima") ? Math.round(num("reservaMinima", 0, 10_000_000_000, "Reserva mínima de caixa")) : Number(cfg.fpa?.reservaMinima ?? 0) };
     await sql.begin(async tx => {
       for (const [key, value] of [["insights", insights], ["fluxos", fluxos], ["fpa", fpa]] as const) await tx`INSERT INTO settings (key, value) VALUES (${key}, ${JSON.stringify(value)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
     });
