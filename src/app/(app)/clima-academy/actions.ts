@@ -8,8 +8,9 @@ import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth"
 import { audit, str, strOrNull, int, num, hoje, getSettings } from "@/lib/utils";
 import { perguntasPadrao, validadeFinal, type Pergunta } from "@/lib/clima-academy";
 import { erroAssinado } from "@/lib/aviso";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
 
 // ======================= CLIMA =======================
@@ -19,8 +20,10 @@ export async function criarPesquisa(fd: FormData) {
     let perguntas: Pergunta[];
     const texto = str(fd, "perguntas");
     if (texto) { perguntas = texto.split("\n").map(l => l.trim()).filter(Boolean).map((l, i) => { const [d, t] = l.includes("|") ? l.split("|").map(x => x.trim()) : ["Geral", l]; return { id: `q${i + 1}`, dimensao: d, texto: t, tipo: "ESCALA" as const }; }); perguntas.push(...perguntasPadrao([], "ENPS")); }
+    else if (tipo === "LIDERANCA") { const { perguntasLideranca } = await import("@/lib/lideranca"); perguntas = perguntasLideranca(cfg.clima.lideranca.dimensoes as [string, string][]); } // v30 · cada pessoa avalia o próprio gestor direto
     else perguntas = perguntasPadrao(cfg.clima.dimensoes as [string, string][], tipo);
-    const [r] = await db.insert(schema.climateSurveys).values({ nome, tipo, inicio, fim, unitId: int(fd, "unitId"), perguntas, token: randomBytes(12).toString("hex"), minimoAnonimato: int(fd, "minimoAnonimato") ?? cfg.clima.minimoAnonimato }).returning({ id: schema.climateSurveys.id });
+    const minimo = tipo === "LIDERANCA" ? Math.max(3, int(fd, "minimoAnonimato") ?? Number(cfg.clima.lideranca.minimo)) : int(fd, "minimoAnonimato") ?? cfg.clima.minimoAnonimato;
+    const [r] = await db.insert(schema.climateSurveys).values({ nome, tipo, inicio, fim, unitId: int(fd, "unitId"), perguntas, token: randomBytes(12).toString("hex"), minimoAnonimato: minimo }).returning({ id: schema.climateSurveys.id });
     id = r.id; await audit(s, "criar pesquisa", "climate_surveys", id, null, { nome, tipo, perguntas: perguntas.length });
   } catch (e) { redirect(go("/clima", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/clima/${id}`, "ok", "Pesquisa criada. Abra-a para liberar o link."));
@@ -41,7 +44,11 @@ export async function responderPesquisa(fd: FormData) {
     for (const q of perguntas) { const v = str(fd, q.id); if (!v) continue; if (q.tipo === "TEXTO") respostas[q.id] = v.slice(0, 2000); else { const n = Number(v); if (Number.isNaN(n)) continue; respostas[q.id] = n; algum = true; } }
     if (!algum) throw new Error("Responda ao menos uma pergunta.");
     const comentario = perguntas.filter(q => q.tipo === "TEXTO").map(q => respostas[q.id]).filter(Boolean).join("\n") || null;
-    await db.insert(schema.climateResponses).values({ surveyId: sv.id, unitId: int(fd, "unitId"), regime: strOrNull(fd, "regime"), respostas, comentario });
+    // v30 · pesquisa de liderança: a resposta guarda só o gestor avaliado (nunca quem respondeu)
+    let gestorId: number | null = null;
+    if (sv.tipo === "LIDERANCA") { gestorId = int(fd, "gestorId"); if (!gestorId) throw new Error("Escolha quem é o seu gestor direto.");
+      const [g] = await sql<{ ok: boolean }[]>`SELECT EXISTS (SELECT 1 FROM employees x WHERE x.gestor_id=${gestorId} AND x.situacao <> 'DESLIGADO') AND EXISTS (SELECT 1 FROM employees e WHERE e.id=${gestorId} AND e.situacao <> 'DESLIGADO' ${sv.unitId ? sql`AND e.unit_id=${sv.unitId}` : sql``}) AS ok`; if (!g?.ok) throw new Error("Gestor inválido para esta pesquisa."); }
+    await db.insert(schema.climateResponses).values({ surveyId: sv.id, unitId: int(fd, "unitId"), regime: strOrNull(fd, "regime"), respostas, comentario, gestorId });
     jar.set(`clima_${sv.id}`, "1", { httpOnly: true, sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 120 }); ok = true;
   } catch (e) { redirect(`/pesquisa/${token}?${erroAssinado(e instanceof Error ? e.message : "Erro")}`); }
   if (ok) redirect(`/pesquisa/${token}?obrigado=1`);
@@ -61,7 +68,9 @@ export async function salvarCurso(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); let cid = id ?? 0;
   try { assert(can.editar(s) || s.role === "DIRETOR_UNIDADE", "Só RH, Direção e diretores criam treinamentos."); const codigo = str(fd, "codigo"); const titulo = str(fd, "titulo"); if (!codigo || !titulo) throw new Error("Informe código e título.");
     const cargos = fd.getAll("paraCargos").map(Number).filter(Boolean);
-    const d = { codigo, titulo, area: strOrNull(fd, "area"), descricao: strOrNull(fd, "descricao"), tipo: str(fd, "tipo") || "OPCIONAL", formato: str(fd, "formato") || "ONLINE", cargaHoras: num(fd, "cargaHoras") === null ? null : String(num(fd, "cargaHoras")), link: strOrNull(fd, "link"), procedureId: int(fd, "procedureId"), validadeMeses: int(fd, "validadeMeses"), paraTodos: str(fd, "paraTodos") === "1", paraCargos: cargos.length ? cargos : null, paraRegime: strOrNull(fd, "paraRegime"), ativo: str(fd, "ativo") !== "0" };
+    const d = { codigo, titulo, area: strOrNull(fd, "area"), descricao: strOrNull(fd, "descricao"), tipo: str(fd, "tipo") || "OPCIONAL", formato: str(fd, "formato") || "ONLINE", cargaHoras: num(fd, "cargaHoras") === null ? null : String(num(fd, "cargaHoras")), link: strOrNull(fd, "link"), procedureId: int(fd, "procedureId"), validadeMeses: int(fd, "validadeMeses"), paraTodos: str(fd, "paraTodos") === "1", paraCargos: cargos.length ? cargos : null, paraRegime: strOrNull(fd, "paraRegime"), ativo: str(fd, "ativo") !== "0",
+      // v30 · custo por participante, instrutor e inscrição (aberta ao colaborador, com ou sem aprovação do gestor)
+      custo: num(fd, "custo") === null ? null : String(num(fd, "custo")), instrutor: strOrNull(fd, "instrutor"), inscricaoAberta: str(fd, "inscricaoAberta") === "1", exigeAprovacao: str(fd, "exigeAprovacao") === "1" };
     if (d.formato === "POP" && !d.procedureId) throw new Error("Treinamento por ciência de POP precisa do POP vinculado.");
     if (id) { await db.update(schema.courses).set(d).where(eq(schema.courses.id, id)); } else { const [r] = await db.insert(schema.courses).values(d).returning({ id: schema.courses.id }); cid = r.id; }
     await audit(s, id ? "editar treinamento" : "criar treinamento", "courses", cid, null, { codigo, titulo, tipo: d.tipo });
@@ -82,7 +91,7 @@ export async function registrarConclusao(fd: FormData) {
 export async function salvarSessao(fd: FormData) {
   const s = await requireSession(); const courseId = Number(fd.get("courseId")); const b = `/academy/cursos/${courseId}`;
   try { assert(GESTAO.includes(s.role)); const data = str(fd, "data"); if (!data) throw new Error("Informe a data."); const unitId = int(fd, "unitId"); if (unitId) assertScope(s, unitId);
-    const [r] = await db.insert(schema.trainingSessions).values({ courseId, data, horario: strOrNull(fd, "horario"), local: strOrNull(fd, "local"), instrutor: strOrNull(fd, "instrutor"), unitId, vagas: int(fd, "vagas"), obs: strOrNull(fd, "obs") }).returning({ id: schema.trainingSessions.id });
+    const [r] = await db.insert(schema.trainingSessions).values({ courseId, data, horario: strOrNull(fd, "horario"), local: strOrNull(fd, "local"), instrutor: strOrNull(fd, "instrutor"), unitId, vagas: int(fd, "vagas"), obs: strOrNull(fd, "obs"), custo: num(fd, "custo") === null ? null : String(num(fd, "custo")) }).returning({ id: schema.trainingSessions.id });
     await audit(s, "criar turma de treinamento", "training_sessions", r.id, null, { courseId, data });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Turma agendada.", "#turmas"));

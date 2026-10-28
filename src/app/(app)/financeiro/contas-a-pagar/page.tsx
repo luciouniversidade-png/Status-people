@@ -1,3 +1,4 @@
+import { quemAprovaTexto } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import Link from "@/components/Link";
 import { requireSession } from "@/lib/auth";
@@ -15,6 +16,7 @@ import { confirmarSugestoes, programarParcelas, desprogramarParcela } from "./ac
 
 export const dynamic = "force-dynamic";
 const brl = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brl0 = (v: number | null | undefined) => (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const pct = (v: number | null) => v === null ? "—" : `${v.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`;
 const ABAS: Record<string, string> = { parcelas: "Parcelas", titulos: "Títulos", programacao: "Programação de pagamentos", fornecedores: "Fornecedores" };
 
@@ -22,7 +24,7 @@ const ABAS: Record<string, string> = { parcelas: "Parcelas", titulos: "Títulos"
 export default async function ContasAPagar({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireSession(); const sp = await searchParams;
   if (!veCP(s)) { await audit(s, "acesso negado: contas a pagar", "payables", null, null, { papel: s.role }); redirect("/financeiro"); }
-  const ctx = await lerContexto(s, sp); const cfg = await getSettings(); const opera = operaCP(s);
+  const ctx = await lerContexto(s, sp); const cfg = await getSettings(); const opera = operaCP(s); const quemAprovaCP = await quemAprovaTexto("contasPagar");
   const sit = sp.sit && sp.sit in FILTROS_SIT ? sp.sit : "abertas"; const aba = sp.aba && sp.aba in ABAS ? sp.aba : "parcelas";
   const f = { sit, cat: sp.cat && (cfg.financeiro.categoriasSaida as string[]).includes(sp.cat) ? sp.cat : null, q: sp.q?.trim().slice(0, 80) || null, de: /^\d{4}-\d{2}-\d{2}$/.test(sp.de ?? "") ? sp.de! : null, ate: /^\d{4}-\d{2}-\d{2}$/.test(sp.ate ?? "") ? sp.ate! : null, pag: Number(sp.pag) || 1, nat: sp.nat && ehNatureza(sp.nat) ? sp.nat : null };
   const escopo = { unitIds: ctx.unitIds, entidadeId: ctx.entidadeId, unitId: ctx.unitId };
@@ -84,9 +86,9 @@ export default async function ContasAPagar({ searchParams }: { searchParams: Pro
       <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <Card title={`Orçado × pago × a pagar — ${ctx.rotulo.periodo}`} actions={<Link className="text-xs text-acao underline" href="/financeiro/orcamento">FP&A</Link>}>
           {p.orcamento.length === 0 ? <p className="text-sm text-slate-500">Sem orçamento lançado para o período nem parcelas no mês.</p> :
-            <Table head={["Plano", "Orçado", "Pago (caixa)", "A pagar no mês", "Livre"]}>
-              {p.orcamento.slice(0, 12).map(o => <tr key={o.categoria}><Td className="text-xs">{o.categoria}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{o.orcado ? brl(o.orcado) : <span className="text-slate-400">sem orçamento</span>}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{brl(o.pago)}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{brl(o.apagar)}</Td>
-                <Td className={`whitespace-nowrap text-xs font-medium tabular-nums ${!o.orcado ? "text-slate-400" : o.livre < 0 ? "text-erro" : o.livre < o.orcado * 0.1 ? "text-aviso" : "text-ok"}`}>{o.orcado ? brl(o.livre) : "—"}</Td></tr>)}
+            <Table denso head={["Plano", "Orçado", "Pago (caixa)", "A pagar no mês", "Livre"]}>
+              {p.orcamento.slice(0, 12).map(o => <tr key={o.categoria}><Td className="text-xs">{o.categoria}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{o.orcado ? brl0(o.orcado) : <span className="text-slate-400">sem orçamento</span>}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{brl0(o.pago)}</Td><Td className="whitespace-nowrap text-xs tabular-nums">{brl0(o.apagar)}</Td>
+                <Td className={`whitespace-nowrap text-xs font-medium tabular-nums ${!o.orcado ? "text-slate-400" : o.livre < 0 ? "text-erro" : o.livre < o.orcado * 0.1 ? "text-aviso" : "text-ok"}`}>{o.orcado ? brl0(o.livre) : "—"}</Td></tr>)}
             </Table>}
           <p className="mt-1 text-[11px] text-slate-500">Livre = orçado − pago no caixa − parcelas a pagar com vencimento no mês. Negativo: o mês já estoura o plano.</p>
         </Card>
@@ -180,7 +182,7 @@ export default async function ContasAPagar({ searchParams }: { searchParams: Pro
       </Card>
       <Card title="Regras de contas a pagar" className="mt-4">
         <ul className="list-disc space-y-1 pl-5 text-sm">
-          <li>Alçada: compromisso total a partir de {brl(Number(c.alcadaValor))} (parcelado: o total; recorrente: a soma das parcelas) vai para quem aprova ({((cfg.alcadas.contasPagar ?? ["DIRECAO"]) as string[]).map(r => r === "DIRECAO" ? "Direção" : r === "FINANCEIRO" ? "Financeiro" : r).join(", ")}). Quem lança não aprova o próprio título.{Number(c.alcadaDuplaValor) > 0 ? ` A partir de ${brl(Number(c.alcadaDuplaValor))}, dupla checagem: duas pessoas diferentes aprovam.` : ""}</li>
+          <li>Alçada: compromisso total a partir de {brl(Number(c.alcadaValor))} (parcelado: o total; recorrente: a soma das parcelas) vai para quem aprova ({quemAprovaCP}). Quem lança não aprova o próprio título.{Number(c.alcadaDuplaValor) > 0 ? ` A partir de ${brl(Number(c.alcadaDuplaValor))}, dupla checagem: duas pessoas diferentes aprovam.` : ""}</li>
           {c.exigirOrcamento && <li>Orçamento: parcela que passa do orçado da categoria no mês (realizado + comprometido + este título) ou categoria sem orçamento também pede aprovação.</li>}
           <li>Programação financeira: só título aprovado é programado (data e conta); parcela retida em contestação fica fora até ser liberada. A data programada vale para o caixa projetado e para o borderô.</li>
           <li>Dia útil: {c.ajustarDiaUtil ? "vencimento" : "quando marcado no lançamento, vencimento"} em fim de semana ou feriado bancário vai para o próximo dia útil — feriados nacionais (inclui 20/11), Sexta-feira Santa{c.carnavalSemBanco ? ", Carnaval (seg. e ter.)" : ""}{c.corpusChristiSemBanco ? ", Corpus Christi" : ""}{locais.length ? ` e locais ${locais.join(", ")}` : ""}.</li>

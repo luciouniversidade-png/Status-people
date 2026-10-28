@@ -1,4 +1,5 @@
 "use server";
+import { quemAprovaTexto } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
@@ -20,7 +21,7 @@ export async function salvarPendencia(fd: FormData) {
 /** Marca como decidida e, se pedido, registra no Decision Log com o texto da decisão. */
 export async function decidirPendencia(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const novo = str(fd, "status");
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops), "Registrar decisões exige: " + cfg.alcadas.pops.join(", "));
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "pops")) throw new Error("Registrar decisões exige: " + (await quemAprovaTexto("pops")));
     const [p] = await db.select().from(schema.execPending).where(eq(schema.execPending.id, id)); if (!p) throw new Error("Pendência não encontrada.");
     let decisionId: number | null = p.decisionId;
     if (novo === "DECIDIDA") { const texto = str(fd, "decisao"); if (!texto) throw new Error("Escreva a decisão tomada.");

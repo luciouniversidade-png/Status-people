@@ -3,7 +3,7 @@ import { trocarContexto } from "@/app/(app)/contexto/actions";
 import { SelectAuto, InputAuto } from "./EnvioAuto";
 
 const chip = "h-9 min-w-0 max-w-full rounded-full border border-line bg-white px-3 text-sm text-ink focus:border-acao focus:outline-none focus:ring-1 focus:ring-acao disabled:bg-mist disabled:text-slate-500";
-const ORIGEM: Record<Contexto["origem"], string> = { url: "do link", sessao: "escolhido nesta sessão", salvo: "seu padrão salvo", papel: "padrão do seu perfil" };
+const ORIGEM: Record<Contexto["origem"], string> = { url: "do link", sessao: "escolhido nesta sessão", salvo: "seu padrão salvo", papel: "padrão da sua atuação" };
 
 /**
  * Chips de contexto no topo das telas de cockpit (T-100): entidade (Consolidado), unidade e período.
@@ -30,9 +30,9 @@ export function BarraContexto({ ctx, voltar, periodo = true, notaPeriodo }: { ct
       {!periodo && <input type="hidden" name="p" value={ctx.periodo} />}
       <button name="acao" value="aplicar" className="h-9 rounded-full bg-navy px-3 text-xs font-medium text-white">Aplicar</button>
       <span className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
-        <span>{ctx.travado ? "seu perfil vê só a sua unidade" : ORIGEM[ctx.origem]}{notaPeriodo ? ` · ${notaPeriodo}` : ""}</span>
+        <span>{ctx.travado ? "seu acesso vê só a sua unidade" : ORIGEM[ctx.origem]}{notaPeriodo ? ` · ${notaPeriodo}` : ""}</span>
         {!ctx.travado && <button name="acao" value="salvar" className="text-acao underline-offset-2 hover:underline">Salvar como padrão</button>}
-        {!ctx.travado && ctx.origem !== "papel" && <button name="acao" value="padrao" className="text-acao underline-offset-2 hover:underline">Padrão do papel</button>}
+        {!ctx.travado && ctx.origem !== "papel" && <button name="acao" value="padrao" className="text-acao underline-offset-2 hover:underline">Padrão da atuação</button>}
       </span>
       {ctx.semVinculo && <p className="w-full text-xs text-aviso">Nenhuma unidade está vinculada a esta entidade. Vincule em Configurações → Unidades para os números por unidade entrarem no recorte.</p>}
     </form>

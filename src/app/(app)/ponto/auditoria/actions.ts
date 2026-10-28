@@ -6,8 +6,9 @@ import { audit, str, strOrNull, int, getSettings, caminhoSeguro, fmtData } from 
 import { processarAuditoria, ACOES, DIV_TIPO } from "@/lib/auditoria-ponto";
 import { salvarDias } from "@/lib/ponto";
 import { assertMesAberto } from "@/lib/folha";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const PERFIS = ["RH", "DIRECAO", "DIRETOR_UNIDADE"];
 const LOTE = ["ATRASO", "SAIDA_ANTECIPADA", "DEFICIT", "HORA_EXTRA"];
 async function guarda(s: Session, acao: string) { if (!PERFIS.includes(s.role)) { await audit(s, `acesso negado: ${acao}`, "timesheet_audit", null, null, { papel: s.role }); throw new Error("A auditoria do ponto é do RH, da Direção e do diretor(a) da unidade."); } }

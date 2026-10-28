@@ -1,3 +1,4 @@
+import { fmtPct } from "@/lib/formato";
 import Link from "@/components/Link";
 import { requireMatriculas, scopeUnit, can } from "@/lib/auth";
 import { sql } from "@/db";
@@ -32,9 +33,9 @@ export default async function Rematricula({ searchParams }: { searchParams: Prom
       <Flash ok={sp.ok} erro={sp.erro} />
       {!contrato ? <Card className="mb-4 border-amber-300" title="Contrato não publicado"><p className="text-sm text-slate-700">Os links só podem ser gerados com o contrato {ano} publicado — a família aceita exatamente a versão vigente. {can.editar(s) ? <Link className="text-acao underline" href="/matriculas/rematricula/contrato">Publicar o contrato</Link> : "Peça à Direção/RH para publicar."}</p></Card>
         : <p className="mb-3 text-xs text-slate-500">Contrato vigente: <b>{contrato.titulo}</b> · versão {contrato.versao} · publicado em {fmtDataHora(contrato.publicado_em)}</p>}
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Alunos que seguem" value={baseN} hint={n("CONCLUINTE") ? `${n("CONCLUINTE")} concluinte(s) fora` : undefined} />
-        <Stat label="Rematrícula feita" value={<span className="text-ok">{baseN ? `${Math.round(1000 * feitas / baseN) / 10}%` : "—"}</span>} hint={`${feitas} de ${baseN}`} />
+        <Stat label="Rematrícula feita" value={<span className="text-ok">{baseN ? fmtPct(100 * feitas / baseN, 1) : "—"}</span>} hint={`${feitas} de ${baseN}`} />
         <Stat label="Matriculados" value={n("MATRICULADA")} href="?situacao=MATRICULADA" />
         <Stat label="Reserva (falta financeiro)" value={n("RESERVADA")} href="?situacao=RESERVADA" />
         <Stat label="Abriram e não concluíram" value={<span className="text-aviso">{n("ABERTO")}</span>} href="?situacao=ABERTO" />

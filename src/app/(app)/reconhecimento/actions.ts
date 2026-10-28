@@ -5,15 +5,16 @@ import { requireSession, assert } from "@/lib/auth";
 import { audit, str, int, caminhoSeguro } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { podeReconhecer, podeModerar, valoresDaEscola, colegasReconheciveis, MURAL_MIN, MURAL_MAX } from "@/lib/reconhecimento";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 
 /** Publica um reconhecimento no mural e avisa a pessoa reconhecida (notificação e celular). */
 export async function reconhecer(fd: FormData) {
   const s = await requireSession(); const volta = caminhoSeguro(str(fd, "voltar"), "/reconhecimento");
   try {
-    assert(podeReconhecer(s), "Seu perfil só lê o mural.");
+    assert(podeReconhecer(s), "Seu acesso só lê o mural.");
     const para = int(fd, "para") ?? 0; assert(para > 0, "Escolha quem você quer reconhecer."); assert(para !== s.employeeId, "Reconheça um colega — não a si mesmo.");
     assert((await colegasReconheciveis(s)).some(c => c.id === para), "Escolha um colega da lista.");
     const valor = str(fd, "valor"); const valores = await valoresDaEscola(); assert(!valor || valores.includes(valor), "Escolha um dos valores da escola.");
@@ -33,7 +34,7 @@ export async function reconhecer(fd: FormData) {
 export async function aplaudir(fd: FormData) {
   const s = await requireSession(); const volta = caminhoSeguro(str(fd, "voltar"), "/reconhecimento");
   try {
-    assert(podeReconhecer(s), "Seu perfil só lê o mural.");
+    assert(podeReconhecer(s), "Seu acesso só lê o mural.");
     const id = int(fd, "id") ?? 0; const [r] = await sql<{ status: string }[]>`SELECT status FROM recognitions WHERE id=${id}`; assert(!!r && r.status === "PUBLICADO", "Recado não encontrado.");
     const del = await sql`DELETE FROM recognition_reactions WHERE recognition_id=${id} AND user_id=${s.id} RETURNING 1`;
     if (!del.length) await sql`INSERT INTO recognition_reactions (recognition_id, user_id) VALUES (${id}, ${s.id}) ON CONFLICT DO NOTHING`;

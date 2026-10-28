@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, caminhoSeguro, getSettings } from "@/lib/utils";
 import { sincronizarQuadro } from "@/lib/quadro";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const podeQuadro = (role: string) => ["RH", "DIRECAO"].includes(role);
 
@@ -42,7 +43,7 @@ export async function editarPosicao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const voltar = caminhoSeguro(str(fd, "voltar"), "/quadro");
   try { assert(podeQuadro(s.role), "Sem permissão."); const acao = str(fd, "acao");
     const [p] = await sql<{ employee_id: number | null; situacao: string | null }[]>`SELECT s.employee_id, e.situacao FROM position_slots s LEFT JOIN employees e ON e.id=s.employee_id WHERE s.id=${id} AND s.ativa`; assert(!!p, "Posição não encontrada.");
-    if (acao === "extinguir") { assert(!p.employee_id || p.situacao === "DESLIGADO", "Só extingue posição vaga."); const [v] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM requisitions WHERE slot_id=${id} AND status IN ('SOLICITADA','ABERTA')`; assert(!v.n, "Há vaga aberta para esta posição: cancele a vaga antes."); await sql`UPDATE position_slots SET ativa=false, employee_id=NULL, updated_at=now() WHERE id=${id}`; }
+    if (acao === "extinguir") { assert(!p.employee_id || p.situacao === "DESLIGADO", "Só extingue posição vaga."); const [v] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM requisitions WHERE slot_id=${id} AND status IN ('SOLICITADA','ABERTA','PAUSADA')`; assert(!v.n, "Há vaga aberta para esta posição: cancele a vaga antes."); await sql`UPDATE position_slots SET ativa=false, employee_id=NULL, updated_at=now() WHERE id=${id}`; }
     else if (acao === "liberar") await sql`UPDATE position_slots SET employee_id=NULL, updated_at=now() WHERE id=${id}`;
     else if (acao === "ocupar") { const emp = int(fd, "employeeId") ?? 0; await sql`UPDATE position_slots SET employee_id=NULL WHERE employee_id=${emp} AND ativa AND id <> ${id}`; await sql`UPDATE position_slots SET employee_id=${emp}, updated_at=now() WHERE id=${id}`; }
     else if (acao === "jornada") { const j = int(fd, "jornada") ?? 0; assert(j >= 60 && j <= 720, "Jornada diária entre 60 e 720 minutos."); await sql`UPDATE position_slots SET jornada_min_dia=${j}, updated_at=now() WHERE id=${id}`; }

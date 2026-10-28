@@ -1,8 +1,9 @@
 "use server";
+import { emailsQueAprovam, usuariosQueAprovam } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
-import { requireSession, can, assert, assertScope, assertEmployeeAccess } from "@/lib/auth";
+import { requireSession, can, assert, assertScope, assertEmployeeAccess, naEquipe } from "@/lib/auth";
 import { audit, str, strOrNull, int, erroMsg, getSettings, diasEntre, periodosFerias, fmtData, LEAVE_LABEL, hoje, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { textoImportacao } from "@/lib/importacao";
 import { enviarEmail, emailsPorPerfil, emailDoUsuario } from "@/lib/notify";
@@ -36,9 +37,9 @@ export async function solicitarAfastamento(fd: FormData) {
     }
     const [r] = await db.insert(schema.leaveRequests).values({ employeeId, tipo, inicio, fim, dias, periodoRef, justificativa: strOrNull(fd, "justificativa"), solicitadoPor: s.id }).returning({ id: schema.leaveRequests.id });
     await audit(s, "solicitar", "leave_requests", r.id, null, { employeeId, tipo, inicio, fim, dias, justificativa: tipo === "AFASTAMENTO_SAUDE" ? "(sensível)" : strOrNull(fd, "justificativa") });
-    await notificar([...await usuariosPorPerfil(["RH", "DIRECAO"]), ...await usuariosPorPerfil(["DIRETOR_UNIDADE"], e.unitId)], "Pedido de férias/afastamento aguardando aprovação", `${e.nome} · ${inicio} a ${fim}`, `/ferias?status=SOLICITADA`, "ACAO");
+    await notificar([...new Set([...await usuariosPorPerfil(["RH", "DIRECAO"]), ...await usuariosPorPerfil(["DIRETOR_UNIDADE"], e.unitId), ...await usuariosQueAprovam("ferias", e.unitId, e.id)])], "Pedido de férias/afastamento aguardando aprovação", `${e.nome} · ${inicio} a ${fim}`, `/ferias?status=SOLICITADA`, "ACAO");
     const cfg = await getSettings();
-    await enviarEmail(await emailsPorPerfil(cfg.alcadas.ferias, e.unitId), `[STATUS People] Solicitação de ${LEAVE_LABEL[tipo].toLowerCase()} — ${e.nome}`,
+    await enviarEmail(await emailsQueAprovam("ferias", e.unitId, e.id), `[STATUS People] Solicitação de ${LEAVE_LABEL[tipo].toLowerCase()} — ${e.nome}`,
       `${s.nome} solicitou ${LEAVE_LABEL[tipo].toLowerCase()} para ${e.nome} de ${fmtData(inicio)} a ${fmtData(fim)} (${dias} dia(s)).\nAprove ou rejeite em ${process.env.APP_URL ?? ""}/colaboradores/${employeeId}#ferias`);
   } catch (e) { redirect(`${back}${back.includes("?") ? "&" : "?"}erro=${erroMsg(e)}#ferias`); }
   redirect(`${back}${back.includes("?") ? "&" : "?"}ok=${encodeURIComponent("Solicitação registrada e enviada para aprovação.")}#ferias`);
@@ -55,8 +56,9 @@ export async function decidirAfastamento(fd: FormData) {
       assert(can.editar(s) || r.solicitadoPor === s.id, "Só quem solicitou ou o RH pode cancelar.");
       assert(r.status === "SOLICITADA" || r.status === "APROVADA", "Esta solicitação não pode mais ser cancelada.");
     } else {
-      assert(can.aprovar(s, cfg.alcadas.ferias), "Seu perfil não aprova férias e afastamentos.");
+      assert(can.aprovar(s, "ferias"), "Seu acesso não aprova férias e afastamentos.");
       if (e) assertScope(s, e.unitId);
+      assert(naEquipe(s, e), "Pela sua atuação, você aprova só a sua equipe (pessoas que têm você como gestor direto na ficha).");
       assert(r.status === "SOLICITADA", "Solicitação já decidida.");
       assert(r.solicitadoPor !== s.id || can.editar(s), "Quem solicita não aprova a própria solicitação.");
     }

@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function Caixa({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireFinanceiro(); const sp = await searchParams; const cfg = await getSettings(); const scope = scopeUnit(s); const unitId = scope ?? (sp.unidade ? Number(sp.unidade) : null); const mes = sp.mes && /^\d{4}-\d{2}$/.test(sp.mes) ? sp.mes : hoje().slice(0, 7);
   const [cx, units] = await Promise.all([caixaMes(mes, unitId), db.select().from(schema.units).orderBy(asc(schema.units.nome))]);
-  const gest = can.financeiro(s);
+  const gest = can.gerirFinanceiro(s);
   const fimMes = new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 1)).toISOString().slice(0, 10);
   const porConta = await sql<{ conta: string | null; entradas: number; saidas: number; transf: number; n: number; conciliadas: number; extrato_ate: string | null }[]>`SELECT a.apelido AS conta, coalesce(sum(c.valor) FILTER (WHERE c.tipo='ENTRADA'),0)::float AS entradas, coalesce(sum(c.valor) FILTER (WHERE c.tipo='SAIDA'),0)::float AS saidas, coalesce(sum(c.valor) FILTER (WHERE c.tipo='TRANSFERENCIA'),0)::float AS transf, count(*)::int AS n,
       count(*) FILTER (WHERE bl.status IN ('CONCILIADO','IGNORADO'))::int AS conciliadas, (SELECT max(l2.data) FROM bank_lines l2 WHERE l2.bank_account_id=a.id)::text AS extrato_ate

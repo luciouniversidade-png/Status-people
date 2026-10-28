@@ -113,7 +113,7 @@ PER = psql("SELECT to_char((date_trunc('month', now() AT TIME ZONE 'America/Camp
 html = page(f"/executivo/indicador/pessoas.quadro?periodo={PER}", sess=CO); aid_com = aid_of(html, "Registrar comentário")
 loc = post("/executivo/indicador/pessoas.quadro", aid_com, {"chave": "pessoas.quadro", "periodo": PER, "unidade": CUL, "texto": "Duas admissões previstas para novembro.", "voltar": "/executivo/indicador/pessoas.quadro"}, sess=CO); assert "ok=Comentário registrado" in loc, loc
 assert psql(f"SELECT unit_id FROM kpi_comments WHERE texto LIKE 'Duas admissões%'") == CAR; ok("comentário da coordenação fica na própria unidade (mesmo pedindo outra)")
-assert "erro=Seu perfil não registra comentários" in post("/executivo/indicador/pessoas.quadro", aid_com, {"chave": "pessoas.quadro", "periodo": PER, "texto": "Comentário da leitura"}, sess=LE)
+assert "erro=Seu acesso não registra comentários" in post("/executivo/indicador/pessoas.quadro", aid_com, {"chave": "pessoas.quadro", "periodo": PER, "texto": "Comentário da leitura"}, sess=LE)
 assert "erro=Escreva o comentário" in post("/executivo/indicador/pessoas.quadro", aid_com, {"chave": "pessoas.quadro", "periodo": PER, "texto": "ok"}, sess=CO)
 assert "erro=Sem acesso a este indicador" in post("/executivo/indicador/pessoas.quadro", aid_com, {"chave": "financeiro.receita", "periodo": PER, "texto": "Receita caiu muito"}, sess=CO); ok("comentários recusados: leitura, texto curto e indicador fora do perfil")
 CID = psql("SELECT id FROM kpi_comments WHERE texto LIKE 'Duas admissões%'")
@@ -210,13 +210,13 @@ assert "erro=Reconheça um colega" in post("/reconhecimento", aid_rc, {"para": E
 assert "erro=Escolha um colega da lista" in post("/reconhecimento", aid_rc, {"para": EC, "valor": "", "mensagem": "Obrigada pela ajuda com a feira de ciências!"}, sess=BR)
 assert "erro=Conte o que a pessoa fez" in post("/reconhecimento", aid_rc, {"para": EP, "valor": "", "mensagem": "Valeu!"}, sess=BR)
 assert "erro=Escolha um dos valores" in post("/reconhecimento", aid_rc, {"para": EP, "valor": "Valor inventado", "mensagem": "Obrigada pela ajuda com a feira de ciências!"}, sess=BR)
-assert "erro=Seu perfil só lê o mural" in post("/reconhecimento", aid_rc, {"para": EP, "valor": "", "mensagem": "Parabéns pela organização da feira!"}, sess=LE); ok("recusados: a si mesmo, outra unidade, mensagem curta, valor fora da lista e perfil de leitura")
+assert "erro=Seu acesso só lê o mural" in post("/reconhecimento", aid_rc, {"para": EP, "valor": "", "mensagem": "Parabéns pela organização da feira!"}, sess=LE); ok("recusados: a si mesmo, outra unidade, mensagem curta, valor fora da lista e perfil de leitura")
 assert "ok=Reconhecimento publicado" in post("/reconhecimento", aid_rc, {"para": EP, "valor": "", "mensagem": "Obrigada pela ajuda com a feira de ciências, Paulo!"}, sess=BR)
 RID = psql(f"SELECT id FROM recognitions WHERE de_user_id={UB}"); assert psql(f"SELECT count(*) FROM notifications WHERE user_id={UP} AND chave='recon:{RID}'") == "1" and "feira de ciências" in page("/reconhecimento", sess=PA); ok("publicado no mural e Paulo é avisado")
 html = page("/reconhecimento", sess=CO); aid_ap = aid_of(html, 'aria-label="Aplaudir"')
 post("/reconhecimento", aid_ap, {"id": RID, "voltar": "/reconhecimento"}, sess=CO); assert psql(f"SELECT count(*) FROM recognition_reactions WHERE recognition_id={RID}") == "1"
 post("/reconhecimento", aid_ap, {"id": RID, "voltar": "/reconhecimento"}, sess=CO); assert psql(f"SELECT count(*) FROM recognition_reactions WHERE recognition_id={RID}") == "0"
-assert "erro=Seu perfil só lê o mural" in post("/reconhecimento", aid_ap, {"id": RID}, sess=LE) and 'aria-label="Aplaudir"' not in page("/reconhecimento", sess=LE); ok("aplauso liga e desliga; leitura não aplaude")
+assert "erro=Seu acesso só lê o mural" in post("/reconhecimento", aid_ap, {"id": RID}, sess=LE) and 'aria-label="Aplaudir"' not in page("/reconhecimento", sess=LE); ok("aplauso liga e desliga; leitura não aplaude")
 html = page("/reconhecimento"); aid_mod = aid_of(html, ">Ocultar<")
 assert "erro=Só Direção e RH moderam" in post("/reconhecimento", aid_mod, {"id": RID, "acao": "ocultar", "motivo": "Mensagem inadequada"}, sess=CO)
 assert "erro=Informe o motivo" in post("/reconhecimento", aid_mod, {"id": RID, "acao": "ocultar", "motivo": ""})
@@ -233,7 +233,7 @@ pref = json.loads(psql(f"SELECT json_build_object('i', inicio, 'a', atalhos) FRO
 assert pref["i"]["blocos"] == ["comunicados", "pendencias"] and sorted(pref["a"]) == ["fluxos", "reconhecer"] and pref["i"]["kpis"] == ["pessoas.quadro"], pref
 html = page("/"); assert h2(html, "Comunicados") and not h2(html, "Mural de reconhecimento") and not h2(html, "Últimas ações registradas") and html.find(">Comunicados<") < html.find("Minhas pendências ("); ok("blocos e ordem escolhidos; indicador inexistente descartado")
 assert "erro=Escolha até 8 atalhos" in post("/inicio/personalizar", aid_ini, {"bloco_pendencias": "1", "atalho": ["pendencias", "solicitacao", "chamado", "espaco", "cobertura", "reconhecer", "executivo", "apresentar", "fluxos"]}); ok("até 8 atalhos")
-aid_rst = aid_of(page("/inicio/personalizar"), "Restaurar o padrão do perfil"); assert "ok=Início de volta ao padrão" in post("/inicio/personalizar", aid_rst, {}); assert psql(f"SELECT count(*) FROM user_prefs WHERE user_id={RH}") == "0" and h2(page("/"), "Mural de reconhecimento"); ok("restaurar volta ao padrão do perfil")
+aid_rst = aid_of(page("/inicio/personalizar"), "Restaurar o padrão da atuação"); assert "ok=Início de volta ao padrão" in post("/inicio/personalizar", aid_rst, {}); assert psql(f"SELECT count(*) FROM user_prefs WHERE user_id={RH}") == "0" and h2(page("/"), "Mural de reconhecimento"); ok("restaurar volta ao padrão do perfil")
 st, lo = destino("/", CM); assert st in (302, 303, 307) and lo.endswith("/matriculas"), (st, lo)
 post("/inicio/personalizar", aid_ini, {"paginaInicial": "inicio", "bloco_pendencias": "1", "kpi": ["financeiro.receita", "matriculas.rematricula"], "atalho": ["vagas", "colaborador"]}, sess=CM)
 pref = json.loads(psql(f"SELECT json_build_object('i', inicio, 'a', atalhos) FROM user_prefs WHERE user_id={UCOM}")); assert pref["i"]["kpis"] == ["matriculas.rematricula"] and pref["a"] == ["vagas"] and pref["i"]["paginaInicial"] == "inicio", pref

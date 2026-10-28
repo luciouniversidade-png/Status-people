@@ -6,8 +6,9 @@ import { audit, str, strOrNull, int, getSettings, addDays, hoje } from "@/lib/ut
 import { notificar } from "@/lib/comunicacao";
 import { ETICA_STATUS, RESULTADO_ETICA, podeTratarRelato, responsaveisRelato, comite, impedidosDoRelato, impedidosEfetivos, candidatosEtica } from "@/lib/etica";
 import { appUrl } from "@/lib/url";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const BE = "/governanca/etica";
 type Rel = { id: number; protocolo: string; status: string; impedidos: number[] | null; liberados: number[] | null; envolvidos: string | null; relato: string; responsavel_user_id: number | null; categoria: string };
 /** Relato que a pessoa pode tratar, com os impedidos efetivos (registrados + citados entre quem pode tratar hoje). */

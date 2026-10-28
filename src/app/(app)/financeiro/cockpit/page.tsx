@@ -106,7 +106,7 @@ export default async function Cockpit({ searchParams }: { searchParams: Promise<
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
           <Card title="Caixa por entidade e unidade">
             <Table head={["Entidade", "Unidade", "Saldo hoje", ""]} empty="Sem unidades no recorte.">{unidadesCaixa.map(u => <tr key={u.id}><Td className="text-xs">{u.entidade}</Td><Td>{u.nome}</Td><Td className={`tabular-nums ${u.saldo !== null && u.saldo < 0 ? "text-erro" : ""}`}>{u.saldo === null ? <span className="text-xs text-aviso">sem saldo inicial</span> : fmtReais(u.saldo)}</Td><Td><Link href={`/financeiro/caixa?unidade=${u.id}`} className="text-xs text-acao">extrato</Link></Td></tr>)}</Table>
-            <p className="mt-2 text-[11px] text-slate-500">Saldo = saldo inicial do mês informado + entradas − saídas lançadas até hoje. O caixa ainda não separa conta bancária (T-026 parcial): a conciliação Cielo/PIX segue fora do sistema por decisão.</p>
+            <p className="mt-2 text-[11px] text-slate-500">Saldo = saldo inicial do mês informado + entradas − saídas lançadas até hoje. O movimento por conta bancária fica no Fluxo de caixa e a conferência com o extrato e a Cielo, na Conciliação.</p>
           </Card>
           <Card title="Memória de cálculo">
             <details open className="text-sm"><summary className="cursor-pointer text-xs font-medium text-navy">Como os dias de cobertura são calculados</summary>

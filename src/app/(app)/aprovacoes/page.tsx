@@ -15,7 +15,7 @@ export default async function Aprovacoes({ searchParams }: { searchParams: Promi
   const s = await requireSession(); if (["COLABORADOR", "LEITURA"].includes(s.role)) redirect("/"); const sp = await searchParams;
   const cfg = await getSettings(); const aba = sp.aba === "banco" ? "banco" : sp.aba === "he" ? "he" : "ferias";
   const [ferias, banco] = await Promise.all([filaFerias(s), filaBanco(s)]);
-  if (!can.aprovar(s, cfg.alcadas.ferias) && !can.aprovar(s, cfg.alcadas.banco)) redirect("/solicitacoes");
+  if (!can.aprovar(s, "ferias") && !can.aprovar(s, "banco")) redirect("/solicitacoes");
   const verCusto = ["DIRECAO", "RH", "FINANCEIRO"].includes(s.role); const ranking = aba === "he" ? await rankingHe(scopeUnit(s), verCusto) : null;
   const fila: ItemFila[] = aba === "banco" ? banco : ferias; const normais = fila.filter(i => !i.excecoes.length); const excecoes = fila.filter(i => i.excecoes.length);
   const voltar = `/aprovacoes?aba=${aba}`;

@@ -104,3 +104,21 @@ export async function pedirExclusaoCandidato(fd: FormData) {
   } catch (e) { if (ehRedirect(e)) throw e; redirect(volta(token, erroQ(e))); }
   redirect(volta(token, `?ok=exclusao&protocolo=${encodeURIComponent(protocolo)}`));
 }
+
+/** v30 · Pesquisa de experiência do candidato (anônima): quando o processo termina, 3 notas, a recomendação e um comentário.
+ * Grava só a unidade e o desfecho, com a data arredondada para a semana — nada liga a resposta à pessoa; o resultado sai com 5+ respostas. */
+export async function responderExperiencia(fd: FormData) {
+  const token = str(fd, "token");
+  try {
+    const c = await contextoPortal(token, false);
+    const [a] = await sql<{ experiencia_em: string | null }[]>`SELECT experiencia_em::text FROM applications WHERE id=${c.applicationId}`;
+    if (!(c.retirada || ["REPROVADO", "DESISTIU", "CONTRATADO"].includes(c.etapa))) throw new Error("A pesquisa abre quando o processo termina.");
+    if (a?.experiencia_em) throw new Error("Você já respondeu. Obrigado!");
+    const nota = (k: string) => { const v = int(fd, k); if (v === null || v < 1 || v > 5) throw new Error("Responda as três perguntas de 1 a 5."); return v; };
+    const np = nota("processo"), nc = nota("clareza"), nr = nota("respeito"); const rec = int(fd, "recomendaria"); if (rec === null || rec < 0 || rec > 10) throw new Error("Diga de 0 a 10 se recomendaria.");
+    const desfecho = c.retirada ? "RETIRADA" : c.etapa;
+    await sql`INSERT INTO candidate_experience (requisition_id, unit_id, desfecho, nota_processo, nota_clareza, nota_respeito, recomendaria, comentario, created_at) VALUES (NULL, ${c.unitId}, ${desfecho}, ${np}, ${nc}, ${nr}, ${rec}, ${(strOrNull(fd, "comentario") ?? "").slice(0, 1000) || null}, date_trunc('week', now()))`;
+    await sql`UPDATE applications SET experiencia_em=now() WHERE id=${c.applicationId}`;
+  } catch (e) { if (ehRedirect(e)) throw e; redirect(volta(token, erroQ(e))); }
+  redirect(volta(token, "?ok=experiencia"));
+}

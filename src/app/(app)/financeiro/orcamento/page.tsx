@@ -29,7 +29,7 @@ export default async function Orcamento({ searchParams }: { searchParams: Promis
   const visao: "mes" | "acumulado" = sp.visao === "mes" ? "mes" : "acumulado";
   const [orc, f, unid, pedidos, explic] = await Promise.all([orcamentoAno(ano, unitId), fpa(ano, unitId, mesRef), unitId === null ? porUnidade(ano, mesRef, visao) : Promise.resolve(null), pedidosExplicacao(s, { ano }),
     sql<{ id: number; mes: number; unit_id: number | null; unidade: string | null; tipo: string; categoria: string; texto: string; user_id: number | null; user_nome: string | null; created_at: Date }[]>`SELECT c.id, c.mes, c.unit_id, u.nome AS unidade, c.tipo, c.categoria, c.texto, c.user_id, c.user_nome, c.created_at FROM budget_comments c LEFT JOIN units u ON u.id=c.unit_id WHERE c.ano=${ano} ${unitId === null ? sql`` : sql`AND (c.unit_id=${unitId} OR c.unit_id IS NULL)`} ORDER BY c.created_at DESC LIMIT 40`]);
-  const gest = can.financeiro(s); const explica = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role);
+  const gest = can.gerirFinanceiro(s); const explica = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role);
   const oc = visao === "mes" ? "orcMes" : "orcAcum"; const rc = visao === "mes" ? "realMes" : "realAcum"; const ac = visao === "mes" ? "antMes" : "antAcum";
   const periodoTxt = visao === "mes" ? `${MESES_LONGOS[mesRef - 1]} de ${ano}` : `janeiro a ${MESES_LONGOS[mesRef - 1]} de ${ano}`;
   const qs = (extra: Record<string, string | number>) => { const q = new URLSearchParams({ ano: String(ano), mes: String(mesRef), visao, ...(unitId ? { unidade: String(unitId) } : {}), ...Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, String(v)])) }); return `/financeiro/orcamento?${q}`; };

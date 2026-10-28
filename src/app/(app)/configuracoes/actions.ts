@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db, schema, sql } from "@/db";
-import { requireSession, can, assert } from "@/lib/auth";
-import { audit, str, strOrNull, int, erroMsg, getSettings } from "@/lib/utils";
+import { requireSession, can, assert, type Role } from "@/lib/auth";
+import { audit, str, strOrNull, int, erroMsg, getSettings, hoje } from "@/lib/utils";
+import { ATUACAO, defDoCargo, rotuloAtuacao, sincronizarAcessos, atuacaoSugerida, type AcessoUsuario } from "@/lib/acesso";
 
 const ok = (msg: string, tab = "") => `/configuracoes?ok=${encodeURIComponent(msg)}${tab ? `#${tab}` : ""}`;
 const erro = (e: unknown, tab = "") => `/configuracoes?erro=${erroMsg(e)}${tab ? `#${tab}` : ""}`;
@@ -35,7 +36,12 @@ export async function salvarCargo(fd: FormData) {
     if (d.formacaoExigida && !d.documentoFormacao) throw new Error("Informe o documento que comprova a formação exigida (ex.: Diploma, Certificado do curso).");
     if (id && d.parentId === id) throw new Error("Um cargo não pode reportar a si mesmo.");
     if (id) { await db.update(schema.positions).set(d).where(eq(schema.positions.id, id)); await audit(s, "editar", "positions", id, null, d); }
-    else { const [r] = await db.insert(schema.positions).values(d).returning({ id: schema.positions.id }); await audit(s, "criar", "positions", r.id, null, d); }
+    else {
+      // v29: cargo novo já nasce com o acesso (atuação escolhida; telas e aprovações seguem a atuação até o RH personalizar)
+      const at = str(fd, "atuacao"); const atuacao = (at in ATUACAO ? at : atuacaoSugerida(nome)) as Role;
+      const acesso = { atuacao, telas: null, aprova: null, atualizadoEm: hoje(), atualizadoPor: s.nome, sugerida: !(at in ATUACAO) };
+      const [r] = await db.insert(schema.positions).values({ ...d, acesso }).returning({ id: schema.positions.id }); await audit(s, "criar", "positions", r.id, null, { ...d, acesso });
+    }
   } catch (e) { redirect(erro(e, "cargos")); }
   redirect(ok("Cargo salvo.", "cargos"));
 }
@@ -50,28 +56,65 @@ export async function excluirCargo(fd: FormData) {
   redirect(ok("Cargo excluído.", "cargos"));
 }
 
+/**
+ * Acesso de uma pessoa. v29: quem tem ficha recebe o acesso do CARGO da ficha (atuação, telas e aprovações) — não se escolhe perfil.
+ * Exceção individual só com motivo; conta sem ficha (contabilidade, consultoria, TI, homologação) define a atuação no próprio acesso.
+ * Compatível com o formulário antigo e com scripts (campo "role"): atuação diferente da do cargo vira exceção registrada.
+ */
 export async function salvarUsuario(fd: FormData) {
-  const s = await requireSession();
-  try { assert(can.configurar(s)); const id = int(fd, "id"); const email = str(fd, "email").toLowerCase(); const nome = str(fd, "nome"); const role = str(fd, "role"); const senha = str(fd, "senha");
-    if (!email || !nome || !role) throw new Error("Informe e-mail, nome e perfil.");
+  const s = await requireSession(); let uid: number | null = null;
+  let tempMsg = "";
+  try { assert(can.configurar(s)); const id = int(fd, "id"); let email = str(fd, "email").toLowerCase(); let nome = str(fd, "nome"); const senha = str(fd, "senha");
+    // v29: no acesso novo pela ficha, nome e e-mail em branco vêm da própria ficha (menos digitação)
+    if (!id && (!email || !nome) && int(fd, "employeeId")) { const [fx] = await sql<{ nome: string; email: string | null }[]>`SELECT nome, email FROM employees WHERE id=${int(fd, "employeeId")}`; if (fx) { nome ||= fx.nome; email ||= (fx.email ?? "").trim().toLowerCase(); } }
+    if (!email || !nome) throw new Error("Informe o nome e o e-mail (login) — ou cadastre o e-mail na ficha da pessoa.");
     if (/[\s:]/.test(email) || email.length > 200) throw new Error("Login inválido: use um e-mail (sem espaços nem “:”).");
-    let unitId = int(fd, "unitId"); const employeeId = int(fd, "employeeId"); const ativo = str(fd, "ativo") !== "0";
-    if ((role === "DIRETOR_UNIDADE" || role === "GESTOR") && !unitId) throw new Error("Diretor de unidade e Gestor precisam de uma unidade.");
-    if (role === "COLABORADOR") {
-      if (!employeeId) throw new Error("Perfil Colaborador precisa estar vinculado a um colaborador.");
-      const [e] = await db.select({ unitId: schema.employees.unitId }).from(schema.employees).where(eq(schema.employees.id, employeeId));
-      if (!e) throw new Error("Colaborador vinculado não encontrado.");
-      unitId = e.unitId;
+    const employeeId = int(fd, "employeeId") || null; /* "0" = conta sem ficha */ const ativo = str(fd, "ativo") !== "0"; let unitId = int(fd, "unitId");
+    const legado = fd.has("role") && !fd.has("modo"); const motivo = str(fd, "motivo");
+    if (!legado && !id && str(fd, "employeeId") === "") throw new Error("Escolha a pessoa (ficha) — o acesso vem do cargo dela. Para contabilidade, consultoria ou TI, escolha “Conta sem ficha”.");
+    let atuacao = (str(fd, "atuacao") || str(fd, "role")) as Role; let modo = str(fd, "modo") || (employeeId ? "cargo" : "direto");
+    const [antes] = id ? await sql<{ acesso: AcessoUsuario | null; employee_id: number | null }[]>`SELECT acesso, employee_id FROM users WHERE id=${id}` : [];
+    if (id && !antes) throw new Error("Acesso não encontrado.");
+    let acesso: AcessoUsuario | null = null; let role: Role;
+    if (employeeId) {
+      const [f] = await sql<{ id: number; nome: string; unit_id: number; situacao: string; position_id: number | null; p_nome: string | null; p_acesso: unknown; p_familia: string | null }[]>`SELECT e.id, e.nome, e.unit_id, e.situacao, e.position_id, p.nome AS p_nome, p.acesso AS p_acesso, p.familia AS p_familia FROM employees e LEFT JOIN positions p ON p.id=e.position_id WHERE e.id=${employeeId}`;
+      if (!f) throw new Error("Colaborador vinculado não encontrado.");
+      if (f.situacao === "DESLIGADO" && ativo) throw new Error(`${f.nome} está desligado(a): o acesso não pode ficar ativo.`);
+      const [dup] = await sql<{ email: string }[]>`SELECT email FROM users WHERE employee_id=${employeeId} AND id <> ${id ?? 0}`;
+      if (dup) throw new Error(`Esta ficha já tem um acesso (${dup.email}). Edite aquele acesso em vez de criar outro.`);
+      const doCargo = f.position_id ? defDoCargo({ nome: f.p_nome ?? "", acesso: f.p_acesso, familia: f.p_familia }).atuacao : "COLABORADOR";
+      if (legado) modo = atuacao && atuacao in ATUACAO && atuacao !== doCargo ? "excecao" : "cargo";
+      if (modo === "excecao") {
+        if (!(atuacao in ATUACAO)) throw new Error("Escolha a atuação da exceção.");
+        if (!legado && motivo.length < 10) throw new Error("Exceção individual precisa de motivo (mínimo 10 caracteres): por que esta pessoa não segue o acesso do cargo?");
+        const unit = ATUACAO[atuacao].alcance === "UNIDADE" ? (unitId ?? f.unit_id) : null;
+        const prev = antes?.employee_id === employeeId ? antes?.acesso ?? null : null;
+        acesso = { atuacao, telas: prev?.atuacao === atuacao ? prev.telas ?? null : null, aprova: prev?.atuacao === atuacao ? prev.aprova ?? null : null, unitId: unit, motivo: motivo || prev?.motivo || `Definido no cadastro do acesso (atuação ${rotuloAtuacao(atuacao)}; o cargo dá ${rotuloAtuacao(doCargo)}).`, em: hoje(), por: s.nome };
+        role = atuacao; unitId = unit;
+      } else { role = doCargo; unitId = ATUACAO[doCargo].alcance === "UNIDADE" ? f.unit_id : null; }
+    } else {
+      // conta sem ficha: a atuação fica no próprio acesso (telas e aprovações personalizáveis em “Ver acesso”)
+      if (!(atuacao in ATUACAO)) throw new Error("Conta sem ficha: escolha a atuação (ou vincule a ficha da pessoa para o acesso vir do cargo).");
+      if (atuacao === "COLABORADOR") throw new Error("Autoatendimento precisa estar vinculado à ficha do colaborador.");
+      if (ATUACAO[atuacao].alcance === "UNIDADE" && !unitId) throw new Error("Direção da unidade e Coordenação precisam de uma unidade.");
+      if (ATUACAO[atuacao].alcance === "REDE" && !legado) unitId = null;
+      role = atuacao; const prev = antes?.employee_id ? null : antes?.acesso ?? null; acesso = prev && (prev.telas || prev.aprova) ? { telas: prev.telas ?? null, aprova: prev.aprova ?? null, motivo: prev.motivo ?? null } : null;
+      void modo;
     }
     if (id) {
-      const d: Partial<typeof schema.users.$inferInsert> = { email, nome, role, unitId, employeeId, ativo }; if (senha) { if (senha.length < 8) throw new Error("Senha com no mínimo 8 caracteres."); d.senhaHash = await bcrypt.hash(senha, 10); }
-      await db.update(schema.users).set(d).where(eq(schema.users.id, id)); await audit(s, "editar", "users", id, null, { email, nome, role, unitId, ativo, senha: senha ? "alterada" : "mantida" });
+      const d: Partial<typeof schema.users.$inferInsert> = { email, nome, role, unitId, employeeId, ativo, acesso }; if (senha) { if (senha.length < 8) throw new Error("Senha com no mínimo 8 caracteres."); d.senhaHash = await bcrypt.hash(senha, 10); }
+      await db.update(schema.users).set(d).where(eq(schema.users.id, id)); uid = id;
+      await audit(s, "editar", "users", id, { acesso: antes?.acesso ?? null }, { email, nome, atuacao: role, origem: employeeId ? (acesso ? "EXCECAO" : "CARGO") : "DIRETO", unitId, ativo, senha: senha ? "alterada" : "mantida", motivo: acesso?.motivo ?? null });
     } else {
-      if (senha.length < 8) throw new Error("Senha com no mínimo 8 caracteres.");
-      const [r] = await db.insert(schema.users).values({ email, nome, role, unitId, employeeId, ativo, senhaHash: await bcrypt.hash(senha, 10) }).returning({ id: schema.users.id }); await audit(s, "criar", "users", r.id, null, { email, nome, role, unitId });
+      if (senha && senha.length < 8) throw new Error("Senha com no mínimo 8 caracteres (ou deixe em branco para gerar uma senha temporária).");
+      const { randomBytes } = await import("crypto");
+      const [r] = await db.insert(schema.users).values({ email, nome, role, unitId, employeeId, ativo, acesso, senhaHash: await bcrypt.hash(senha || randomBytes(24).toString("hex"), 10), trocarSenha: !senha }).returning({ id: schema.users.id }); uid = r.id;
+      if (!senha) { const temp = await (await import("@/lib/reset")).gerarSenhaTemporaria(r.id, s.id); tempMsg = ` Senha temporária: ${temp} — passe à pessoa pessoalmente; a troca é obrigatória no primeiro acesso.`; }
+      await audit(s, "criar", "users", r.id, null, { email, nome, atuacao: role, origem: employeeId ? (acesso ? "EXCECAO" : "CARGO") : "DIRETO", unitId, motivo: acesso?.motivo ?? null });
     }
+    await sincronizarAcessos([uid]);
   } catch (e) { redirect(erro(e instanceof Error && /unique|duplicate/i.test(e.message) ? new Error("Já existe usuário com este e-mail.") : e, "usuarios")); }
-  redirect(ok("Usuário salvo.", "usuarios"));
+  redirect(ok("Acesso salvo." + tempMsg, "usuarios"));
 }
 
 export async function trocarMinhaSenha(fd: FormData) {
@@ -100,7 +143,7 @@ export async function salvarAlcadas(fd: FormData) {
   try { assert(can.configurar(s)); const cfg = await getSettings();
     const pick = (k: string) => fd.getAll(k).map(String);
     const alcadas = { ferias: pick("ferias"), banco: pick("banco"), processos: pick("processos"), matricula: pick("matricula"), excecaoCapacidade: pick("excecaoCapacidade"), excecao: pick("excecao"), pops: pick("pops"), vagas: pick("vagas"), remuneracao: pick("remuneracao"), calibracao: pick("calibracao"), financeiro: pick("financeiro") };
-    if (Object.values(alcadas).some(a => a.length === 0)) throw new Error("Cada alçada precisa de ao menos um perfil.");
+    if (Object.values(alcadas).some(a => a.length === 0)) throw new Error("Cada aprovação precisa de ao menos uma atuação no padrão.");
     await sql`INSERT INTO settings (key, value) VALUES ('alcadas', ${JSON.stringify(alcadas)}::jsonb) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
     await audit(s, "editar", "settings", null, cfg.alcadas, alcadas);
   } catch (e) { redirect(erro(e, "alcadas")); }
@@ -161,22 +204,25 @@ export async function salvarParamInsights(fd: FormData) {
  * e-mail configurado) ou recebe do RH uma senha temporária — nos dois casos troca no primeiro acesso.
  */
 export async function criarAcessosAutoatendimento(fd: FormData) {
-  const s = await requireSession(); let msg = "";
+  const s = await requireSession(); let msg = ""; const positionId = int(fd, "positionId"); const voltar = str(fd, "voltar");
+  const deVolta = voltar.startsWith("/configuracoes/acessos/cargo/") ? voltar : null; // v29: lote de um cargo, a partir do editor do cargo
   try {
     assert(can.configurar(s)); const unitId = int(fd, "unitId");
-    const emps = await sql<{ id: number; nome: string; email: string | null; unit_id: number }[]>`SELECT e.id, e.nome, lower(trim(e.email)) AS email, e.unit_id FROM employees e WHERE e.situacao IN ('ATIVO','EM_ADMISSAO') AND (${unitId ?? null}::int IS NULL OR e.unit_id=${unitId ?? null}::int) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id) ORDER BY e.nome`;
+    const emps = await sql<{ id: number; nome: string; email: string | null; unit_id: number }[]>`SELECT e.id, e.nome, lower(trim(e.email)) AS email, e.unit_id FROM employees e WHERE e.situacao IN ('ATIVO','EM_ADMISSAO') AND (${unitId ?? null}::int IS NULL OR e.unit_id=${unitId ?? null}::int) AND (${positionId ?? null}::int IS NULL OR e.position_id=${positionId ?? null}::int) AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id) ORDER BY e.nome`;
     const { randomBytes } = await import("crypto");
-    let criados = 0; const semEmail: string[] = []; const emUso: string[] = [];
+    let criados = 0; const semEmail: string[] = []; const emUso: string[] = []; const novos: number[] = [];
     for (const e of emps) {
       if (!e.email || !/^[^@\s:]+@[^@\s:]+\.[^@\s:]+$/.test(e.email)) { semEmail.push(e.nome); continue; }
       const [ja] = await sql<{ id: number }[]>`SELECT id FROM users WHERE email=${e.email}`; if (ja) { emUso.push(e.nome); continue; }
-      await db.insert(schema.users).values({ email: e.email, nome: e.nome, role: "COLABORADOR", unitId: e.unit_id, employeeId: e.id, ativo: true, senhaHash: await bcrypt.hash(randomBytes(24).toString("hex"), 10), trocarSenha: true });
-      criados++;
+      // v29: cada pessoa recebe o acesso do cargo da ficha (o sistema grava a atuação e o alcance logo abaixo)
+      const [novo] = await db.insert(schema.users).values({ email: e.email, nome: e.nome, role: "COLABORADOR", unitId: e.unit_id, employeeId: e.id, ativo: true, senhaHash: await bcrypt.hash(randomBytes(24).toString("hex"), 10), trocarSenha: true }).returning({ id: schema.users.id });
+      novos.push(novo.id); criados++;
     }
-    await audit(s, "criar acessos de autoatendimento em lote", "users", null, null, { criados, semEmail: semEmail.length, emailEmUso: emUso.length, unitId });
+    if (novos.length) await sincronizarAcessos(novos);
+    await audit(s, "criar acessos de autoatendimento em lote", "users", null, null, { criados, semEmail: semEmail.length, emailEmUso: emUso.length, unitId, positionId });
     const lista = (xs: string[]) => `${xs.slice(0, 8).join(", ")}${xs.length > 8 ? "…" : ""}`;
-    msg = `${criados} acesso(s) de autoatendimento criado(s).` + (semEmail.length ? ` Sem e-mail válido na ficha (${semEmail.length}): ${lista(semEmail)}.` : "") + (emUso.length ? ` E-mail já usado por outro acesso (${emUso.length}): ${lista(emUso)}.` : "") + (criados ? " Para entrar, cada pessoa usa “Esqueci minha senha” ou recebe do RH uma senha temporária." : "");
-  } catch (e) { redirect(erro(e, "usuarios")); }
-  redirect(ok(msg, "usuarios"));
+    msg = `${criados} acesso(s) criado(s) pelo cargo de cada ficha.` + (semEmail.length ? ` Sem e-mail válido na ficha (${semEmail.length}): ${lista(semEmail)}.` : "") + (emUso.length ? ` E-mail já usado por outro acesso (${emUso.length}): ${lista(emUso)}.` : "") + (criados ? " Para entrar, cada pessoa usa “Esqueci minha senha” ou recebe do RH uma senha temporária." : "");
+  } catch (e) { redirect(deVolta ? `${deVolta}?erro=${encodeURIComponent(e instanceof Error ? e.message : "Erro inesperado.")}` : erro(e, "usuarios")); }
+  redirect(deVolta ? `${deVolta}?ok=${encodeURIComponent(msg)}` : ok(msg, "usuarios"));
 }
 

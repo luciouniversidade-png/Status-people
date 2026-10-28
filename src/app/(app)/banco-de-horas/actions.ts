@@ -3,7 +3,7 @@ import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
-import { requireSession, can, assert, assertScope, assertEmployeeAccess } from "@/lib/auth";
+import { requireSession, can, assert, assertScope, assertEmployeeAccess, naEquipe } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings, hoje, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { assertMesAberto } from "@/lib/folha";
 
@@ -26,7 +26,7 @@ export async function lancarHoras(fd: FormData) {
     assertEmployeeAccess(s, e);
     await assertMesAberto(employeeId, [data]); // v24: mês fechado não recebe lançamento (CRQ-TMP-V3-04)
     const cfg = await getSettings();
-    const autoAprova = can.aprovar(s, cfg.alcadas.banco);
+    const autoAprova = can.aprovar(s, "banco");
     const [r] = await db.insert(schema.hourEntries).values({ employeeId, data, tipo, minutos, descricao: strOrNull(fd, "descricao"), lancadoPor: s.id, status: autoAprova ? "APROVADO" : "PENDENTE", aprovadoPor: autoAprova ? s.id : null }).returning({ id: schema.hourEntries.id });
     await audit(s, autoAprova ? "lançar (aprovado)" : "lançar (pendente)", "hour_entries", r.id, null, { employeeId, data, tipo, minutos });
   } catch (e) { redirect(go(back, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -37,11 +37,12 @@ export async function decidirHoras(fd: FormData) {
   const s = await requireSession(); const back = voltar(fd, "/banco-de-horas"); const id = Number(fd.get("id")); const decisao = str(fd, "decisao");
   try {
     const cfg = await getSettings();
-    assert(can.aprovar(s, cfg.alcadas.banco), "Seu perfil não aprova lançamentos do banco de horas.");
+    assert(can.aprovar(s, "banco"), "Seu acesso não aprova lançamentos do banco de horas.");
     const [r] = await db.select().from(schema.hourEntries).where(eq(schema.hourEntries.id, id));
     if (!r) throw new Error("Lançamento não encontrado.");
     const [e] = await db.select().from(schema.employees).where(eq(schema.employees.id, r.employeeId));
     if (e) assertScope(s, e.unitId);
+    assert(naEquipe(s, e), "Pela sua atuação, você aprova só a sua equipe (pessoas que têm você como gestor direto na ficha).");
     assert(r.status === "PENDENTE", "Lançamento já decidido.");
     await assertMesAberto(r.employeeId, [String(r.data)]);
     await db.update(schema.hourEntries).set({ status: decisao, aprovadoPor: s.id }).where(eq(schema.hourEntries.id, id));

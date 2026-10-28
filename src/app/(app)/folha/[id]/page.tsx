@@ -13,6 +13,8 @@ import { fmtDataHora, getSettings } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 const R = (v: number | null | undefined) => v === null || v === undefined ? "—" : v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// número com centavos sem o "R$" (tabelas largas, com a unidade no título)
+const N = (v: number | null | undefined) => v === null || v === undefined ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function CicloFolha({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireSession(); if (!podeFolha(s) && s.role !== "LEITURA") redirect("/"); const sp = await searchParams; const { id } = await params;
@@ -52,7 +54,7 @@ export default async function CicloFolha({ params, searchParams }: { params: Pro
         <Card title="2 · Pacote ao contador">
           {c.pacote ? <>
             <p className="text-sm">Gerado por <b>{c.pacote_por_nome}</b> em {fmtDataHora(c.pacote_em)} · conferência <code className="rounded bg-mist px-1 text-xs">{c.pacote.hash}</code></p>
-            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-700 sm:grid-cols-3"><li>{c.pacote.headcount} no quadro</li><li>{c.pacote.admissoes.length} admissão(ões)</li><li>{c.pacote.desligamentos.length} desligamento(s)</li><li>{c.pacote.afastamentos.length} afastamento(s)</li><li>{c.pacote.ferias.length} férias</li><li>{c.pacote.horasExtras.length} com HE aprovadas</li></ul>
+            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-slate-700 sm:grid-cols-3"><li>{c.pacote.headcount} no quadro</li><li>{c.pacote.admissoes.length} admissão(ões)</li><li>{c.pacote.desligamentos.length} desligamento(s)</li><li>{c.pacote.afastamentos.length} afastamento(s)</li><li>{c.pacote.ferias.length} férias</li><li>{c.pacote.horasExtras.length} com HE aprovadas</li>{c.pacote.beneficios && <li>{c.pacote.beneficios.length} benefício(s) no mês</li>}</ul>
             <div className="mt-3 flex flex-wrap gap-2"><a className="inline-flex items-center rounded-md bg-acao px-3 py-1.5 text-xs font-medium text-white" href={`/api/folha/pacote/${c.id}`}>Baixar pacote (CSV)</a></div>
             <p className="mt-2 text-[11px] text-slate-500">Afastamentos saem só com o tipo genérico e as datas — nenhum dado clínico vai no pacote. Pensões e descontos autorizados não têm registro no sistema (informar por fora).</p>
           </> : <p className="text-sm text-slate-600">O pacote ainda não foi gerado. {p.bloqueios.length ? "Resolva as pendências obrigatórias na tela do ciclo." : "Gere pela tela do ciclo."}</p>}
@@ -87,7 +89,8 @@ export default async function CicloFolha({ params, searchParams }: { params: Pro
 
         {/* passo 4 */}
         <Card title="4 · Resultado do contador">
-          {res.rows.length > 0 && <><Table head={["Unidade", "Área", "Pessoas", "Proventos", "Encargos", "Provisões", "Benefícios + rescisões", "Custo"]}>{res.rows.map(r => <tr key={r.id}><Td>{r.unidade ?? "—"}</Td><Td>{r.area ?? "—"}</Td><Td className="tabular-nums">{r.headcount ?? "—"}</Td><Td className="tabular-nums">{R(r.salarios)}</Td><Td className="tabular-nums">{R(r.inss + r.fgts)}</Td><Td className="tabular-nums">{R(r.provisao_13 + r.provisao_ferias)}</Td><Td className="tabular-nums">{R(r.beneficios + r.rescisoes + r.outros)}</Td><Td className="font-medium tabular-nums">{R(custoLinha(r))}</Td></tr>)}</Table>
+          {res.rows.length > 0 && <><Table head={["Unidade · área", "Pessoas", "Proventos", "Encargos", "Provisões", "Benefícios e rescisões", "Custo (R$)"]}>{res.rows.map(r => <tr key={r.id}><Td>{r.unidade ?? "—"}<div className="text-xs text-slate-500">{r.area ?? "—"}</div></Td><Td className="tabular-nums">{r.headcount ?? "—"}</Td><Td className="text-right tabular-nums">{N(r.salarios)}</Td><Td className="text-right tabular-nums">{N(r.inss + r.fgts)}</Td><Td className="text-right tabular-nums">{N(r.provisao_13 + r.provisao_ferias)}</Td><Td className="text-right tabular-nums">{N(r.beneficios + r.rescisoes + r.outros)}</Td><Td className="text-right font-medium tabular-nums">{N(custoLinha(r))}</Td></tr>)}</Table>
+            <p className="mt-1 text-[11px] text-slate-500">Valores em reais.</p>
             <p className="mt-2 text-sm">Custo total: <b>{R(res.total)}</b> · encargos {R(res.encargos)} · provisões {R(res.provisoes)}{res.headcount !== null ? ` · ${res.headcount} pessoas` : ""}. IRRF é retido do colaborador e não entra no custo.</p></>}
           {podeConferir(s) && ["CONFERIDO", "RESULTADO_IMPORTADO"].includes(fase) && <form action={importarResultado} className="mt-3 space-y-2 border-t border-line pt-3"><input type="hidden" name="cycleId" value={c.id} />
             <Field label="Arquivo do contador (CSV/XLSX) ou cole abaixo" hint="Colunas: unidade; área; headcount; salários; INSS patronal; FGTS; IRRF; provisão 13º; provisão férias; benefícios; rescisões; outros. Linha de total é ignorada."><input type="file" name="arquivo" accept=".csv,.txt,.xlsx,.xls" className="block w-full rounded-md border border-line bg-white px-2 py-1.5 text-xs" /></Field>

@@ -5,8 +5,9 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje } from "@/lib/utils";
 import { contextoIA, perguntarIA } from "@/lib/talentos-analytics";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const DIRECAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE"];
 
 export async function salvarPosicaoCritica(fd: FormData) {

@@ -13,8 +13,9 @@ import { ORIGENS_FUNIL } from "@/lib/metricas-extra";
 import { ORIGEM_LABEL } from "@/lib/utils";
 import { chamarIA, validarRespostaIA } from "@/lib/ia-desempenho";
 import { TAREFAS_ESTRATEGIA, CONFIG_IA_ESTRATEGIA, montarPromptEstrategia, fatosEstrategicos } from "@/lib/ia-estrategia";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro";
 const ESTRATEGIA = ["DIRECAO", "RH"];
 const GESTAO = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "FINANCEIRO", "OPERACOES", "COMERCIAL"];
@@ -37,7 +38,7 @@ async function validarRef(tabela: "objectives" | "indicators" | "projects", id: 
 /** Unidade permitida para criar/editar: quem tem escopo de unidade só atua nela; registros da rede (null) só Direção/RH. */
 function unidadePermitida(s: Session, unitId: number | null) {
   const u = scopeUnit(s);
-  if (u !== null && unitId !== u) throw new Error("Seu perfil atua apenas na sua unidade.");
+  if (u !== null && unitId !== u) throw new Error("Seu acesso atua apenas na sua unidade.");
   if (unitId === null && !ESTRATEGIA.includes(s.role)) throw new Error("Itens da rede inteira são definidos pela Direção/RH.");
 }
 
@@ -236,7 +237,7 @@ async function podeMexerAcao(s: Session, a: { responsavelUserId: number | null; 
 }
 export async function salvarAcao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const b = str(fd, "voltar") || "/estrategia/acoes"; let msg = "";
-  try { assert(GESTAO.includes(s.role), "Seu perfil não cria ações do plano.");
+  try { assert(GESTAO.includes(s.role), "Seu acesso não cria ações do plano.");
     const titulo = str(fd, "titulo"); if (!titulo) throw new Error("Descreva o que será feito (o quê).");
     const resp = int(fd, "responsavelUserId"); if (!resp) throw new Error("Defina quem é o responsável (quem)."); const prazo = strOrNull(fd, "prazo"); if (!prazo) throw new Error("Defina o prazo (quando).");
     const inicio = strOrNull(fd, "inicio"); if (inicio && inicio > prazo) throw new Error("O início não pode ser depois do prazo.");
@@ -244,7 +245,7 @@ export async function salvarAcao(fd: FormData) {
     const [a] = id ? await db.select().from(schema.actionPlans).where(eq(schema.actionPlans.id, id)) : [];
     if (id) { if (!a) throw new Error("Ação não encontrada."); await podeMexerAcao(s, a); if (["CONCLUIDA", "CANCELADA"].includes(a.status)) throw new Error("Ação encerrada não é editada."); }
     // Perfil de unidade: cria e move ações só na própria unidade; editar uma ação da rede (da qual é responsável) mantém a ação na rede.
-    if (u !== null && !(a && a.unitId === null && unitId === null)) { unitId = unitId ?? u; if (unitId !== u) throw new Error("Seu perfil cria ações apenas na sua unidade."); }
+    if (u !== null && !(a && a.unitId === null && unitId === null)) { unitId = unitId ?? u; if (unitId !== u) throw new Error("Seu acesso cria ações apenas na sua unidade."); }
     const custo = numero(fd, "custoPrevisto", "Custo previsto"); if (custo !== null && custo < 0) throw new Error("Custo não pode ser negativo.");
     const meetingId = id ? null : int(fd, "ritualMeetingId");
     await validarUsuarios([resp], unitId, "Responsável");
@@ -292,7 +293,7 @@ function lerRitual(fd: FormData) {
 }
 export async function salvarRitual(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); let rid = id ?? 0;
-  try { assert(GESTAO.includes(s.role), "Seu perfil não cria rituais de gestão."); const d = lerRitual(fd); if (!d.donoUserId) throw new Error("Defina o dono (facilitador) do ritual."); if (!d.proximaData) throw new Error("Defina a data da próxima reunião.");
+  try { assert(GESTAO.includes(s.role), "Seu acesso não cria rituais de gestão."); const d = lerRitual(fd); if (!d.donoUserId) throw new Error("Defina o dono (facilitador) do ritual."); if (!d.proximaData) throw new Error("Defina a data da próxima reunião.");
     await validarUsuarios([d.donoUserId, ...d.participantes], d.unitId, "Participantes");
     // Ritual de unidade revisa o que é da rede ou da unidade; perfil de unidade só escolhe o que enxerga
     const lim = d.unitId ?? scopeUnit(s);
@@ -306,7 +307,7 @@ export async function salvarRitual(fd: FormData) {
 }
 export async function criarRitualDeModelo(fd: FormData) {
   const s = await requireSession(); let rid = 0;
-  try { assert(GESTAO.includes(s.role), "Seu perfil não cria rituais de gestão."); const cfg = await getSettings();
+  try { assert(GESTAO.includes(s.role), "Seu acesso não cria rituais de gestão."); const cfg = await getSettings();
     const m = (cfg.estrategia.modelosRituais as { chave: string; nome: string; tipo: TipoRitual; duracaoMin: number; finalidade: string; pauta: string }[]).find(x => x.chave === str(fd, "modelo")); if (!m) throw new Error("Escolha um modelo.");
     const unitId = int(fd, "unitId") ?? scopeUnit(s); unidadePermitida(s, unitId); const proxima = str(fd, "proximaData") || hoje();
     const [r] = await db.insert(schema.rituals).values({ nome: m.nome, tipo: m.tipo, finalidade: m.finalidade, pautaPadrao: m.pauta, duracaoMin: m.duracaoMin, unitId, donoUserId: s.id, participantes: [s.id], indicadores: [], objetivos: [], proximaData: proxima, createdBy: s.id }).returning({ id: schema.rituals.id }); rid = r.id;

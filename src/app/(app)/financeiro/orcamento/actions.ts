@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert, scopeUnit, can } from "@/lib/auth";
 import { audit, str, int, getSettings, caminhoSeguro } from "@/lib/utils";
 import { gerarPedidosExplicacao, fecharPedido } from "@/lib/orcamento-v24";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 /** Valor em reais digitado no padrão brasileiro ("12.500,00", "12500", "12500.5"). Vazio = sem orçamento no mês. */
 function reais(v: FormDataEntryValue | null): number | null {
@@ -13,7 +14,7 @@ function reais(v: FormDataEntryValue | null): number | null {
   if (t.includes(",")) t = t.replace(/\./g, "").replace(",", "."); else if ((t.match(/\./g) ?? []).length > 1) t = t.replace(/\./g, "");
   const n = Number(t); if (!Number.isFinite(n) || n < 0) throw new Error(`Valor inválido: "${String(v)}".`); return Math.round(n * 100) / 100;
 }
-async function podeOrcar() { const s = await requireSession(); const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro as string[]), "Só Direção e Financeiro editam o orçamento."); return s; }
+async function podeOrcar() { const s = await requireSession(); const cfg = await getSettings(); assert(can.aprovar(s, "financeiro"), "Só Direção e Financeiro editam o orçamento."); return s; }
 async function unidadeOk(id: number | null) { if (!id) return false; const [u] = await sql`SELECT 1 FROM units WHERE id=${id}`; return !!u; }
 
 /** Planilha mês a mês de uma unidade: grava tudo ou nada. Célula vazia volta a usar o valor mensal fixo (ou nenhum). */

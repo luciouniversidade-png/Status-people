@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { lerContexto } from "@/lib/contexto";
@@ -7,6 +8,7 @@ import { audit } from "@/lib/utils";
 /** Export da Visão da rede (cartões + linha de totais), com o contexto declarado. Indicadores agregados, sem nomes. */
 export async function GET(req: Request) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/rede")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (s.role === "COLABORADOR") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const sp = Object.fromEntries(new URL(req.url).searchParams.entries()); const ctx = await lerContexto(s, sp); const v = await visaoRede(s, ctx);
   const n = (x: number | null | undefined, d = 0) => x === null || x === undefined ? "" : x.toFixed(d).replace(".", ",");

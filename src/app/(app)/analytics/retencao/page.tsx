@@ -19,7 +19,7 @@ export default async function Retencao({ searchParams }: { searchParams: Promise
   return (
     <Page title="Movimentação e retenção" sub={`Quem entra, quem sai, por quê e onde agir · últimos ${meses} meses (desde ${fmtData(R.inicio)}) comparados aos ${meses} anteriores${u !== null ? " · sua unidade" : " · rede"}`}
       actions={<><form className="flex items-end gap-1"><Field label="Período"><Select name="meses" defaultValue={String(meses)}><option value="6">6 meses</option><option value="12">12 meses</option><option value="24">24 meses</option></Select></Field><Btn small kind="ghost">Ver</Btn></form><Btn kind="ghost" href="/analytics">People Analytics</Btn></>}>
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Quadro hoje" value={k.ativos} hint={k.crescimento != null ? `${k.crescimento >= 0 ? "+" : ""}${pct(k.crescimento)} no período (era ${k.quadroInicio})` : undefined} />
         <Stat label="Entradas" value={k.entradas} hint="admissões no período" />
         <Stat label="Saídas" value={k.saidas} hint={varSaidas != null ? `${varSaidas >= 0 ? "+" : ""}${pct(varSaidas, 0)} vs período anterior (${k.saidasAnt})` : `período anterior: ${k.saidasAnt}`} />

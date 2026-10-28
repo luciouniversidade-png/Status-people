@@ -272,7 +272,7 @@ export function Bala({ itens, rotulo }: { itens: { rotulo: ReactNode; atual: num
         const nome = it.href ? <Link className="text-acao hover:underline" href={it.href}>{it.rotulo}</Link> : it.rotulo;
         return (
           <div role="listitem" key={k} className="text-xs sm:text-sm">
-            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2"><span className="min-w-0 flex-1 font-medium leading-snug text-ink [overflow-wrap:anywhere]">{nome}{it.sub && <span className="ml-1 text-[11px] font-normal text-slate-500">{it.sub}</span>}</span><span className="ml-auto whitespace-nowrap tabular-nums text-slate-700"><b className="text-ink">{it.atual === null ? "—" : f(it.atual)}</b>{it.meta !== null && <> de {f(it.meta)} · <b style={{ color: cor }}>{pct === null ? "—" : `${Math.round(pct * 100)}%`}</b></>}</span></div>
+            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-2"><span className="min-w-[9rem] flex-1 font-medium leading-snug text-ink [overflow-wrap:break-word]">{nome}{it.sub && <span className="ml-1 text-[11px] font-normal text-slate-500">{it.sub}</span>}</span><span className="ml-auto whitespace-nowrap tabular-nums text-slate-700"><b className="text-ink">{it.atual === null ? "—" : f(it.atual)}</b>{it.meta !== null && <> de {f(it.meta)} · <b style={{ color: cor }}>{pct === null ? "—" : `${Math.round(pct * 100)}%`}</b></>}</span></div>
             <div className="relative h-3 rounded bg-mist">
               {it.maximo ? <div className="absolute inset-y-0 left-0 rounded bg-slate-200" style={{ width: `${Math.min(100, (100 * it.maximo) / topo)}%` }} title={`Capacidade: ${f(it.maximo)}`} /> : null}
               {it.atual !== null && <div className="absolute inset-y-0 left-0 rounded" style={{ width: `${Math.min(100, (100 * it.atual) / topo)}%`, background: cor }} />}
@@ -497,9 +497,11 @@ export function Treemap({ itens, formato = fmtCompacto, rotulo, legendaTom }: { 
   return (
     <figure className="min-w-0">
       <div role="img" aria-label={`${rotulo}: ${vs.map(v => `${v.rotulo} ${formato(v.valor)}`).join(", ")}`} className="relative aspect-[2/1] min-h-[200px] w-full overflow-hidden rounded">
-        {vs.map((v, i) => { const r = rs[i]; const grande = r.w > 26 && r.h > 20; const medio = r.w > 16 && r.h > 12;
+        {vs.map((v, i) => { const r = rs[i]; // o rótulo só aparece se a palavra mais longa cabe no bloco (estimado para um gráfico de ~500 px); senão fica na dica e na lista abaixo
+          const palavraMax = Math.max(...v.rotulo.split(/\s+/).map(w => w.length)); const cabe = (r.w / W) * 500 - 12 >= palavraMax * 6.6;
+          const grande = r.w > 26 && r.h > 20 && cabe; const medio = r.w > 16 && r.h > 12 && cabe;
           const estilo = { left: `${(100 * r.x) / W}%`, top: `${(100 * r.y) / H}%`, width: `${(100 * r.w) / W}%`, height: `${(100 * r.h) / H}%`, background: COR_TREEMAP[v.tom ?? "neutro"] };
-          const corpo = <span className="flex h-full w-full flex-col justify-start overflow-hidden p-1.5 text-white">{medio && <span className="text-[11px] font-semibold leading-tight [overflow-wrap:anywhere] sm:text-xs">{v.rotulo}</span>}{medio && <span className="text-[11px] tabular-nums leading-tight opacity-90">{formato(v.valor)}</span>}{grande && v.sub && <span className="mt-0.5 text-[10px] leading-tight opacity-80">{v.sub}</span>}</span>;
+          const corpo = <span className="flex h-full w-full flex-col justify-start overflow-hidden p-1.5 text-white">{medio && <span className="text-[11px] font-semibold leading-tight [overflow-wrap:break-word] sm:text-xs">{v.rotulo}</span>}{medio && <span className="text-[11px] tabular-nums leading-tight opacity-90">{formato(v.valor)}</span>}{grande && v.sub && <span className="mt-0.5 text-[10px] leading-tight opacity-80">{v.sub}</span>}</span>;
           const dica = `${v.rotulo}: ${formato(v.valor)} (${fmtP(v.valor)})${v.sub ? ` · ${v.sub}` : ""}`;
           return v.href ? <Link key={v.rotulo} href={v.href} title={dica} className="absolute border-2 border-white hover:opacity-90" style={estilo}>{corpo}</Link> : <span key={v.rotulo} title={dica} className="absolute border-2 border-white" style={estilo}>{corpo}</span>; })}
       </div>

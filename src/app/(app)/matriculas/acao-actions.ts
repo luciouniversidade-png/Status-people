@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, getSettings, caminhoSeguro } from "@/lib/utils";
 import { validadePadrao } from "@/lib/acao-requerida";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const BASE = "/matriculas/acao";
 const SECRETARIA = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL"];

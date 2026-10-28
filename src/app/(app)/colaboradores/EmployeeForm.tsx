@@ -26,6 +26,10 @@ export async function EmployeeForm({ s, emp, action, novo }: { s: Session; emp?:
           <Field label="E-mail"><Input name="email" type="email" defaultValue={emp?.email ?? ""} /></Field>
           <Field label="Telefone"><Input name="telefone" defaultValue={emp?.telefone ?? ""} /></Field>
           <Field label="Endereço" className="sm:col-span-2"><Input name="endereco" defaultValue={emp?.endereco ?? ""} /></Field>
+          <Field label="Sexo (eSocial)" hint="Base do relatório de igualdade salarial (Lei 14.611/2023)."><Select name="sexo" defaultValue={emp?.sexo ?? ""}><option value="">Não informado</option><option value="F">Feminino</option><option value="M">Masculino</option></Select></Field>
+          <Field label="Ramal / telefone interno"><Input name="ramal" defaultValue={emp?.ramal ?? ""} placeholder="Ex.: 214" /></Field>
+          <Field label="E-mail institucional" hint="Aparece no quem é quem (o e-mail acima, não)."><Input name="emailInstitucional" type="email" defaultValue={emp?.emailInstitucional ?? ""} /></Field>
+          <Field label="No quem é quem"><Select name="noDiretorio" defaultValue={emp?.noDiretorio === false ? "0" : "1"}><option value="1">Mostrar ramal e e-mail institucional</option><option value="0">Mostrar só nome, cargo e unidade</option></Select></Field>
         </div>
       </Card>
       <Card title="Vínculo e posição">
@@ -45,6 +49,16 @@ export async function EmployeeForm({ s, emp, action, novo }: { s: Session; emp?:
           <Field label="Observações" className="sm:col-span-2"><Textarea name="obs" defaultValue={emp?.obs ?? ""} /></Field>
         </div>
       </Card>
+      {!novo && emp && (
+        <Card title="Se mudou cargo, nível, unidade, gestor, vínculo ou jornada">
+          <p className="mb-2 text-xs text-slate-600">O histórico funcional registra a mudança sozinho. Diga a data em que ela vale e se foi promoção.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Vale a partir de"><Input name="movData" type="date" defaultValue={new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" })} min={emp.admissao} /></Field>
+            <Field label="Motivo (opcional)"><Input name="movMotivo" placeholder="Ex.: promoção por mérito · abertura de turma" /></Field>
+            <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" name="movPromocao" value="1" /> Foi promoção (cargo ou nível acima)</label>
+          </div>
+        </Card>
+      )}
       {novo && (
         <label className="flex items-start gap-2 rounded-md border border-line bg-white px-4 py-3 text-sm">
           <input type="checkbox" name="abrirAdmissao" value="1" defaultChecked className="mt-1" />

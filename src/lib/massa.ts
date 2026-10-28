@@ -1,3 +1,4 @@
+import { usuariosQueAprovam } from "./acesso";
 import { sql } from "@/db";
 import { getSettings, auditComo } from "./utils";
 import { notificar, usuariosPorPerfil, foneWa, enviarWhatsApp, preencher, linkWa } from "./comunicacao";
@@ -29,17 +30,19 @@ export function proximaJanela(cfg: Cfg, d = new Date()): Date {
 export const fmtJanela = (d: Date) => d.toLocaleString("pt-BR", { timeZone: TZ, weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 /** Pessoas que um comunicado interno alcança (mesma regra da lista e das notificações). */
-export async function alvoComunicado(publico: string, unitId: number | null, role: string | null) {
-  return (await sql<{ id: number }[]>`SELECT id FROM users WHERE ativo AND role <> 'LEITURA' ${publico === "UNIDADE" ? sql`AND (unit_id=${unitId} OR (unit_id IS NULL AND role IN ('DIRECAO','RH')))` : publico === "PERFIL" ? sql`AND role=${role}` : sql``}`).map(x => x.id);
+export async function alvoComunicado(publico: string, unitId: number | null, role: string | null, positionId: number | null = null) {
+  // v29: “unidade” = onde a pessoa trabalha (unidade da ficha), mesmo quando a atuação dela é de rede
+  return (await sql<{ id: number }[]>`SELECT u.id FROM users u LEFT JOIN employees e ON e.id=u.employee_id WHERE u.ativo AND u.role <> 'LEITURA' ${publico === "UNIDADE" ? sql`AND (coalesce(e.unit_id, u.unit_id)=${unitId} OR (u.unit_id IS NULL AND u.role IN ('DIRECAO','RH')))` : publico === "PERFIL" ? sql`AND u.role=${role}` : publico === "CARGO" ? sql`AND e.position_id=${positionId ?? 0}` : sql``}`).map(x => x.id);
 }
-export async function aprovadoresMassa(cfg: Cfg, autorId: number) { return (await usuariosPorPerfil(cfg.comunicacao.aprovadoresMassa as string[])).filter(id => id !== autorId); }
+/** v29: quem tem a aprovação de comunicação em massa no cargo (ou no padrão da atuação), nunca o autor. */
+export async function aprovadoresMassa(_cfg: Cfg, autorId: number) { return (await usuariosQueAprovam("massa")).filter(id => id !== autorId); }
 
 /** Dispara o comunicado aprovado: fica visível e o público é notificado. */
 export async function dispararComunicado(id: number) {
-  const [a] = await sql<{ id: number; titulo: string; publico: string; unit_id: number | null; role: string | null; requer_ciencia: boolean; status: string }[]>`SELECT id, titulo, publico, unit_id, role, requer_ciencia, status FROM announcements WHERE id=${id}`;
+  const [a] = await sql<{ id: number; titulo: string; publico: string; unit_id: number | null; role: string | null; position_id: number | null; requer_ciencia: boolean; status: string }[]>`SELECT id, titulo, publico, unit_id, role, position_id, requer_ciencia, status FROM announcements WHERE id=${id}`;
   if (!a || !["AGENDADO", "APROVADO"].includes(a.status)) return false;
   await sql`UPDATE announcements SET status='PUBLICADO', publicado_em=now(), disparado_em=now() WHERE id=${id}`;
-  await notificar(await alvoComunicado(a.publico, a.unit_id, a.role), `Comunicado: ${a.titulo}`, a.requer_ciencia ? "Requer sua ciência." : null, `/comunicacao/comunicados#c${id}`, a.requer_ciencia ? "ACAO" : "INFO");
+  await notificar(await alvoComunicado(a.publico, a.unit_id, a.role, a.position_id), `Comunicado: ${a.titulo}`, a.requer_ciencia ? "Requer sua ciência." : null, `/comunicacao/comunicados#c${id}`, a.requer_ciencia ? "ACAO" : "INFO");
   return true;
 }
 

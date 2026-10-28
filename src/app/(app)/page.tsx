@@ -192,7 +192,7 @@ async function BlocoMural({ s }: { s: Session }) {
 async function BlocoComunicados({ s }: { s: Session }) {
   const h = hoje(); const u = scopeUnit(s);
   const rows = await sql<{ id: number; titulo: string; publicado_em: Date; requer_ciencia: boolean; li: boolean; prazo: string | null }[]>`SELECT a.id, a.titulo, a.publicado_em, a.requer_ciencia, a.prazo_ciencia::text AS prazo, EXISTS (SELECT 1 FROM announcement_acks k WHERE k.announcement_id=a.id AND k.user_id=${s.id}) AS li
-    FROM announcements a WHERE (a.expira_em IS NULL OR a.expira_em >= ${h}) AND (a.publico='TODOS' OR (a.publico='UNIDADE' AND (${u === null} OR a.unit_id=${u ?? 0})) OR (a.publico='PERFIL' AND a.role=${s.role}) OR ${can.editar(s)})
+    FROM announcements a WHERE (a.expira_em IS NULL OR a.expira_em >= ${h}) AND (a.publico='TODOS' OR (a.publico='UNIDADE' AND (${u === null} OR a.unit_id=${u ?? 0})) OR (a.publico='PERFIL' AND a.role=${s.role}) OR (a.publico='CARGO' AND a.position_id=${s.positionId ?? 0}) OR ${can.editar(s)})
     ORDER BY (a.requer_ciencia AND NOT EXISTS (SELECT 1 FROM announcement_acks k WHERE k.announcement_id=a.id AND k.user_id=${s.id})) DESC, a.fixado DESC, a.publicado_em DESC LIMIT 5`;
   return (
     <Card title="Comunicados" actions={<Link href="/comunicacao/comunicados" className="text-xs text-acao">Todos</Link>}>

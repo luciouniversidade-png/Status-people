@@ -26,23 +26,22 @@ export default async function Casos({ searchParams }: { searchParams: Promise<Re
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div>
-          <form className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[minmax(0,1fr)_170px_170px_150px_auto]">
-            <Field label="Buscar"><Input name="q" defaultValue={q} placeholder="Assunto, aluno ou contato" /></Field>
+          <form className="mb-3 grid grid-cols-1 gap-2 rounded-md border border-line bg-white p-3 sm:grid-cols-[repeat(3,minmax(0,1fr))_auto]">
+            <Field label="Buscar" className="sm:col-span-4"><Input name="q" defaultValue={q} placeholder="Assunto, aluno ou contato" /></Field>
             <Field label="Situação"><Select name="filtro" defaultValue={filtro}><option value="ABERTOS">Abertos</option><option value="ATRASADOS">SLA vencido</option><option value="MEUS">Meus casos</option><option value="FECHADOS">Resolvidos/fechados</option><option value="TODOS">Todos</option></Select></Field>
             <Field label="Tipo"><Select name="tipo" defaultValue={tipo}><option value="">Todos</option>{CASE_TIPOS.map(t => <option key={t} value={t}>{CASE_TIPO_LABEL[t]}</option>)}</Select></Field>
             {!scope ? <Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Todas</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field> : <div />}
             <div className="flex items-end"><Btn kind="ghost">Filtrar</Btn></div>
           </form>
-          <Table head={["#", "Assunto", "Família", "Tipo", "Unidade", "Prioridade", "Situação", "Prazo", "Responsável"]} empty="Nenhum caso neste filtro.">
+          <Table head={["#", "Assunto", "Família", "Tipo", "Unidade", "Prioridade e situação", "Prazo", "Responsável"]} empty="Nenhum caso neste filtro.">
             {rows.map(c => { const venc = c.sla_ate ? new Date(c.sla_ate).getTime() : null; const aberto = ABERTOS.includes(c.status); const atrasado = aberto && venc !== null && venc < agora; return (
               <tr key={c.id} className={atrasado ? "bg-red-50/40" : ""}>
                 <Td className="text-slate-500">{c.id}</Td>
                 <Td><Link className="font-medium text-acao" href={`/atendimento/casos/${c.id}`}>{c.assunto}</Link>{c.categoria && <div className="text-xs text-slate-500">{c.categoria}{c.gravidade ? ` · gravidade ${c.gravidade}` : ""}</div>}{c.escalado && aberto && <Badge v="REJEITADA" label="escalado" />}</Td>
                 <Td>{c.student_id ? <Link className="text-acao" href={`/matriculas/alunos/${c.student_id}#atendimento`}>{c.aluno}</Link> : c.contato ?? <span className="text-slate-400">avulso</span>}</Td>
                 <Td>{CASE_TIPO_LABEL[c.tipo]}{c.tipo === "SAIDA" && c.resultado && c.resultado !== "EM_ANDAMENTO" && <div className="text-xs">{c.resultado === "RETIDO" ? "retida" : "perdida"}</div>}</Td><Td>{c.unidade}</Td>
-                <Td><Badge v={c.prioridade === "URGENTE" ? "REJEITADA" : c.prioridade === "ALTA" ? "PENDENTE" : "EM_AQUISICAO"} label={CASE_PRIO[c.prioridade]} /></Td>
-                <Td><Badge v={c.status === "FECHADO" || c.status === "RESOLVIDO" ? "APROVADA" : c.status === "AGUARDANDO_FAMILIA" ? "PENDENTE" : "EM_ADMISSAO"} label={CASE_STATUS[c.status]} /></Td>
-                <Td className={`whitespace-nowrap text-xs ${atrasado ? "font-medium text-erro" : "text-slate-600"}`}>{aberto ? fmtDataHora(c.sla_ate) : fmtDataHora(c.created_at)}</Td><Td className="text-xs">{c.responsavel ?? "—"}</Td>
+                <Td><div className="flex flex-col items-start gap-1"><Badge v={c.prioridade === "URGENTE" ? "REJEITADA" : c.prioridade === "ALTA" ? "PENDENTE" : "EM_AQUISICAO"} label={CASE_PRIO[c.prioridade]} /><Badge v={c.status === "FECHADO" || c.status === "RESOLVIDO" ? "APROVADA" : c.status === "AGUARDANDO_FAMILIA" ? "PENDENTE" : "EM_ADMISSAO"} label={CASE_STATUS[c.status]} /></div></Td>
+                <Td className={`whitespace-nowrap text-xs ${atrasado ? "font-medium text-erro" : "text-slate-600"}`}>{fmtDataHora(aberto ? c.sla_ate : c.created_at).split(", ").map((t, i) => <span key={i} className="block">{t}</span>)}</Td><Td className="text-xs">{c.responsavel ?? "—"}</Td>
               </tr>); })}
           </Table>
         </div>

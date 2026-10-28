@@ -8,7 +8,7 @@ import { importarTitulos } from "../actions";
 export const dynamic = "force-dynamic";
 
 export default async function Importar({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const s = await requireFinanceiro(); if (!can.financeiro(s)) redirect("/financeiro"); const sp = await searchParams; const units = await db.select().from(schema.units).orderBy(asc(schema.units.nome));
+  const s = await requireFinanceiro(); if (!can.gerirFinanceiro(s)) redirect("/financeiro"); const sp = await searchParams; const units = await db.select().from(schema.units).orderBy(asc(schema.units.nome));
   return (
     <Page title="Importar títulos do ActiveSoft" sub="Cole a exportação de títulos (em aberto ou recebidos). O sistema casa o aluno com o cadastro, atualiza títulos já importados e não duplica." actions={<Btn kind="ghost" href="/financeiro">Painel</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />

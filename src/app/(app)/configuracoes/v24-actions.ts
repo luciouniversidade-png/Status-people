@@ -17,7 +17,7 @@ export async function salvarParametrosV24(fd: FormData) {
   try {
     assert(can.configurar(s), "Só Direção e RH configuram."); const cfg = await getSettings(); const grava: [string, unknown][] = [];
     if (secao === "alertas") {
-      const donos: Record<string, string[]> = {}; for (const m of Object.keys(cfg.alertas.donos as Record<string, string[]>)) { const v = str(fd, `donos_${m}`).split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean); assert(v.every(x => PERFIS.includes(x)), `Perfil desconhecido em ${m}.`); donos[m] = v; }
+      const donos: Record<string, string[]> = {}; for (const m of Object.keys(cfg.alertas.donos as Record<string, string[]>)) { const v = str(fd, `donos_${m}`).split(/[,;\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean); assert(v.every(x => PERFIS.includes(x)), `Atuação desconhecida em ${m}.`); donos[m] = v; }
       const donoUsuario: Record<string, number> = {}; for (const m of Object.keys(donos)) { const u = Number(str(fd, `fixo_${m}`)); if (u) donoUsuario[m] = u; }
       grava.push(["alertas", { ...cfg.alertas, slaHoras: { ALTO: num(fd, "slaAlto", 1, 720, "SLA crítico (h)"), MEDIO: num(fd, "slaMedio", 1, 2160, "SLA atenção (h)") }, reabrirTratadoDias: Math.round(num(fd, "reabrir", 1, 90, "Reabrir tratado (dias)")), donos, donoUsuario }]);
     } else if (secao === "aprovacoes") {

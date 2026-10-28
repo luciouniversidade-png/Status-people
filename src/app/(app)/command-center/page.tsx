@@ -9,7 +9,7 @@ import { PrintButton } from "@/components/PrintButton";
 import { fmtData, getSettings, hoje } from "@/lib/utils";
 import { healthGeral, registrarSnapshot, tendencia, memoriaDominio, memoriaGeral, semanasHealth } from "@/lib/command-center";
 import { Linhas, Minigrafico, COR } from "@/components/graficos";
-import { fmtNumero } from "@/lib/formato";
+import { fmtNumero, fmtCompacto } from "@/lib/formato";
 import { SAUDE } from "@/lib/estrategia";
 import { painelGestao } from "@/lib/gestao-estrategica";
 import { FAIXA_SAUDE } from "@/lib/gestao-calc";
@@ -19,6 +19,9 @@ export const dynamic = "force-dynamic";
 const ABREV: Record<string, string> = { pessoas: "Pess.", processos: "Proc.", matriculas: "Matr.", atendimento: "Atend.", financeiro: "Fin." };
 const cor = (n: number) => n >= 80 ? "text-ok" : n >= 60 ? "text-aviso" : "text-erro";
 const bg = (n: number) => n >= 80 ? "bg-emerald-50 border-emerald-200" : n >= 60 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200";
+
+// valor em reais grande vira compacto no cartão estreito (R$ 1,7 mi); o exato fica na dica
+const curto = (v: unknown) => { const t = String(v ?? ""); const m = t.match(/^(-?)R\$\s?([\d.]+)(,\d+)?$/); if (!m) return t; const n = Number(m[2].replace(/\./g, "")); return n >= 100000 ? `${m[1] ? "−" : ""}R$ ${fmtCompacto(n)}` : t; };
 
 export default async function CommandCenter({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireSession(); if (!["DIRECAO", "RH", "DIRETOR_UNIDADE", "FINANCEIRO"].includes(s.role)) redirect("/"); const sp = await searchParams; const cfg = await getSettings();
@@ -36,7 +39,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
   const g = await painelGestao(unitId); const est = g.ok; const pf = g.pf; const faixas = cfg.estrategia.faixasSaude as [number, number];
   const semanas = semanasHealth(trend, 13); const memG = memoriaGeral(hg.dominios, hg.pesos);
   const abertas = pend.filter(p => p.status !== "DECIDIDA"); const semana = trend.length > 7 ? trend[trend.length - 8] : trend[0]; const delta = semana ? hg.geral - semana.geral : null;
-  const podeDecidir = can.aprovar(s, cfg.alcadas.pops);
+  const podeDecidir = can.aprovar(s, "pops");
   return (
     <Page title="Command Center" sub={`Visão única da Direção · ${fmtData(hoje())} · Health Geral pondera Pessoas ${hg.pesos.pessoas}%, Processos ${hg.pesos.processos}%, Matrículas ${hg.pesos.matriculas}%, Atendimento ${hg.pesos.atendimento}%, Financeiro ${hg.pesos.financeiro}%`}
       actions={<>{!scope && <form className="flex items-end gap-2 print:hidden"><Field label="Unidade"><Select name="unidade" defaultValue={unitId ?? ""}><option value="">Rede</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field><Btn kind="ghost">Ver</Btn></form>}<PrintButton /></>}>
@@ -49,7 +52,7 @@ export default async function CommandCenter({ searchParams }: { searchParams: Pr
             <div className="flex items-baseline gap-2"><span className={`text-3xl font-semibold tabular-nums ${cor(d.score)}`}>{d.score}</span>{d.parcial && <span className="rounded-full bg-white/80 px-1.5 text-[10px] font-medium text-aviso" title={d.parcial}>parcial</span>}</div>
             {d.parcial && <div className="text-[10px] text-aviso">{d.parcial}</div>}
             <ul className="mt-1 space-y-0.5 text-[11px]">{causas.length === 0 ? <li className="text-slate-500">sem descontos</li> : causas.map((f, i) => <li key={i} className="flex gap-1"><span className="shrink-0 font-semibold tabular-nums text-erro">{f.peso}</span><Link href={f.href ?? d.href} className="min-w-0 text-ink hover:text-acao hover:underline">{f.texto}</Link></li>)}</ul>
-            <div className="mt-1.5 space-y-0.5 border-t border-black/5 pt-1 text-[11px] text-slate-600">{d.kpis.map(k => <div key={k.label} className="flex justify-between gap-2"><span>{k.label}</span><span className="font-medium text-ink">{k.valor}</span></div>)}</div>
+            <div className="mt-1.5 space-y-0.5 border-t border-black/5 pt-1 text-[11px] text-slate-600">{d.kpis.map(k => <div key={k.label} className="flex justify-between gap-2"><span>{k.label}</span><span className="whitespace-nowrap font-medium text-ink" title={String(k.valor)}>{curto(k.valor)}</span></div>)}</div>
             <details className="mt-1.5 text-[11px]"><summary className="cursor-pointer font-medium text-navy">como é calculado</summary>
               <table className="mt-1 w-full tabular-nums"><tbody><tr><td>Base</td><td className="text-right">100</td></tr>{d.fatores.map((f, i) => <tr key={i}><td className="pr-1 text-slate-600">{f.texto}</td><td className="text-right text-erro">{f.peso}</td></tr>)}<tr className="border-t border-black/10 font-semibold"><td>= Nota{mem.limitado ? " (limitada a 0–100)" : ""}</td><td className="text-right">{mem.nota}</td></tr></tbody></table>
               <p className="mt-0.5 text-slate-500">Peso no Health Geral: {hg.pesos[d.chave] ?? 0}%.</p>

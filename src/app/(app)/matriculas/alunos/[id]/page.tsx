@@ -41,7 +41,7 @@ export default async function Aluno({ params, searchParams }: { params: Promise<
     sql<{ id: number; status: string; unidade: string; serie: string; turno: string | null; modalidade: string; oferta_ate: string | null; turma_oferta: string | null; created_at: Date }[]>`SELECT w.id, w.status, u.nome AS unidade, g.nome AS serie, w.turno, w.modalidade, w.oferta_ate::text, c.nome AS turma_oferta, w.created_at FROM waitlist w JOIN units u ON u.id=w.unit_id JOIN grades g ON g.id=w.grade_id LEFT JOIN classes c ON c.id=w.oferta_class_id WHERE w.student_id=${sid} ORDER BY w.id DESC`,
     turmasAbertas(s, ano), db.select().from(schema.units).orderBy(asc(schema.units.nome)), db.select().from(schema.grades).orderBy(asc(schema.grades.ordem)),
   ]);
-  const podeConfirmar = can.aprovar(s, cfg.alcadas.matricula); const podeExcecao = can.aprovar(s, cfg.alcadas.excecaoCapacidade);
+  const podeConfirmar = can.aprovar(s, "matricula"); const podeExcecao = can.aprovar(s, "excecaoCapacidade");
   const [casos, pesquisas, riscoLista] = await Promise.all([
     sql<{ id: number; assunto: string; tipo: string; status: string; created_at: Date; sla_ate: Date | null; resultado: string | null }[]>`SELECT id, assunto, tipo, status, created_at, sla_ate, resultado FROM cases WHERE student_id=${sid} ORDER BY created_at DESC LIMIT 12`,
     sql<{ tipo: string; nota: number; data: string; comentario: string | null }[]>`SELECT tipo, nota, data::text, comentario FROM surveys WHERE student_id=${sid} ORDER BY data DESC LIMIT 5`,

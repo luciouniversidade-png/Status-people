@@ -6,8 +6,9 @@ import { audit, str, strOrNull, int, caminhoSeguro } from "@/lib/utils";
 import { KPI, garantirKpis, kpisVisiveis, podeEditarMeta, podeComentar, podeRecalcular, vePainelExecutivo } from "@/lib/kpi";
 import { validarConfigIndicador, validoPeriodo } from "@/lib/gestao-calc";
 import { DIRECAO_DO_SENTIDO } from "@/lib/kpi-catalogo";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 /** Número digitado no padrão brasileiro: "2.500.000", "4,5", "R$ 1.200,50", "85%". */
 function numeroBr(fd: FormData, k: string): number | null {
@@ -55,7 +56,7 @@ export async function removerMeta(fd: FormData) {
 export async function comentarKpi(fd: FormData) {
   const s = await requireSession(); const volta = caminhoSeguro(str(fd, "voltar"), "/executivo");
   try {
-    assert(podeComentar(s), "Seu perfil não registra comentários.");
+    assert(podeComentar(s), "Seu acesso não registra comentários.");
     const k = KPI[str(fd, "chave")]; assert(!!k && (await kpisVisiveis(s)).some(x => x.chave === k.chave), "Sem acesso a este indicador.");
     const periodo = str(fd, "periodo"); assert(validoPeriodo(periodo), "Período inválido.");
     const escopo = scopeUnit(s); const unitId = escopo ?? (int(fd, "unidade") ?? 0); assert(await unidadeValida(unitId), "Unidade inválida.");
@@ -81,7 +82,7 @@ export async function removerComentarioKpi(fd: FormData) {
 export async function assinarResumo(fd: FormData) {
   const s = await requireSession(); const volta = caminhoSeguro(str(fd, "voltar"), "/executivo"); let texto = "";
   try {
-    assert(vePainelExecutivo(s), "Seu perfil não tem acesso ao Painel Executivo.");
+    assert(vePainelExecutivo(s), "Seu acesso não tem acesso ao Painel Executivo.");
     const ativo = str(fd, "ativo") === "1"; const escopo = scopeUnit(s); const u = escopo ?? (int(fd, "unidade") || null);
     if (u !== null) assert(await unidadeValida(u), "Unidade inválida.");
     await sql`INSERT INTO kpi_subscriptions (user_id, unit_id, ativo, email) VALUES (${s.id}, ${u}, ${ativo}, ${str(fd, "email") !== "0"}) ON CONFLICT (user_id) DO UPDATE SET unit_id=EXCLUDED.unit_id, ativo=EXCLUDED.ativo, email=EXCLUDED.email`;

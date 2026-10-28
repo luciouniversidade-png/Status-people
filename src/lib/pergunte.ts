@@ -72,10 +72,10 @@ export async function responder(s: Session, pergunta: string): Promise<Resposta>
   const units = await sql<{ id: number; nome: string; codigo: string }[]>`SELECT id, nome, codigo FROM units ORDER BY nome`; const h = hoje(); const mesAtual = h.slice(0, 7);
   const it = interpretar(pergunta, units, mesAtual);
   if (it.recusa === "pessoa") return { ok: false, recusa: "Perguntas sobre uma pessoa específica (salário, CPF, contato, desempenho) não são respondidas aqui: abra a ficha, que aplica a permissão e registra o acesso.", sugestoes: EXEMPLOS, interpretacao: it };
-  if (!vePainelExecutivo(s)) return { ok: false, recusa: "Seu perfil não acessa a base de indicadores: o Pergunte ao Status responde só indicadores com fonte.", sugestoes: [], interpretacao: it };
+  if (!vePainelExecutivo(s)) return { ok: false, recusa: "Seu acesso não acessa a base de indicadores: o Pergunte ao Status responde só indicadores com fonte.", sugestoes: [], interpretacao: it };
   if (!it.kpi) return { ok: false, recusa: "Não reconheci o indicador da pergunta. Use um destes termos: alunos, ocupação, rematrícula, receita, despesa, EBITDA, inadimplência, caixa, folha ÷ receita, colaboradores, turnover, absenteísmo, NPS…", sugestoes: EXEMPLOS, interpretacao: it };
   const visiveis = await kpisVisiveis(s); const def = visiveis.find(k => k.chave === it.kpi);
-  if (!def) { const nome = CATALOGO.find(k => k.chave === it.kpi)?.nome ?? it.kpi; return { ok: false, recusa: `Seu perfil não vê o indicador “${nome}”.`, sugestoes: EXEMPLOS, interpretacao: it }; }
+  if (!def) { const nome = CATALOGO.find(k => k.chave === it.kpi)?.nome ?? it.kpi; return { ok: false, recusa: `Seu acesso não vê o indicador “${nome}”.`, sugestoes: EXEMPLOS, interpretacao: it }; }
   const escopo = scopeUnit(s); if (escopo !== null && it.unitId !== null && it.unitId !== escopo) return { ok: false, recusa: `Seu acesso é à sua unidade: a pergunta citou ${it.unidade}.`, sugestoes: EXEMPLOS, interpretacao: it };
   const unitId = escopo ?? it.unitId; if (unitId && def.porUnidade === false) return { ok: false, recusa: `“${def.nome}” só existe para a rede (sem quebra por unidade).`, sugestoes: EXEMPLOS, interpretacao: it };
   const cfg = await getSettings(); const anoLetivo = cfg.matriculas.anoLetivo as number;

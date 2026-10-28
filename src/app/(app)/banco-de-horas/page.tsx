@@ -1,3 +1,4 @@
+import { quemAprovaTexto } from "@/lib/acesso";
 import Link from "@/components/Link";
 import { requireStaff, scopeUnit, can } from "@/lib/auth";
 import { sql, db, schema } from "@/db";
@@ -9,7 +10,7 @@ import { lancarHoras, decidirHoras } from "./actions";
 export const dynamic = "force-dynamic";
 
 export default async function Banco({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const s = await requireStaff(); const sp = await searchParams; const u = scopeUnit(s); const cfg = await getSettings();
+  const s = await requireStaff(); const sp = await searchParams; const u = scopeUnit(s); const cfg = await getSettings(); const quemAprova = await quemAprovaTexto("banco");
   const uf = u === null ? sql`` : sql`AND e.unit_id=${u}`;
   const [saldos, pendentes, [tot]] = await Promise.all([
     sql<{ id: number; nome: string; unidade: string; saldo: number; pendentes: number }[]>`SELECT e.id, e.nome, u.nome AS unidade,
@@ -21,7 +22,7 @@ export default async function Banco({ searchParams }: { searchParams: Promise<Re
     sql<{ neg: number; pos: number; devedores: number }[]>`SELECT coalesce(sum(CASE WHEN x.saldo<0 THEN x.saldo END),0)::int AS neg, coalesce(sum(CASE WHEN x.saldo>0 THEN x.saldo END),0)::int AS pos, count(*) FILTER (WHERE x.saldo<0)::int AS devedores FROM (SELECT e.id, coalesce(sum(h.minutos),0) AS saldo FROM employees e LEFT JOIN hour_entries h ON h.employee_id=e.id AND h.status='APROVADO' WHERE e.situacao<>'DESLIGADO' ${uf} GROUP BY e.id) x`,
   ]);
   const emps = await db.select({ id: schema.employees.id, nome: schema.employees.nome }).from(schema.employees).where(u === null ? ne(schema.employees.situacao, "DESLIGADO") : and(ne(schema.employees.situacao, "DESLIGADO"), eq(schema.employees.unitId, u))).orderBy(asc(schema.employees.nome));
-  const podeAprovar = can.aprovar(s, cfg.alcadas.banco);
+  const podeAprovar = can.aprovar(s, "banco");
   return (
     <Page title="Banco de horas" sub="Saldo em horas dos lançamentos aprovados. Crédito = hora extra; débito = atraso, falta ou compensação."
       actions={<><Btn kind="ghost" href="/api/export/banco">Exportar CSV</Btn>{can.editar(s) && <Btn kind="ghost" href="/banco-de-horas/importar">Importar saldos da planilha</Btn>}</>}>
@@ -56,7 +57,7 @@ export default async function Banco({ searchParams }: { searchParams: Promise<Re
               <div className="grid grid-cols-3 gap-2"><Field label="Horas"><Input name="horas" type="number" min={0} defaultValue={0} /></Field><Field label="Minutos"><Input name="minutos" type="number" min={0} max={59} defaultValue={0} /></Field><Field label="Ajuste"><Select name="sinal" defaultValue="+"><option value="+">+</option><option value="-">−</option></Select></Field></div>
               <Field label="Descrição"><Input name="descricao" /></Field>
               <Btn>{podeAprovar ? "Lançar" : "Enviar para aprovação"}</Btn>
-              <p className="text-xs text-slate-500">Lançamentos de {cfg.alcadas.banco.join(", ")} entram aprovados; os demais aguardam aprovação. Saldos iniciais podem ser importados como “Ajuste” com a data do fechamento da planilha.</p>
+              <p className="text-xs text-slate-500">Lançamentos de quem aprova o banco ({quemAprova}) entram aprovados; os demais aguardam aprovação. Saldos iniciais podem ser importados como “Ajuste” com a data do fechamento da planilha.</p>
             </form>
           </Card>
         )}

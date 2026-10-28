@@ -7,8 +7,9 @@ import { notificar } from "@/lib/comunicacao";
 import { CANAIS } from "@/lib/atendimento";
 import { lerJornada, type EtapaCfg } from "@/lib/gestao-calc";
 import { CONTATO_TIPO, PERCEPCAO } from "@/lib/radar-familia";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro";
 /** Quem atende famílias (mesmo grupo do módulo Atendimento). */
 const ATENDE = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL"];
@@ -30,7 +31,7 @@ export async function atribuirCarteira(fd: FormData) {
     const ids = [...new Set([...fd.getAll("studentIds"), fd.get("studentId")].map(Number).filter(n => Number.isInteger(n) && n > 0))]; if (!ids.length) throw new Error("Marque ao menos uma família.");
     const userId = int(fd, "userId");
     let dest: { id: number; nome: string; role: string; unit_id: number | null } | undefined;
-    if (userId) { [dest] = await sql<{ id: number; nome: string; role: string; unit_id: number | null }[]>`SELECT id, nome, role, unit_id FROM users WHERE id=${userId} AND ativo`; if (!dest) throw new Error("Responsável não encontrado ou inativo."); if (!ATENDE.includes(dest.role)) throw new Error(`${dest.nome} não tem perfil de atendimento às famílias.`); }
+    if (userId) { [dest] = await sql<{ id: number; nome: string; role: string; unit_id: number | null }[]>`SELECT id, nome, role, unit_id FROM users WHERE id=${userId} AND ativo`; if (!dest) throw new Error("Responsável não encontrado ou inativo."); if (!ATENDE.includes(dest.role)) throw new Error(`${dest.nome} não atua no atendimento às famílias.`); }
     // Tudo ou nada: valida todas as famílias marcadas antes de mudar qualquer carteira
     const mudar: { id: number; antes: number | null }[] = [];
     for (const id of ids) {
@@ -49,7 +50,7 @@ export async function atribuirCarteira(fd: FormData) {
 /** Interação com a família: canal, tipo, resumo, percepção e próximo passo combinado (com data). Pode cumprir uma etapa da jornada. */
 export async function registrarInteracao(fd: FormData) {
   const s = await requireSession(); const sid = Number(fd.get("studentId")); const b = str(fd, "voltar") || `/matriculas/alunos/${sid}#relacionamento`; let msg = "";
-  try { assert(ATENDE.includes(s.role), "Seu perfil não registra interações com famílias."); const st = await alunoNoEscopo(s, sid); if (!st.aluno_atual) throw new Error("Interações do radar são das famílias que já estudam na rede (candidato segue em Matrículas e Atendimento)."); const cfg = await getSettings(); const h = hoje();
+  try { assert(ATENDE.includes(s.role), "Seu acesso não registra interações com famílias."); const st = await alunoNoEscopo(s, sid); if (!st.aluno_atual) throw new Error("Interações do radar são das famílias que já estudam na rede (candidato segue em Matrículas e Atendimento)."); const cfg = await getSettings(); const h = hoje();
     const data = str(fd, "data") || h; if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) throw new Error("Data inválida."); if (data > h) throw new Error("A interação não pode ter data futura.");
     const resumo = str(fd, "resumo"); if (!resumo) throw new Error("Resuma a conversa.");
     const tipo = str(fd, "tipo") || "LIGACAO"; if (!CONTATO_TIPO[tipo]) throw new Error("Tipo de interação inválido.");
@@ -71,7 +72,7 @@ export async function registrarInteracao(fd: FormData) {
 /** Marca uma etapa da jornada como cumprida (sem precisar de interação), ou desfaz — desfazer é da Direção/RH/diretor. */
 export async function marcarEtapa(fd: FormData) {
   const s = await requireSession(); const sid = Number(fd.get("studentId")); const b = str(fd, "voltar") || `/matriculas/alunos/${sid}#relacionamento`; let msg = "";
-  try { assert(ATENDE.includes(s.role), "Seu perfil não registra etapas da jornada."); const st = await alunoNoEscopo(s, sid); if (!st.aluno_atual) throw new Error("A jornada é das famílias que já estudam na rede."); const cfg = await getSettings(); const h = hoje();
+  try { assert(ATENDE.includes(s.role), "Seu acesso não registra etapas da jornada."); const st = await alunoNoEscopo(s, sid); if (!st.aluno_atual) throw new Error("A jornada é das famílias que já estudam na rede."); const cfg = await getSettings(); const h = hoje();
     const etapa = str(fd, "etapa"); const et = (cfg.atendimento.jornada as EtapaCfg[]).find(e => e.chave === etapa); const ano = int(fd, "ano") ?? Number(h.slice(0, 4));
     if (str(fd, "desfazer") === "1") {
       assert(["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(s.role), "Desfazer etapa é da Direção, RH ou diretor da unidade.");
@@ -90,7 +91,7 @@ export async function marcarEtapa(fd: FormData) {
 /** Quem indicou o candidato (família da rede). Sem origem definida, a origem passa a ser Indicação. */
 export async function definirIndicacao(fd: FormData) {
   const s = await requireSession(); const sid = Number(fd.get("studentId")); const b = str(fd, "voltar") || `/matriculas/alunos/${sid}`; let msg = "";
-  try { assert(can.reservar(s), "Seu perfil não edita o cadastro de Matrículas.");
+  try { assert(can.reservar(s), "Seu acesso não edita o cadastro de Matrículas.");
     // Candidato ainda sem unidade é da rede (mesma regra do cadastro de Matrículas); com unidade, perfis de unidade só atuam na sua.
     const [st] = await sql<{ id: number; nome: string; unit_atual_id: number | null; origem: string | null; indicado_por_id: number | null }[]>`SELECT id, nome, unit_atual_id, origem, indicado_por_id FROM students WHERE id=${sid}`; if (!st) throw new Error("Aluno não encontrado.");
     const u = scopeUnit(s); if (u !== null && st.unit_atual_id !== null && st.unit_atual_id !== u) throw new Error(`${st.nome} não é da sua unidade.`);

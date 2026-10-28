@@ -5,8 +5,9 @@ import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, int, caminhoSeguro } from "@/lib/utils";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { progressoEtapas, proximoLembrete, NOME_ETAPA, garantirEtapas } from "@/lib/ciclo-etapas";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 async function conduz() { const s = await requireSession(); assert(["RH", "DIRECAO"].includes(s.role), "O ciclo é conduzido pelo RH (e pela Direção)."); return s; }

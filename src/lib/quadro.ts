@@ -34,8 +34,8 @@ export async function posicoes(unitId: number | null): Promise<Posicao[]> {
   const cfg = await getSettings(); const plena = Number(cfg.quadro.jornadaPlenaMin) || 528; const h = hoje();
   const rows = await sql<Omit<Posicao, "fte" | "status">[]>`SELECT s.id, s.position_id, p.nome AS cargo, p.area, s.unit_id, u.nome AS unidade, s.jornada_min_dia, s.autorizada, s.employee_id, e.nome AS ocupante, e.situacao AS situacao_ocupante, e.desligamento::text,
       EXISTS (SELECT 1 FROM processes pr WHERE pr.employee_id=e.id AND pr.tipo='DESLIGAMENTO' AND pr.status='ABERTO') AS em_desligamento,
-      (SELECT r.id FROM requisitions r WHERE r.slot_id=s.id AND r.status IN ('SOLICITADA','ABERTA') ORDER BY r.id DESC LIMIT 1) AS vaga_id,
-      (SELECT r.status FROM requisitions r WHERE r.slot_id=s.id AND r.status IN ('SOLICITADA','ABERTA') ORDER BY r.id DESC LIMIT 1) AS vaga_status, s.prevista_ate::text, s.motivo
+      (SELECT r.id FROM requisitions r WHERE r.slot_id=s.id AND r.status IN ('SOLICITADA','ABERTA','PAUSADA') ORDER BY r.id DESC LIMIT 1) AS vaga_id,
+      (SELECT r.status FROM requisitions r WHERE r.slot_id=s.id AND r.status IN ('SOLICITADA','ABERTA','PAUSADA') ORDER BY r.id DESC LIMIT 1) AS vaga_status, s.prevista_ate::text, s.motivo
     FROM position_slots s JOIN positions p ON p.id=s.position_id JOIN units u ON u.id=s.unit_id LEFT JOIN employees e ON e.id=s.employee_id
     WHERE s.ativa ${unitId === null ? sql`` : sql`AND s.unit_id=${unitId}`} ORDER BY u.nome, p.area, p.ordem, p.nome, s.id`;
   return rows.map(r => ({ ...r, fte: fte(r.jornada_min_dia, plena), status: statusPosicao({ autorizada: r.autorizada, ocupante: r.employee_id ? { situacao: r.situacao_ocupante ?? "DESLIGADO", desligamento: r.desligamento, emDesligamento: r.em_desligamento } : null, vagaAberta: r.vaga_status === "ABERTA" }, h) }));

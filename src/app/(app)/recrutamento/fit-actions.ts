@@ -7,9 +7,10 @@ import { requireSession, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings } from "@/lib/utils";
 import { criteriosDoTexto, avaliarPorRegras, avaliarComIA, FIT_VERSAO, DECISAO_LABEL, type ResultadoFit } from "@/lib/recrutamento-fit";
 import { criteriosDaVaga, rankingVaga, fontesDoCandidato, ETAPAS_FORA } from "@/lib/recrutamento-ranking";
+import { comMensagem } from "@/lib/redirecionar";
 
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}#aderencia`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg, "#aderencia");
 
 async function vagaAberta(rid: number) {
   const [r] = await db.select().from(schema.requisitions).where(eq(schema.requisitions.id, rid));
@@ -67,7 +68,7 @@ export async function decidirShortlist(fd: FormData) {
     if (decisao === "REPROVAR") nova = "REPROVADO";
     await db.insert(schema.shortlistDecisions).values({ applicationId: aid, decisao, scoreNoMomento: linha?.score ?? null, posicao: linha?.posicao ?? null, divergiu, justificativa, decididoPor: s.id, decididoNome: s.nome });
     if (nova !== a.etapa) await db.update(schema.applications).set({ etapa: nova, updatedAt: new Date(), motivoReprovacao: decisao === "REPROVAR" ? motivo : a.motivoReprovacao }).where(eq(schema.applications.id, aid));
-    if (decisao === "RESERVAR") await sql`UPDATE candidates SET tags = trim(both ', ' from concat_ws(', ', nullif(tags,''), ${`reserva vaga #${rid}`})) WHERE id=${a.candidateId} AND coalesce(tags,'') NOT LIKE ${`%reserva vaga #${rid}%`}`;
+    if (decisao === "RESERVAR") await sql`UPDATE candidates SET tags = trim(both ', ' from concat_ws(', ', nullif(tags,''), ${`reserva vaga #${rid}`}::text)) WHERE id=${a.candidateId} AND coalesce(tags,'') NOT LIKE ${`%reserva vaga #${rid}%`}`;
     const txt = decisao === "AVANCAR" ? `Shortlist: avançou → ${nova}` : decisao === "REPROVAR" ? `Shortlist: reprovado (${motivo})` : "Shortlist: reservado (banco de talentos)";
     await db.insert(schema.applicationEvents).values({ applicationId: aid, userNome: s.nome, texto: `${txt}${linha?.score != null ? ` · aderência ${linha.score}% · ${linha.posicao}º da lista` : " · sem aderência calculada"}${divergiu ? ` · contrariou a sugestão: ${justificativa}` : ""}` });
     await audit(s, "decisão shortlist", "applications", aid, { etapa: a.etapa }, { etapa: nova, decisao, divergiu, score: linha?.score ?? null });

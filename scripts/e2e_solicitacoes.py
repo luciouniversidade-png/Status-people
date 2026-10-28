@@ -120,7 +120,7 @@ okmsg(post("/solicitacoes/tipos", aid_t, tp), "4 campo(s), 2 etapa(s)")
 TV = psql("SELECT id FROM request_types WHERE nome='Uso de veículo da escola'")
 assert psql(f"SELECT (etapas->1->'usuarios')::text || '|' || (etapas->1->>'acimaDe') || '|' || perfis::text FROM request_types WHERE id={TV}") == f"[{UDG}]|300|[\"COLABORADOR\"]"
 h = page(f"/solicitacoes/nova?tipo={TV}", sess=DS); assert "Nova solicitação" in h and "Uso de veículo" not in h[h.find("<main"):]
-loc = post("/solicitacoes/nova", aid_ab, {"typeId": TV, "campo_destino": "Aeroporto", "campo_data": d(3), "campo_turno": "Manhã"}, sess=DS); erro(loc, "Seu perfil não abre")
+loc = post("/solicitacoes/nova", aid_ab, {"typeId": TV, "campo_destino": "Aeroporto", "campo_data": d(3), "campo_turno": "Manhã"}, sess=DS); erro(loc, "Seu acesso não abre")
 loc = post("/solicitacoes/nova", aid_ab, {"typeId": TV, "campo_destino": "Museu", "campo_data": d(3), "campo_turno": "Tarde", "campo_custo_estimado": "450"}, sess=CS); RV = re.search(r"/solicitacoes/(\d+)", loc).group(1)
 assert psql(f"SELECT jsonb_array_length(etapas) || '|' || (etapas->0->'aprovadores')::text FROM requests WHERE id={RV}") == f"2|[{UOPS}]"
 ok("tipo novo pelo editor de linhas: tipo de campo, opções, perfis e e-mails validados; só Direção/RH configuram; perfil restrito; etapa por usuário nomeado acima de R$ 300")

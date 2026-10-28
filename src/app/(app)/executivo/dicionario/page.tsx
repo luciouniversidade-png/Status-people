@@ -15,7 +15,7 @@ export default async function Dicionario() {
   const [defs, cfg, est] = await Promise.all([kpisVisiveis(s), getSettings(), estadoBase()]);
   const ano = cfg.matriculas.anoLetivo as number;
   return (
-    <Page title="Dicionário de indicadores" sub={`${defs.length} indicadores visíveis para o seu perfil · catálogo ${CATALOGO_VERSAO}${est?.completoEm ? ` · base reconstruída em ${fmtData(est.completoEm.slice(0, 10))}` : ""}`} actions={<div className="flex gap-2 print:hidden"><Btn kind="ghost" href="/executivo">Painel Executivo</Btn><PrintButton /></div>}>
+    <Page title="Dicionário de indicadores" sub={`${defs.length} indicadores visíveis para o seu acesso · catálogo ${CATALOGO_VERSAO}${est?.completoEm ? ` · base reconstruída em ${fmtData(est.completoEm.slice(0, 10))}` : ""}`} actions={<div className="flex gap-2 print:hidden"><Btn kind="ghost" href="/executivo">Painel Executivo</Btn><PrintButton /></div>}>
       <Card className="mb-4"><ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
         <li><b>Mês sem medição fica em branco</b> — nunca vira zero. Zero aparece só quando o sistema já registrava aquele assunto e, no mês, não houve nenhum caso.</li>
         <li><b>Razões</b> (percentuais, médias) da rede e do acumulado no ano são recalculadas pelas somas dos numeradores e denominadores, não pela média das unidades.</li>

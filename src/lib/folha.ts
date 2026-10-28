@@ -97,6 +97,8 @@ export type PacoteFolha = {
   unidades: { id: number; nome: string; fechadoEm: string | null; fechadoPor: string | null; ressalva: string | null }[];
   headcount: number; admissoes: Record<string, string | number | null>[]; desligamentos: Record<string, string | number | null>[]; afastamentos: Record<string, string | number | null>[];
   ferias: Record<string, string | number | null>[]; banco: Record<string, string | number | null>[]; horasExtras: Record<string, string | number | null>[]; faltas: Record<string, string | number | null>[];
+  /** v30 · adesões, encerramentos e descontos de benefícios da competência (pacotes antigos não têm) */
+  beneficios?: Record<string, string | number | null>[];
   semFonte: string[]; hash?: string;
 };
 const diasNoMes = (ini: string, fim: string, mIni: string, mFim: string) => { const a = ini > mIni ? ini : mIni; const b = fim < mFim ? fim : mFim; return a > b ? 0 : Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000) + 1; };
@@ -111,6 +113,7 @@ export async function montarPacote(companyId: number, mes: string): Promise<Paco
     sql<{ employee_id: number; creditos: number; debitos: number; extras: number; saldo: number }[]>`SELECT h.employee_id, coalesce(sum(h.minutos) FILTER (WHERE h.minutos > 0 AND h.data BETWEEN ${ini} AND ${fim}),0)::int AS creditos, coalesce(-sum(h.minutos) FILTER (WHERE h.minutos < 0 AND h.data BETWEEN ${ini} AND ${fim}),0)::int AS debitos, coalesce(sum(h.minutos) FILTER (WHERE h.tipo='EXTRA' AND h.data BETWEEN ${ini} AND ${fim}),0)::int AS extras, coalesce(sum(h.minutos) FILTER (WHERE h.data <= ${fim}),0)::int AS saldo FROM hour_entries h WHERE h.employee_id = ANY(${ids}) AND h.status='APROVADO' GROUP BY h.employee_id`,
     sql<{ employee_id: number; faltas: number; abonados: number }[]>`SELECT employee_id, count(*) FILTER (WHERE status='FALTA')::int AS faltas, count(*) FILTER (WHERE status='ATESTADO')::int AS abonados FROM timesheet_days WHERE employee_id = ANY(${ids}) AND data BETWEEN ${ini} AND ${fim} GROUP BY employee_id`,
   ]) : [[], [], []];
+  const { movimentosBeneficios } = await import("./beneficios"); const benef = await movimentosBeneficios(ids, ini, fim);
   const ex = (s: string | null | undefined) => s ? s.split("-").reverse().join("/") : null;
   const p: PacoteFolha = {
     versao: 1, geradoEm: new Date().toISOString(), competencia: mes, entidade: ent,
@@ -124,6 +127,7 @@ export async function montarPacote(companyId: number, mes: string): Promise<Paco
     banco: banco.filter(b => b.creditos || b.debitos || b.saldo).map(b => ({ ...base(b.employee_id), creditos_min: b.creditos, debitos_min: b.debitos, saldo_acumulado_min: b.saldo })),
     horasExtras: banco.filter(b => b.extras > 0).map(b => ({ ...base(b.employee_id), extras_aprovadas_min: b.extras })),
     faltas: faltas.filter(f => f.faltas || f.abonados).map(f => ({ ...base(f.employee_id), faltas: f.faltas, dias_abonados: f.abonados })),
+    beneficios: benef.map(b => ({ ...base(b.employee_id), beneficio: b.plano, movimento: b.movimento === "ADESAO" ? "Adesão" : b.movimento === "ENCERRAMENTO" ? "Encerramento" : "Desconto em folha", inicio: ex(b.inicio), fim: ex(b.fim), dependentes: b.dependentes, desconto_colaborador: b.valor_colab, custo_escola: b.valor_empresa })),
     semFonte: ["Pensões alimentícias e descontos autorizados: não há registro no sistema — informe ao contador por fora.", "Horas extras: no regime de banco de horas viram crédito; pague apenas o que estiver combinado (a lista vai para conferência)."],
   };
   p.hash = createHash("sha256").update(JSON.stringify({ ...p, geradoEm: null })).digest("hex").slice(0, 16);
@@ -136,7 +140,7 @@ export function pacoteCsv(p: PacoteFolha) {
   linhas.push(`Pacote da folha;${p.competencia.split("-").reverse().join("/")}`); linhas.push(`Entidade;${esc(p.entidade.nome)};CNPJ;${esc(p.entidade.cnpj ?? "")}`); linhas.push(`Gerado em;${p.geradoEm};Conferência (hash);${p.hash ?? ""}`); linhas.push(`Headcount no fim do mês;${p.headcount}`);
   linhas.push(`Ponto fechado;${p.unidades.map(u => `${u.nome} ${u.fechadoEm ? `em ${u.fechadoEm.slice(0, 10)}` : "ABERTO"}${u.ressalva ? ` (ressalva: ${u.ressalva})` : ""}`).join(" | ")}`);
   secao("Admissões", p.admissoes); secao("Desligamentos", p.desligamentos); secao("Afastamentos e licenças", p.afastamentos); secao("Férias", p.ferias);
-  secao("Banco de horas (minutos aprovados)", p.banco); secao("Horas extras aprovadas (minutos)", p.horasExtras); secao("Faltas e dias abonados", p.faltas);
+  secao("Banco de horas (minutos aprovados)", p.banco); secao("Horas extras aprovadas (minutos)", p.horasExtras); secao("Faltas e dias abonados", p.faltas); if (p.beneficios) secao("Benefícios (adesões, encerramentos e descontos)", p.beneficios);
   linhas.push(""); linhas.push("## Sem fonte no sistema"); p.semFonte.forEach(t => linhas.push(esc(t)));
   return "﻿" + linhas.join("\r\n");
 }

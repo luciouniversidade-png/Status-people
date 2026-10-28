@@ -35,14 +35,14 @@ export default async function Sucessao({ searchParams }: { searchParams: Promise
                 <Td><form action={excluirPosicaoCritica}><input type="hidden" name="id" value={p.id} /><button className="text-xs text-erro">remover</button></form></Td></tr>)}
             </Table>
           </Card>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Card title="Bus factor — dependências de uma única pessoa">
-              <Table head={["Cargo", "Unidade", "Pessoa"]} empty="Nenhum cargo de direção/administrativo com ocupante único.">{bus.unicos.map((x, i) => <tr key={i}><Td>{x.cargo}</Td><Td>{x.unidade}</Td><Td><Link className="text-acao" href={`/colaboradores/${x.employee_id}`}>{x.nome}</Link></Td></tr>)}</Table>
-              {(bus.pops.length > 0 || bus.controles.length > 0) && <ul className="mt-2 space-y-0.5 text-xs text-slate-600">{bus.pops.map((p, i) => <li key={"p" + i}>{p.nome} é dono de {p.n} POPs vigentes ({p.itens})</li>)}{bus.controles.map((c, i) => <li key={"c" + i}>{c.nome} responde por {c.n} controles</li>)}</ul>}
-            </Card>
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
             <Card title="Talent reviews">
               <Table head={["Review", "Data", "Situação", "Pessoas", "Talentos", "Risco alto"]} empty="Nenhum talent review.">{reviews.map(r => <tr key={r.id}><Td><Link className="text-acao" href={`/sucessao/review/${r.id}`}>{r.nome}</Link></Td><Td className="text-xs">{fmtData(r.data)}</Td><Td><Badge v={r.status === "REALIZADO" ? "APROVADA" : "PENDENTE"} label={r.status === "REALIZADO" ? "Realizado" : "Planejado"} /></Td><Td>{r.itens}</Td><Td className="text-ok">{r.chave}</Td><Td className={r.risco_alto ? "text-erro" : ""}>{r.risco_alto}</Td></tr>)}</Table>
               {can.editar(s) && <form action={criarTalentReview} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_130px_auto]"><Field label="Nome"><Input name="nome" required placeholder="Talent Review 2026" /></Field><Field label="Data"><Input name="data" type="date" required /></Field><div className="flex items-end"><Btn small>Criar</Btn></div></form>}
+            </Card>
+            <Card title="Bus factor — dependências de uma única pessoa">
+              <Table head={["Cargo", "Unidade", "Pessoa"]} empty="Nenhum cargo de direção/administrativo com ocupante único.">{bus.unicos.map((x, i) => <tr key={i}><Td>{x.cargo}</Td><Td>{x.unidade}</Td><Td><Link className="text-acao" href={`/colaboradores/${x.employee_id}`}>{x.nome}</Link></Td></tr>)}</Table>
+              {(bus.pops.length > 0 || bus.controles.length > 0) && <ul className="mt-2 space-y-0.5 text-xs text-slate-600">{bus.pops.map((p, i) => <li key={"p" + i}>{p.nome} é dono de {p.n} POPs vigentes ({p.itens})</li>)}{bus.controles.map((c, i) => <li key={"c" + i}>{c.nome} responde por {c.n} controles</li>)}</ul>}
             </Card>
           </div>
         </div>

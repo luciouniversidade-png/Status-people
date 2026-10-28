@@ -19,7 +19,7 @@ export default async function Turma({ params, searchParams }: { params: Promise<
   const [oc] = (await ocupacao(c.ano, c.unit_id)).filter(x => x.class_id === cid);
   const lista = await sql<{ id: number; aluno: string; student_id: number; status: string; reserva_ate: string | null; contrato: boolean; fin: boolean; class_id: number; excecao: string | null; created_at: Date; responsavel: string | null; motivo: string | null }[]>`SELECT e.id, st.nome AS aluno, e.student_id, e.status, e.reserva_ate::text, e.contrato_assinado AS contrato, e.financeiro_ok AS fin, e.class_id, e.excecao, e.created_at, u.nome AS responsavel, e.motivo_cancelamento AS motivo FROM enrollments e JOIN students st ON st.id=e.student_id LEFT JOIN users u ON u.id=e.responsavel_user_id WHERE e.class_id=${cid} ORDER BY (e.status IN ('CONFIRMADA','RESERVADA')) DESC, e.status, st.nome`;
   const [turmas, alunos] = await Promise.all([turmasAbertas(s, c.ano, c.modalidade), alunosAtivos()]);
-  const podeConfirmar = can.aprovar(s, cfg.alcadas.matricula); const podeExcecao = can.aprovar(s, cfg.alcadas.excecaoCapacidade);
+  const podeConfirmar = can.aprovar(s, "matricula"); const podeExcecao = can.aprovar(s, "excecaoCapacidade");
   const voltar = `/matriculas/turmas/${cid}`;
   const capSala = c.sala ? capacidadeFisica({ capacidade: c.sala_cap, area_m2: c.sala_area }, Number(cfg.espacos.m2PorAluno) || 0) : null;
   return (

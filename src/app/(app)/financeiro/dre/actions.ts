@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, int, caminhoSeguro } from "@/lib/utils";
 import { LINHAS_DRE } from "@/lib/dre-calc";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 
 /** Comentário por linha da DRE no fechamento do mês (fica junto do período, como as explicações do orçamento). */
 export async function comentarDre(fd: FormData) {

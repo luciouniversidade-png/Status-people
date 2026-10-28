@@ -55,6 +55,10 @@ loc = post(f"/recrutamento/vagas/{rid}", dec, {"applicationId": apB, "decisao": 
 loc = post(f"/recrutamento/vagas/{rid}", dec, {"applicationId": apB, "decisao": "REPROVAR", "motivo": "sem licenciatura em Matemática"}); assert "decisão registrada" in loc, loc
 assert psql(f"SELECT etapa || '|' || motivo_reprovacao FROM applications WHERE id={apB}") == "REPROVADO|sem licenciatura em Matemática"
 ev = psql(f"SELECT texto FROM application_events WHERE application_id={apC} ORDER BY id DESC LIMIT 1"); assert "contrariou a sugestão" in ev, ev
+apD = ids["Davi Sem Texto"][1]; loc = post(f"/recrutamento/vagas/{rid}", dec, {"applicationId": apD, "decisao": "RESERVAR"}); assert "Reservar: decisão registrada" in loc, loc
+assert f"reserva vaga #{rid}" in psql(f"SELECT tags FROM candidates WHERE id={ids['Davi Sem Texto'][0]}") and psql(f"SELECT etapa FROM applications WHERE id={apD}") == "TRIAGEM", "reservar: banco de talentos"
+loc = post(f"/recrutamento/vagas/{rid}", dec, {"applicationId": apD, "decisao": "RESERVAR"}); assert "decisão registrada" in loc, loc
+assert psql(f"SELECT tags FROM candidates WHERE id={ids['Davi Sem Texto'][0]}").count("reserva vaga") == 1, "reservar duas vezes não duplica a marca"
 assert int(psql("SELECT count(*) FROM audit_log WHERE acao='decisão shortlist'")) >= 3; print("decisões humanas registradas ok")
 # 4 · critérios editados
 h = page(f"/recrutamento/vagas/{rid}"); loc = post(f"/recrutamento/vagas/{rid}", aid_near(h, "Salvar critérios"), {"requisitionId": rid, "criterios": "Licenciatura em Matemática: licenciatura, matemática\nDesejável: GeoGebra: geogebra"}); assert "2 critério(s) salvos" in loc, loc

@@ -72,7 +72,7 @@ export default async function PlanoDeContas({ searchParams }: { searchParams: Pr
 
   return (
     <Page title="Plano de contas e centros de custo" sub={`Natureza (conta), centro de custo, comportamento e tipo econômico em campos distintos — a categoria do caixa, da DRE e do orçamento acompanha a conta. ${ctx.carimbo}.`}
-      actions={<><Btn kind="ghost" href="/financeiro/rateio">Resultado por unidade</Btn><Btn kind="ghost" href="/financeiro/orcamento/historico">Orçamento pelo histórico</Btn><Btn kind="ghost" href={`/api/export/plano-de-contas${ctx.unitId ? `?unidade=${ctx.unitId}` : ""}`}>Exportar CSV</Btn></>}>
+      actions={<><Btn kind="ghost" href="/financeiro/rateio">Resultado por unidade</Btn><Btn kind="ghost" href="/financeiro/orcamento/historico">Orçamento pelo histórico</Btn><Btn kind="ghost" href={`/api/export/plano-de-contas${ctx.unitId ? `?unidade=${ctx.unitId}` : ""}`}>Exportar CSV</Btn><Btn kind="ghost" href={`/api/export/lancamentos-classificados${ctx.unitId ? `?unidade=${ctx.unitId}` : ""}`}>Lançamentos classificados (CSV)</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <BarraContexto ctx={ctx} voltar={`/financeiro/plano-de-contas?aba=${aba}`} periodo={false} />
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">

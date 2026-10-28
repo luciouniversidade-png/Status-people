@@ -5,14 +5,15 @@ import { requireSession, assert } from "@/lib/auth";
 import { audit, str, int, caminhoSeguro, hoje, addDays } from "@/lib/utils";
 import { varrerAlertas, escopoDo, modulosDoPerfil, MODULOS_SENSIVEIS } from "@/lib/alertas";
 import { notificar } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 
 /** Quem mexe num alerta: Direção e RH em qualquer um; os demais, no que é deles ou do próprio domínio (nunca Leitura). */
 async function carregar(id: number, s: Awaited<ReturnType<typeof requireSession>>) {
   const [a] = await sql<{ id: number; escopo: number; modulo: string; titulo: string; status: string; dono_user_id: number | null }[]>`SELECT id, escopo, modulo, titulo, status, dono_user_id FROM alerts WHERE id=${id}`;
-  assert(!!a, "Alerta não encontrado."); assert(s.role !== "LEITURA", "Perfil somente leitura.");
+  assert(!!a, "Alerta não encontrado."); assert(s.role !== "LEITURA", "Acesso somente leitura.");
   const mods = modulosDoPerfil(s.role); const sens = ["DIRECAO", "RH"].includes(s.role);
   assert(sens || !MODULOS_SENSIVEIS.includes(a.modulo), "Alerta restrito à Direção e ao RH.");
   assert(["DIRECAO", "RH"].includes(s.role) || a.dono_user_id === s.id || (mods !== null && mods.includes(a.modulo)) || (s.role === "DIRETOR_UNIDADE" && a.escopo === escopoDo(s)), "Este alerta é de outro responsável.");

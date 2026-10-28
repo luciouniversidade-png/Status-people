@@ -1,3 +1,4 @@
+import { usuariosQueAprovam } from "./acesso";
 import { sql } from "@/db";
 import { hoje, addDays } from "./utils";
 
@@ -59,7 +60,7 @@ export async function verificarRevisaoPop(procedureId: number | null, regra: str
   const prazo = new Date(Date.now() + prazoDias * 86400000).toISOString().slice(0, 10);
   const [r] = await sql<{ id: number }[]>`INSERT INTO procedure_reviews (chave, procedure_id, regra, motivo, evidencias, prazo, dono_user_id) VALUES (${chave}, ${procedureId}, ${regra}, ${motivo}, ${JSON.stringify(evid.map(e => e.id))}::jsonb, ${prazo}, ${p?.owner_user_id ?? null}) ON CONFLICT DO NOTHING RETURNING id`;
   if (!r) return null;
-  const dest = p?.owner_user_id ? [p.owner_user_id] : await usuariosPorPerfil(cfg.alcadas.pops as string[]);
+  const dest = p?.owner_user_id ? [p.owner_user_id] : await usuariosQueAprovam("pops");
   await notificar(dest, `Revisão de POP aberta: ${p ? `${p.codigo} ${p.titulo}` : regra}`, `${evid.length} exceções iguais (${motivo}) em ${janela} dias — revisar até ${prazo.split("-").reverse().join("/")}.`, procedureId ? `/governanca/pops/${procedureId}#revisao` : "/governanca/excecoes#revisoes", "ACAO", `poprev:${r.id}`);
   return r.id;
 }

@@ -4,8 +4,9 @@ import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, num, hoje, getSettings } from "@/lib/utils";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const ESTRATEGIA = ["DIRECAO", "RH"]; const GESTAO = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "FINANCEIRO", "OPERACOES", "COMERCIAL"];
 
 // ---------- OKRs ----------
@@ -48,7 +49,7 @@ export async function checkinKR(fd: FormData) {
 // ---------- Projetos ----------
 export async function salvarProjeto(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); let pid = id ?? 0;
-  try { assert(GESTAO.includes(s.role), "Seu perfil não cria projetos."); const nome = str(fd, "nome"); if (!nome) throw new Error("Informe o nome do projeto."); const unitId = int(fd, "unitId") ?? scopeUnit(s); if (unitId) assertScope(s, unitId);
+  try { assert(GESTAO.includes(s.role), "Seu acesso não cria projetos."); const nome = str(fd, "nome"); if (!nome) throw new Error("Informe o nome do projeto."); const unitId = int(fd, "unitId") ?? scopeUnit(s); if (unitId) assertScope(s, unitId);
     const d = { nome, descricao: strOrNull(fd, "descricao"), objectiveId: int(fd, "objectiveId"), ownerUserId: int(fd, "ownerUserId") ?? s.id, unitId, status: str(fd, "status") || "PLANEJADO", prioridade: str(fd, "prioridade") || "NORMAL", inicio: strOrNull(fd, "inicio"), fim: strOrNull(fd, "fim"), orcamento: num(fd, "orcamento") === null ? null : String(num(fd, "orcamento")), gasto: num(fd, "gasto") === null ? null : String(num(fd, "gasto")), resultadoEsperado: strOrNull(fd, "resultadoEsperado"), updatedAt: new Date() };
     if (id) await db.update(schema.projects).set(d).where(eq(schema.projects.id, id)); else { const [r] = await db.insert(schema.projects).values(d).returning({ id: schema.projects.id }); pid = r.id; }
     await audit(s, id ? "editar projeto" : "criar projeto", "projects", pid, null, { nome, status: d.status });

@@ -6,6 +6,14 @@
 html { font-family: var(--font-plex); }
 body { @apply bg-mist text-ink antialiased; }
 table td, table th { font-variant-numeric: tabular-nums; }
+/* v28 · tabela que não cabe no cartão (AjusteTabela): títulos quebram linha (1); letra e espaçamento menores (2 e 3) */
+[data-ajuste] th { white-space: normal; }
+:is([data-ajuste="2"], [data-ajuste="3"]) table, :is([data-ajuste="2"], [data-ajuste="3"]) table .text-sm { font-size: 12px; line-height: 16px; }
+:is([data-ajuste="2"], [data-ajuste="3"]) :is(td, th) { padding-left: 6px; padding-right: 6px; }
+@media (min-width: 640px) {
+  [data-ajuste="3"] table, [data-ajuste="3"] table :is(.text-xs, .text-sm) { font-size: 11px; line-height: 15px; }
+  [data-ajuste="3"] :is(td, th) { padding-left: 4px; padding-right: 4px; }
+}
 /* v24 · com o menu completo aberto no celular, o menu inferior sai da frente (o “Sair” e os últimos itens ficam tocáveis) */
 body:has(#menu-celular[open]) .menu-inferior { display: none; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

@@ -5,8 +5,9 @@ import { requireSession, assert, type Session } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings, caminhoSeguro, hoje } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { gerarAgenda as gerarAgendaLib, TIPOS_MOVIMENTO } from "@/lib/obrigacoes";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const BASE = "/financeiro/obrigacoes";
 async function operador() { const s = await requireSession(); assert(["FINANCEIRO", "DIRECAO"].includes(s.role), "Só Financeiro e Direção operam a agenda fiscal."); return s; }

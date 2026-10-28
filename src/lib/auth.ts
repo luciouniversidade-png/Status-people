@@ -1,14 +1,16 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import bcrypt from "bcryptjs";
 import { signSession, verifyToken, COOKIE, type Role, type Session } from "./session";
 export { verifyToken, type Role, type Session };
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
+import { carregarSessao, sessaoDoUsuario, telaBloqueada, aprovacoesDa, type CargaSessao, type Alcada } from "./acesso";
 
 
+/** Nome da atuação (v29: antes “perfil”). A atuação vem do cargo da ficha; aqui só o rótulo curto para listas e etiquetas. */
 export const ROLE_LABEL: Record<Role, string> = {
-  DIRECAO: "Direção", RH: "RH", DIRETOR_UNIDADE: "Diretor de unidade", GESTOR: "Gestor", LEITURA: "Somente leitura", COLABORADOR: "Colaborador (autoatendimento)", COMERCIAL: "Comercial / Atendimento", FINANCEIRO: "Financeiro", OPERACOES: "Operações e manutenção",
+  DIRECAO: "Direção", RH: "RH", DIRETOR_UNIDADE: "Direção da unidade", GESTOR: "Coordenação", LEITURA: "Consulta", COLABORADOR: "Autoatendimento", COMERCIAL: "Comercial e atendimento", FINANCEIRO: "Financeiro", OPERACOES: "Operações e manutenção",
 };
 
 export async function createSession(s: Session) {
@@ -18,15 +20,21 @@ export async function createSession(s: Session) {
 
 export async function destroySession() { (await cookies()).delete(COOKIE); }
 
-export async function getSession(): Promise<Session | null> {
-  const token = (await cookies()).get(COOKIE)?.value;
-  return token ? verifyToken(token) : null;
+/** Pessoa identificada pelo cookie + acesso efetivo lido do banco (cargo, exceção ou conta sem ficha). Conta inativa ou ficha desligada: null. */
+async function sessaoDaRequisicao(): Promise<CargaSessao> {
+  const token = (await cookies()).get(COOKIE)?.value; if (!token) return { s: null, motivo: null };
+  const t = await verifyToken(token); if (!t?.id) return { s: null, motivo: null };
+  return carregarSessao(Number(t.id));
 }
+export async function getSession(): Promise<Session | null> { return (await sessaoDaRequisicao()).s; }
 
+/** Sessão obrigatória. v29: também confere se a tela aberta (ou a ação enviada dela) faz parte do acesso do cargo. */
 export async function requireSession(): Promise<Session> {
-  const s = await getSession();
-  if (!s) redirect("/login");
-  return s;
+  const r = await sessaoDaRequisicao();
+  if (!r.s) redirect(r.motivo ? `/api/sair?motivo=${r.motivo}` : "/login");
+  let path = ""; try { path = (await headers()).get("x-pathname") ?? ""; } catch { path = ""; }
+  const bloq = telaBloqueada(r.s, path); if (bloq) redirect(`/sem-acesso?t=${encodeURIComponent(bloq)}`);
+  return r.s;
 }
 
 /** Páginas de equipe (módulo Pessoas): colaborador em autoatendimento vai para a própria ficha; comercial vai para Matrículas. */
@@ -64,8 +72,8 @@ export async function requireMatriculas(): Promise<Session> {
 export const MAX_TENTATIVAS = 5;        // tentativas erradas por e-mail...
 export const JANELA_MIN = 15;           // ...em 15 minutos bloqueiam novas tentativas
 
-/** Retorna a sessão, ou "bloqueado" quando há tentativas demais, ou null quando credenciais não conferem. */
-export async function login(email: string, senha: string, ip?: string | null): Promise<Session | "bloqueado" | null> {
+/** Retorna a sessão, ou "bloqueado" quando há tentativas demais, "desligado" quando a ficha vinculada foi desligada, ou null quando credenciais não conferem. */
+export async function login(email: string, senha: string, ip?: string | null): Promise<Session | "bloqueado" | "desligado" | null> {
   const e = email.trim().toLowerCase();
   // chaves internas de limite de tentativas ("REMATRICULA:12", "etica:ET-…") nunca são alcançáveis pelo formulário de login:
   // a entrada é minúscula e logins não têm ":" (ex.: rh@colegiostatus, direcao.teste)
@@ -78,7 +86,10 @@ export async function login(email: string, senha: string, ip?: string | null): P
   await db.insert(schema.loginAttempts).values({ email: e, ip: ip ?? null, ok });
   if (!ok) return null;
   await sql`DELETE FROM login_attempts WHERE email=${e} AND at < now() - interval '1 day'`;
-  return { id: u!.id, nome: u!.nome, email: u!.email, role: u!.role as Role, unitId: u!.unit_id, employeeId: u!.employee_id };
+  // v29: o acesso vem do cargo da ficha (ou da conta sem ficha); ficha desligada não entra mais
+  const ef = await sessaoDoUsuario(u!.id);
+  if (!ef) { const [d] = await sql<{ ativo: boolean }[]>`SELECT ativo FROM users WHERE id=${u!.id}`; return d && !d.ativo ? "desligado" : null; }
+  return ef;
 }
 
 /** Diz se o usuário tem a verificação em duas etapas ativa (tolerante a esquema antigo). */
@@ -102,14 +113,27 @@ export const can = {
   // Matrículas: editar a grade de turmas (vagas, turnos) — estrutura da oferta
   gradeTurmas: (s: Session) => ["RH", "DIRECAO"].includes(s.role),
   financeiro: (s: Session) => ["DIRECAO", "FINANCEIRO"].includes(s.role),
+  /** v29: importar títulos e caixa, cadastrar preços e editar o orçamento — atuação do financeiro E a aprovação “financeiro” marcada no cargo (o auxiliar opera, não importa nem orça). */
+  gerirFinanceiro: (s: Session) => ["DIRECAO", "FINANCEIRO"].includes(s.role) && aprovacoesDa(s).includes("financeiro"),
   operacoes: (s: Session) => ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "OPERACOES"].includes(s.role),
   verSalario: (s: Session) => s.role === "RH" || s.role === "DIRECAO",
   verSensivel: (s: Session) => s.role === "RH" || s.role === "DIRECAO",
   configurar: (s: Session) => s.role === "RH" || s.role === "DIRECAO",
   solicitar: (s: Session) => s.role !== "LEITURA",
-  aprovar: (s: Session, alcada: string[]) => alcada.includes(s.role),
+  /** v29: aprovação marcada no cargo (ou padrão da atuação, quando o cargo não personalizou). Chaves em lib/acesso → ALCADAS. */
+  aprovar: (s: Session, chave: Alcada) => aprovacoesDa(s).includes(chave),
   auditoria: (s: Session) => s.role === "RH" || s.role === "DIRECAO",
 };
+
+/**
+ * v29 · liderança fora da área de pessoas: cargo de outra área (Financeiro, Comercial, Operações) que tem a aprovação de férias
+ * ou de banco de horas marcada aprova só a PRÓPRIA EQUIPE — as pessoas que têm a ficha dele como gestor direto.
+ * RH e Direção aprovam a rede; Direção da unidade e Coordenação, a unidade (como sempre).
+ */
+export const ATUACOES_PESSOAS: Role[] = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
+export const aprovaSoEquipe = (s: Session) => !ATUACOES_PESSOAS.includes(s.role);
+/** Esta pessoa (ficha) está na equipe de quem aprova? Para quem aprova só a equipe: gestor direto = a ficha de quem aprova. */
+export const naEquipe = (s: Session, e: { gestorId?: number | null; gestor_id?: number | null } | null | undefined) => !aprovaSoEquipe(s) || (!!s.employeeId && !!e && (e.gestorId ?? e.gestor_id ?? null) === s.employeeId);
 
 /** Unidade à qual o usuário está restrito (null = rede inteira). */
 export function scopeUnit(s: Session): number | null {
@@ -127,5 +151,12 @@ export function assertEmployeeAccess(s: Session, e: { id: number; unitId: number
   assertScope(s, e.unitId);
 }
 export function canSeeEmployee(s: Session, e: { id: number; unitId: number }) { try { assertEmployeeAccess(s, e); return true; } catch { return false; } }
+/** v30 · Quem abre a FICHA de outra pessoa: as atuações de gestão de pessoas (no próprio alcance). Comercial, Financeiro e Operações
+ *  abrem só a própria ficha e a de quem responde diretamente a elas (itens com colaboradores ficam em Operações → Itens com colaboradores). */
+export const EQUIPE_FICHAS = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR", "LEITURA"];
+export function podeAbrirFicha(s: Session, e: { id: number; unitId: number; gestorId?: number | null }) {
+  if (!canSeeEmployee(s, e)) return false; if (EQUIPE_FICHAS.includes(s.role)) return true;
+  return s.employeeId === e.id || (!!s.employeeId && e.gestorId === s.employeeId);
+}
 
 export function assert(cond: boolean, msg = "Sem permissão para esta ação.") { if (!cond) throw new Error(msg); }

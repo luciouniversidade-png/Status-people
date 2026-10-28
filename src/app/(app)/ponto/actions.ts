@@ -6,8 +6,9 @@ import { requireSession, can, assert, assertEmployeeAccess } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje } from "@/lib/utils";
 import { salvarDias, montarMes, mesLimites } from "@/lib/ponto";
 import { lerPlanilhaPonto, type ArquivoLido } from "@/lib/ponto-import";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const podeLancar = (r: string) => ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(r);
 
 /** CRQ-TMP-V3-01/04: jornada que cobre mês fechado não muda por edição solta — vale nova vigência a partir de um mês aberto. */
@@ -22,7 +23,7 @@ async function emp(id: number) { const [e] = await db.select().from(schema.emplo
 export async function salvarMes(fd: FormData) {
   const s = await requireSession(); const employeeId = Number(fd.get("employeeId")); const mes = str(fd, "mes"); const b = `/ponto/${employeeId}?mes=${mes}`; let msg = "";
   try {
-    assert(podeLancar(s.role), "Seu perfil não lança ponto.");
+    assert(podeLancar(s.role), "Seu acesso não lança ponto.");
     const e = await emp(employeeId); assertEmployeeAccess(s, e);
     const { dias: nd } = mesLimites(mes); const dias = [];
     for (let d = 1; d <= nd; d++) {
@@ -42,7 +43,7 @@ export async function gerarMesPadrao(fd: FormData) {
   // grava o mês inteiro com os valores calculados (jornada + calendário), sem editar dia a dia
   const s = await requireSession(); const employeeId = Number(fd.get("employeeId")); const mes = str(fd, "mes"); const b = `/ponto/${employeeId}?mes=${mes}`; let msg = "";
   try {
-    assert(podeLancar(s.role), "Seu perfil não lança ponto.");
+    assert(podeLancar(s.role), "Seu acesso não lança ponto.");
     const e = await emp(employeeId); assertEmployeeAccess(s, e);
     const { dias } = await montarMes(employeeId, mes);
     const r = await salvarDias(s, employeeId, dias.filter(d => !d.salvo).map(d => ({ data: d.data, esperado: d.esperado, trabalhado: d.trabalhado, status: d.status, origem: "AUTO" })));
@@ -56,7 +57,7 @@ export async function gerarMesPadrao(fd: FormData) {
 export async function salvarJornada(fd: FormData) {
   const s = await requireSession(); const employeeId = Number(fd.get("employeeId")); const id = int(fd, "id"); const b = str(fd, "voltar") || `/ponto/jornadas?q=`;
   try {
-    assert(can.editar(s) || s.role === "DIRETOR_UNIDADE", "Só RH, Direção e Diretor de unidade definem jornadas.");
+    assert(can.editar(s) || s.role === "DIRETOR_UNIDADE", "Só RH, Direção e Direção da unidade definem jornadas.");
     const e = await emp(employeeId); assertEmployeeAccess(s, e);
     const min = (k: string) => { const v = str(fd, k); const hm = v.match(/^(\d+):(\d{1,2})$/); return hm ? Number(hm[1]) * 60 + Number(hm[2]) : Math.round(Number(v.replace(",", ".")) || 0); };
     const d = { employeeId, vigenciaInicio: str(fd, "vigenciaInicio") || hoje(), vigenciaFim: strOrNull(fd, "vigenciaFim"), seg: min("seg"), ter: min("ter"), qua: min("qua"), qui: min("qui"), sex: min("sex"), sab: min("sab"), dom: min("dom"), horarios: strOrNull(fd, "horarios"), obs: strOrNull(fd, "obs") };

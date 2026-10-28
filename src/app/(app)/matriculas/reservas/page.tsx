@@ -18,7 +18,7 @@ export default async function Reservas({ searchParams }: { searchParams: Promise
     WHERE e.ano=${ano} ${status ? sql`AND e.status=${status}` : sql``} ${u === null ? sql`` : sql`AND c.unit_id=${u}`}
     ORDER BY (e.status='RESERVADA') DESC, e.reserva_ate NULLS LAST, st.nome LIMIT 500`;
   const turmas = await turmasAbertas(s, ano);
-  const podeConfirmar = can.aprovar(s, cfg.alcadas.matricula);
+  const podeConfirmar = can.aprovar(s, "matricula");
   return (
     <Page title={`Reservas e matrículas ${ano}`} sub={`Reserva vale ${cfg.matriculas.reservaDias} dias por padrão; vencida, a vaga volta a ficar livre. Matrícula só com contrato assinado e financeiro OK.`}
       actions={<Btn kind="ghost" href={`/api/export/matriculas?ano=${ano}`}>Exportar CSV</Btn>}>

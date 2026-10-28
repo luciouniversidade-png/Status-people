@@ -22,7 +22,7 @@ export default async function Avaliacao({ params, searchParams }: { params: Prom
   // Avaliação histórica pertence à lotação registrada na época: mudança de unidade não abre acesso a avaliações antigas
   const snapUnit = (r.snapshot as { unitId?: number } | null)?.unitId; const escopo = scopeUnit(s); if (!proprio && escopo !== null && snapUnit && snapUnit !== escopo) notFound();
   const comps = c.competencias as string[]; const auto = (r.auto as Notas | null) ?? {}; const g = (r.gestor as Notas | null) ?? {}; const pdi = (r.pdi as { acao: string; prazo: string | null; status: string }[] | null) ?? [];
-  const avaliador = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role) && !proprio; const podeCal = can.aprovar(s, cfg.alcadas.calibracao); const aberto = c.status === "ABERTO" || c.status === "CALIBRACAO";
+  const avaliador = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role) && !proprio; const podeCal = can.aprovar(s, "calibracao"); const aberto = c.status === "ABERTO" || c.status === "CALIBRACAO";
   const voltar = `/desempenho/avaliacoes/${rid}`; const esc = Array.from({ length: cfg.desempenho.escala }, (_, i) => i + 1);
   return (
     <Page title={`Avaliação — ${e.nome}`} sub={<span className="flex flex-wrap items-center gap-2"><Badge v={r.status === "CONCLUIDA" ? "APROVADA" : r.status === "PENDENTE" ? "PENDENTE" : "EM_ADMISSAO"} label={REV_STATUS[r.status]} /> {c.nome} · {CYCLE_STATUS[c.status]} · nota {r.notaFinal ?? "—"}{r.desempenhoNivel && r.potencial ? ` · ${(cfg.desempenho.boxes as Record<string, string>)[`${r.desempenhoNivel}-${r.potencial}`]}` : ""} · <Link className="text-acao" href={proprio ? "/desempenho/minha" : `/desempenho/ciclos/${c.id}`}>voltar</Link></span>} actions={<PrintButton />}>

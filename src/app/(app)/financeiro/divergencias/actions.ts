@@ -5,8 +5,9 @@ import { requireSession, assert, type Session } from "@/lib/auth";
 import { audit, str, strOrNull, int, caminhoSeguro, getSettings } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { DESFECHOS, ISSUE_TIPO, podeOperar, podeTriar } from "@/lib/conciliacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const BASE = "/financeiro/divergencias";
 /** Tipos que a secretaria (perfil Comercial) trata: identificar pagador e registrar baixa pendente no ActiveSoft. */
@@ -16,7 +17,7 @@ const DESFECHOS_SECRETARIA = ["IDENTIFICADO", "BAIXA_REGISTRADA", "NAO_PROCEDE"]
 async function carregar(s: Session, id: number) {
   const [i] = await sql<{ id: number; tipo: string; status: string; valor: number | null; dono_user_id: number | null; descricao: string }[]>`SELECT id, tipo, status, valor::float, dono_user_id, descricao FROM recon_issues WHERE id=${id}`;
   assert(!!i, "Pendência não encontrada.");
-  if (!podeOperar(s)) { const ok = podeTriar(s) && TIPOS_SECRETARIA.includes(i.tipo); if (!ok) { await audit(s, "acesso negado: pendência de conciliação", "recon_issues", id, null, { papel: s.role, tipo: i.tipo }); throw new Error("Seu perfil não trata este tipo de pendência."); } }
+  if (!podeOperar(s)) { const ok = podeTriar(s) && TIPOS_SECRETARIA.includes(i.tipo); if (!ok) { await audit(s, "acesso negado: pendência de conciliação", "recon_issues", id, null, { papel: s.role, tipo: i.tipo }); throw new Error("Seu acesso não trata este tipo de pendência."); } }
   return i;
 }
 

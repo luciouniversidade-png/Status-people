@@ -5,8 +5,9 @@ import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, addDays, caminhoSeguro } from "@/lib/utils";
 import { criarPlanoOnboarding, papelNoPlano } from "@/lib/onboarding";
 import { notificar } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 
 /** Gera o plano 30-60-90 de quem foi admitido nos últimos 90 dias e ainda não tem plano. */

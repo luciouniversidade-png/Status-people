@@ -9,8 +9,9 @@ import { acessoColaborador, perfilVigente, GESTAO_ROLES, RH_ROLES } from "@/lib/
 import { validarConversao, interpretarMeta, NATUREZA_EVID, HIPOTESE, ENCAMINHAMENTO, TIPO_META, DIRECAO_META, APLICACAO_STATUS, RESULTADO_STATUS, type Criterio } from "@/lib/avaliacao";
 import { montarPromptIA, validarRespostaIA, chamarIA, CONFIG_IA_VERSAO, TAREFAS_IA, type FonteIA } from "@/lib/ia-desempenho";
 import { slaOs } from "@/lib/operacoes";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro";
 const linhas = (fd: FormData, k: string) => str(fd, k).split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 async function faseCiclo(cycleId: number | null) { if (!cycleId) return null; const [c] = await db.select({ fase: schema.perfCycles.fase }).from(schema.perfCycles).where(eq(schema.perfCycles.id, cycleId)); return c?.fase ?? null; }
@@ -63,6 +64,8 @@ function lerMeta(fd: FormData) {
   const n = (k: string) => { const v = num(fd, k); return v === null ? null : String(v); };
   const d = { titulo: str(fd, "titulo"), tipo, direcao, indicador: strOrNull(fd, "indicador"), unidadeMedida: strOrNull(fd, "unidadeMedida"), linhaBase: n("linhaBase"), esperado: n("esperado"), faixaMin: n("faixaMin"), faixaMax: n("faixaMax"), prazo: strOrNull(fd, "prazo"), fonte: strOrNull(fd, "fonte"), responsavelUserId: int(fd, "responsavelUserId"), dependencias: strOrNull(fd, "dependencias"), periodicidade: strOrNull(fd, "periodicidade"), regraInterpretacao: strOrNull(fd, "regraInterpretacao"), participaAvaliacao: str(fd, "participaAvaliacao") === "1", criterioId: strOrNull(fd, "criterioId"), contribuicao: strOrNull(fd, "contribuicao"), peso: int(fd, "peso") ?? 1 };
   if (!d.titulo) throw new Error("Informe a meta."); if (!d.regraInterpretacao) throw new Error("Descreva a regra de interpretação (como o resultado será lido).");
+  // v30 · vínculo opcional com a estratégia (objetivo ou resultado-chave)
+  const cp = str(fd, "contribuiPara"); const okr = /^([ok]):(\d+)$/.exec(cp); Object.assign(d, { objectiveId: okr?.[1] === "o" ? Number(okr[2]) : null, keyResultId: okr?.[1] === "k" ? Number(okr[2]) : null });
   if (direcao === "FAIXA" && (d.faixaMin === null || d.faixaMax === null || Number(d.faixaMin) > Number(d.faixaMax))) throw new Error("Faixa desejável: informe mínimo ≤ máximo.");
   if ((direcao === "MAIOR_MELHOR" || direcao === "MENOR_MELHOR") && d.esperado === null) throw new Error("Informe o resultado esperado.");
   if (tipo === "COLETIVA" && !d.contribuicao) throw new Error("Meta coletiva: registre a contribuição individual esperada.");
@@ -86,7 +89,7 @@ export async function salvarMeta(fd: FormData) {
 }
 export async function aprovarConversaoMeta(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const voltar = str(fd, "voltar") || "/desempenho";
-  try { const cfg = await getSettings(); assert(RH_ROLES.includes(s.role) || can.aprovar(s, cfg.alcadas.calibracao), "Aprovar conversão de meta em nota é do RH/Direção.");
+  try { const cfg = await getSettings(); assert(RH_ROLES.includes(s.role) || can.aprovar(s, "calibracao"), "Aprovar conversão de meta em nota é do RH/Direção.");
     const [g] = await db.select().from(schema.perfGoals).where(eq(schema.perfGoals.id, id)); if (!g) throw new Error("Meta não encontrada."); if (["EXPLORATORIA", "APRENDIZAGEM", "COLETIVA"].includes(g.tipo)) throw new Error("Metas exploratórias, de aprendizagem e coletivas não são convertidas em nota individual.");
     if (await faseCiclo(g.cycleId) !== "PLANEJAMENTO") throw new Error("A conversão em nota precisa ser configurada e aprovada antes do ciclo (fase de planejamento).");
     const tabela = validarConversao(str(fd, "conversao").split(/[;\n]+/).map(x => x.trim()).filter(Boolean).map(p => { const [ate, nota] = p.split(/[:=]/).map(v => Number(v.replace(",", ".").trim())); return { ate, nota }; }));
@@ -101,7 +104,7 @@ export async function atualizarMeta(fd: FormData) {
     const valor = num(fd, "valorAtual"); const feitos = fd.getAll("marco").map(String); const marcos = ((g.marcos as { titulo: string; feito: boolean }[] | null) ?? []).map((m, i) => ({ ...m, feito: feitos.includes(String(i)) }));
     const nb = (v: string | null) => v === null ? null : Number(v);
     const it = interpretarMeta({ tipo: g.tipo, direcao: g.direcao, linhaBase: nb(g.linhaBase), esperado: nb(g.esperado), faixaMin: nb(g.faixaMin), faixaMax: nb(g.faixaMax), valorAtual: valor, marcos: marcos.length ? marcos : null, conversao: g.conversao as { ate: number; nota: number }[] | null, conversaoAprovada: !!g.conversaoAprovadaEm });
-    await db.update(schema.perfGoals).set({ valorAtual: valor === null ? null : String(valor), marcos: marcos.length ? marcos : g.marcos, resultado: strOrNull(fd, "resultado") ?? g.resultado, atingimento: it.progresso === null ? null : Math.max(-999, Math.min(999, Math.round(it.progresso))), status: it.progresso !== null && it.progresso >= 100 ? "ATINGIDA" : "EM_ANDAMENTO", fonte: strOrNull(fd, "fonte") ?? g.fonte }).where(eq(schema.perfGoals.id, id));
+    await db.update(schema.perfGoals).set({ atualizadaEm: new Date(), valorAtual: valor === null ? null : String(valor), marcos: marcos.length ? marcos : g.marcos, resultado: strOrNull(fd, "resultado") ?? g.resultado, atingimento: it.progresso === null ? null : Math.max(-999, Math.min(999, Math.round(it.progresso))), status: it.progresso !== null && it.progresso >= 100 ? "ATINGIDA" : "EM_ANDAMENTO", fonte: strOrNull(fd, "fonte") ?? g.fonte }).where(eq(schema.perfGoals.id, id));
     await audit(s, "atualizar andamento de meta", "perf_goals", id, { valor: g.valorAtual }, { valor, situacao: it.situacao, progresso: it.progresso }); msg = `Andamento registrado: ${it.situacao}${it.progresso !== null ? ` (${it.progresso}%)` : ""}.${it.alerta ? " " + it.alerta : ""}`;
   } catch (e) { redirect(go(voltar, "erro", erro(e))); }
   redirect(go(voltar, "ok", msg));

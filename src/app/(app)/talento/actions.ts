@@ -1,4 +1,5 @@
 "use server";
+import { quemAprovaTexto, usuariosQueAprovam } from "@/lib/acesso";
 import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -8,15 +9,16 @@ import { audit, str, strOrNull, int, num, hoje, addDays, getSettings, detectarSe
 import { abrirProcesso } from "@/lib/processos";
 import { nivelDesempenho, mediaNotas } from "@/lib/talento";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
 const notas = (fd: FormData, prefix: string, comps: string[]) => { const o: Record<string, number> = {}; comps.forEach((c, i) => { const v = int(fd, `${prefix}${i}`); if (v) o[c] = v; }); return o; };
 
 // ======================= CARGOS E SALÁRIOS =======================
 export async function salvarFaixa(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const b = "/cargos-salarios/faixas";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.remuneracao), "Alterar faixas exige: " + cfg.alcadas.remuneracao.join(", "));
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "remuneracao")) throw new Error("Alterar faixas exige: " + (await quemAprovaTexto("remuneracao")));
     const minimo = num(fd, "minimo"), maximo = num(fd, "maximo"); let medio = num(fd, "medio"); const codigo = str(fd, "codigo");
     if (!codigo || minimo === null || maximo === null) throw new Error("Informe código, mínimo e máximo."); if (maximo < minimo) throw new Error("Máximo menor que mínimo."); if (medio === null) medio = Math.round((minimo + maximo) / 2 * 100) / 100;
     const d = { codigo, nome: strOrNull(fd, "nome"), minimo: String(minimo), medio: String(medio), maximo: String(maximo), pontosMin: int(fd, "pontosMin"), pontosMax: int(fd, "pontosMax"), ordem: int(fd, "ordem") ?? 100, vigenciaInicio: strOrNull(fd, "vigenciaInicio"), obs: strOrNull(fd, "obs") };
@@ -26,13 +28,13 @@ export async function salvarFaixa(fd: FormData) {
 }
 export async function excluirFaixa(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = "/cargos-salarios/faixas";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.remuneracao)); const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM positions WHERE grade_id=${id}`; if (n) throw new Error("Faixa em uso por cargos."); await db.delete(schema.salaryGrades).where(eq(schema.salaryGrades.id, id)); await audit(s, "excluir faixa", "salary_grades", id, null, null); }
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "remuneracao")); const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM positions WHERE grade_id=${id}`; if (n) throw new Error("Faixa em uso por cargos."); await db.delete(schema.salaryGrades).where(eq(schema.salaryGrades.id, id)); await audit(s, "excluir faixa", "salary_grades", id, null, null); }
   catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Faixa excluída."));
 }
 export async function reajustarFaixas(fd: FormData) {
   const s = await requireSession(); const b = "/cargos-salarios/faixas"; let msg = "";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.remuneracao)); const pct = num(fd, "pct"); if (pct === null || pct <= -50 || pct > 100) throw new Error("Percentual inválido."); if (str(fd, "confirmo") !== "1") throw new Error("Marque a confirmação.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "remuneracao")); const pct = num(fd, "pct"); if (pct === null || pct <= -50 || pct > 100) throw new Error("Percentual inválido."); if (str(fd, "confirmo") !== "1") throw new Error("Marque a confirmação.");
     const f = 1 + pct / 100; await sql`UPDATE salary_grades SET minimo=round(minimo*${f},2), medio=round(medio*${f},2), maximo=round(maximo*${f},2), vigencia_inicio=${str(fd, "vigenciaInicio") || hoje()}`;
     let sal = 0;
     if (str(fd, "aplicarSalarios") === "1") { const emps = await sql<{ id: number; salario: number }[]>`SELECT id, salario::float FROM employees WHERE situacao <> 'DESLIGADO' AND salario IS NOT NULL`; for (const e of emps) { const novo = Math.round(e.salario * f * 100) / 100; await sql`UPDATE employees SET salario=${novo}, updated_at=now() WHERE id=${e.id}`; await sql`INSERT INTO salary_history (employee_id, data, salario_anterior, salario, motivo, obs, user_id) VALUES (${e.id}, ${str(fd, "vigenciaInicio") || hoje()}, ${e.salario}, ${novo}, 'DISSIDIO', ${`Reajuste coletivo de ${pct}%`}, ${s.id})`; sal++; } }
@@ -43,7 +45,7 @@ export async function reajustarFaixas(fd: FormData) {
 }
 export async function avaliarCargo(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = `/cargos-salarios/${id}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.remuneracao));
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "remuneracao"));
     const avaliacao: Record<string, number> = {}; let pontos = 0; cfg.remuneracao.fatores.forEach((f, i) => { const v = int(fd, `f_${i}`) ?? 0; avaliacao[f] = v; pontos += v; });
     const d = { avaliacao, pontos: pontos || null, gradeId: int(fd, "gradeId"), descricao: strOrNull(fd, "descricao"), requisitos: strOrNull(fd, "requisitos") };
     await db.update(schema.positions).set(d).where(eq(schema.positions.id, id)); await audit(s, "avaliar cargo", "positions", id, null, d);
@@ -52,7 +54,7 @@ export async function avaliarCargo(fd: FormData) {
 }
 export async function reajustarSalario(fd: FormData) {
   const s = await requireSession(); const employeeId = Number(fd.get("employeeId")); const b = str(fd, "voltar") || `/colaboradores/${employeeId}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.remuneracao), "Alterar salário exige: " + cfg.alcadas.remuneracao.join(", ")); const novo = num(fd, "salario"); const motivo = str(fd, "motivo"); if (novo === null || novo < 0 || !motivo) throw new Error("Informe o novo salário e o motivo.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "remuneracao")) throw new Error("Alterar salário exige: " + (await quemAprovaTexto("remuneracao"))); const novo = num(fd, "salario"); const motivo = str(fd, "motivo"); if (novo === null || novo < 0 || !motivo) throw new Error("Informe o novo salário e o motivo.");
     const [e] = await sql<{ salario: number | null; nivel: string | null }[]>`SELECT salario::float, nivel FROM employees WHERE id=${employeeId}`; if (!e) throw new Error("Colaborador não encontrado.");
     await sql`UPDATE employees SET salario=${novo}, nivel=${strOrNull(fd, "nivel") ?? e.nivel}, updated_at=now() WHERE id=${employeeId}`;
     await sql`INSERT INTO salary_history (employee_id, data, salario_anterior, salario, motivo, obs, user_id) VALUES (${employeeId}, ${str(fd, "data") || hoje()}, ${e.salario}, ${novo}, ${motivo}, ${strOrNull(fd, "obs")}, ${s.id})`;
@@ -84,7 +86,7 @@ export async function gerarAvaliacoes(fd: FormData) {
 }
 export async function mudarStatusCiclo(fd: FormData) {
   const s = await requireSession(); const cid = Number(fd.get("cycleId")); const novo = str(fd, "status"); const b = `/desempenho/ciclos/${cid}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Mudar fase do ciclo exige: " + cfg.alcadas.calibracao.join(", ")); if (!["ABERTO", "CALIBRACAO", "ENCERRADO"].includes(novo)) throw new Error("Fase inválida.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Mudar fase do ciclo exige: " + (await quemAprovaTexto("calibracao"))); if (!["ABERTO", "CALIBRACAO", "ENCERRADO"].includes(novo)) throw new Error("Fase inválida.");
     // v24.1: ciclo por critérios muda de fase só pela barra de fases (Planejamento → … → Conclusão), que exige as avaliações publicadas
     const [cc] = await sql<{ criterios: unknown }[]>`SELECT criterios FROM perf_cycles WHERE id=${cid}`; if (cc?.criterios) throw new Error("Ciclo por critérios: avance pela barra de fases (Avaliação → Calibração → Feedback → Conclusão).");
     if (novo === "ENCERRADO") { const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM perf_reviews WHERE cycle_id=${cid} AND status IN ('PENDENTE','AUTOAVALIADA')`; if (n) throw new Error(`${n} avaliação(ões) ainda sem nota do gestor.`); await sql`UPDATE perf_reviews SET status='CONCLUIDA', concluida_em=now() WHERE cycle_id=${cid} AND status IN ('AVALIADA','CALIBRADA')`; }
@@ -103,7 +105,7 @@ export async function autoavaliar(fd: FormData) {
 }
 export async function avaliarGestor(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = `/desempenho/avaliacoes/${id}`;
-  try { const cfg = await getSettings(); const { r, c, e } = await review(id); assert(GESTAO.includes(s.role), "Seu perfil não avalia."); assert(r.avaliadorUserId === s.id || can.editar(s) || scopeUnit(s) === e.unitId, "Você não é o avaliador deste colaborador."); assert(["ABERTO", "CALIBRACAO"].includes(c.status), "Ciclo fechado."); const comps = c.competencias as string[];
+  try { const cfg = await getSettings(); const { r, c, e } = await review(id); assert(GESTAO.includes(s.role), "Seu acesso não avalia."); assert(r.avaliadorUserId === s.id || can.editar(s) || scopeUnit(s) === e.unitId, "Você não é o avaliador deste colaborador."); assert(["ABERTO", "CALIBRACAO"].includes(c.status), "Ciclo fechado."); const comps = c.competencias as string[];
     const g = { notas: notas(fd, "g_", comps), comentario: strOrNull(fd, "gestorComentario"), pontosFortes: strOrNull(fd, "pontosFortes"), melhorias: strOrNull(fd, "melhorias") };
     if (Object.keys(g.notas).length < comps.length) throw new Error("Avalie todas as competências.");
     const media = mediaNotas(g.notas); const potencial = int(fd, "potencial"); if (!potencial) throw new Error("Informe o potencial (1–3).");
@@ -115,7 +117,7 @@ export async function avaliarGestor(fd: FormData) {
 }
 export async function calibrar(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = str(fd, "voltar") || `/desempenho/avaliacoes/${id}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Calibrar exige: " + cfg.alcadas.calibracao.join(", ")); const { r } = await review(id); assert(["AVALIADA", "CALIBRADA"].includes(r.status), "Só avaliações com nota do gestor são calibradas.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Calibrar exige: " + (await quemAprovaTexto("calibracao"))); const { r } = await review(id); assert(["AVALIADA", "CALIBRADA"].includes(r.status), "Só avaliações com nota do gestor são calibradas.");
     const d = { desempenhoNivel: int(fd, "desempenhoNivel") ?? r.desempenhoNivel, potencial: int(fd, "potencial") ?? r.potencial, calibracaoNota: strOrNull(fd, "nota"), status: "CALIBRADA", updatedAt: new Date() };
     await db.update(schema.perfReviews).set(d).where(eq(schema.perfReviews.id, id)); await audit(s, "calibrar", "perf_reviews", id, { desempenhoNivel: r.desempenhoNivel, potencial: r.potencial }, d);
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -146,7 +148,7 @@ export async function registrarCheckin(fd: FormData) {
 // ======================= RECRUTAMENTO =======================
 export async function salvarRequisicao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); let rid = id ?? 0;
-  try { assert(GESTAO.includes(s.role), "Seu perfil não solicita vagas."); const titulo = str(fd, "titulo"); const unitId = int(fd, "unitId"); if (!titulo || !unitId) throw new Error("Informe título e unidade."); assertScope(s, unitId);
+  try { assert(GESTAO.includes(s.role), "Seu acesso não solicita vagas."); const titulo = str(fd, "titulo"); const unitId = int(fd, "unitId"); if (!titulo || !unitId) throw new Error("Informe título e unidade."); assertScope(s, unitId);
     const d: Record<string, unknown> & typeof schema.requisitions.$inferInsert = { titulo, positionId: int(fd, "positionId"), unitId, quantidade: int(fd, "quantidade") ?? 1, tipo: str(fd, "tipo") || "SUBSTITUICAO", justificativa: strOrNull(fd, "justificativa"), requisitos: strOrNull(fd, "requisitos"), regime: str(fd, "regime") || "CLT", jornada: strOrNull(fd, "jornada"), faixa: strOrNull(fd, "faixa"), prazo: strOrNull(fd, "prazo") };
     // v24 · gate de reposição (T-069 · CRQ-REC-V3-01): vaga nova exige posição de origem (com o quadro montado), motivo, orçamento e alternativa avaliada
     if (!id) {
@@ -164,16 +166,16 @@ export async function salvarRequisicao(fd: FormData) {
     }
     if (id) { const { slotId: _s, gate: _g, ...resto } = d; void _s; void _g; await db.update(schema.requisitions).set(resto).where(eq(schema.requisitions.id, id)); } else { const [r] = await db.insert(schema.requisitions).values({ ...d, solicitanteUserId: s.id, responsavelUserId: s.id }).returning({ id: schema.requisitions.id }); rid = r.id; }
     await audit(s, id ? "editar vaga" : "solicitar vaga", "requisitions", rid, null, d);
-    if (!id) await notificar(await usuariosPorPerfil((await getSettings()).alcadas.vagas), "Requisição de vaga aguardando aprovação", d.titulo, `/recrutamento/vagas/${rid}`, "ACAO");
+    if (!id) await notificar(await usuariosQueAprovam("vagas"), "Requisição de vaga aguardando aprovação", d.titulo, `/recrutamento/vagas/${rid}`, "ACAO");
   } catch (e) { redirect(go("/recrutamento", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/recrutamento/vagas/${rid}`, "ok", id ? "Vaga atualizada." : "Requisição enviada para aprovação."));
 }
 export async function decidirRequisicao(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const decisao = str(fd, "decisao"); const b = `/recrutamento/vagas/${id}`;
   try { const cfg = await getSettings(); const [r] = await db.select().from(schema.requisitions).where(eq(schema.requisitions.id, id)); if (!r) throw new Error("Vaga não encontrada.");
-    if (decisao === "ABERTA") { assert(can.aprovar(s, cfg.alcadas.vagas), "Aprovar vaga exige: " + cfg.alcadas.vagas.join(", ")); assert(r.status === "SOLICITADA", "Vaga já decidida."); await db.update(schema.requisitions).set({ status: "ABERTA", aprovadorUserId: s.id, abertaEm: hoje(), responsavelUserId: int(fd, "responsavelUserId") ?? r.responsavelUserId, gate: { ...((r.gate as object | null) ?? {}), decisao: "APROVADO", decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
-    else if (decisao === "NEGADA") { assert(can.aprovar(s, cfg.alcadas.vagas), "Negar o gate exige: " + cfg.alcadas.vagas.join(", ")); assert(r.status === "SOLICITADA", "Vaga já decidida."); const motivo = str(fd, "motivoGate"); assert(motivo.length >= 5, "Explique por que o gate negou a vaga."); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje(), gate: { ...((r.gate as object | null) ?? {}), decisao: "NEGADO", motivo, decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
-    else if (decisao === "CANCELADA") { assert(can.aprovar(s, cfg.alcadas.vagas) || r.solicitanteUserId === s.id); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje() }).where(eq(schema.requisitions.id, id)); }
+    if (decisao === "ABERTA") { if (!can.aprovar(s, "vagas")) throw new Error("Aprovar vaga exige: " + (await quemAprovaTexto("vagas"))); assert(r.status === "SOLICITADA", "Vaga já decidida."); await db.update(schema.requisitions).set({ status: "ABERTA", aprovadorUserId: s.id, abertaEm: hoje(), responsavelUserId: int(fd, "responsavelUserId") ?? r.responsavelUserId, gate: { ...((r.gate as object | null) ?? {}), decisao: "APROVADO", decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
+    else if (decisao === "NEGADA") { if (!can.aprovar(s, "vagas")) throw new Error("Negar o gate exige: " + (await quemAprovaTexto("vagas"))); assert(r.status === "SOLICITADA", "Vaga já decidida."); const motivo = str(fd, "motivoGate"); assert(motivo.length >= 5, "Explique por que o gate negou a vaga."); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje(), gate: { ...((r.gate as object | null) ?? {}), decisao: "NEGADO", motivo, decididoPor: s.nome, decididoEm: new Date().toISOString() } }).where(eq(schema.requisitions.id, id)); }
+    else if (decisao === "CANCELADA") { assert(can.aprovar(s, "vagas") || r.solicitanteUserId === s.id); await db.update(schema.requisitions).set({ status: "CANCELADA", fechadaEm: hoje() }).where(eq(schema.requisitions.id, id)); }
     else if (decisao === "PREENCHIDA") { assert(can.editar(s)); await db.update(schema.requisitions).set({ status: "PREENCHIDA", fechadaEm: hoje() }).where(eq(schema.requisitions.id, id)); }
     else throw new Error("Decisão inválida.");
     await audit(s, "decidir vaga", "requisitions", id, { status: r.status }, { status: decisao });
@@ -200,9 +202,17 @@ export async function inscrever(fd: FormData) {
 export async function moverEtapa(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const etapa = str(fd, "etapa"); let reqId = 0; let msg = "";
   try { assert(GESTAO.includes(s.role)); const cfg = await getSettings(); const [a] = await db.select().from(schema.applications).where(eq(schema.applications.id, id)); if (!a) throw new Error("Candidatura não encontrada."); reqId = a.requisitionId;
-    const [r] = await db.select().from(schema.requisitions).where(eq(schema.requisitions.id, reqId)); if (!r || r.status !== "ABERTA") throw new Error("A vaga não está aberta.");
+    const [r] = await db.select().from(schema.requisitions).where(eq(schema.requisitions.id, reqId)); if (!r || r.status !== "ABERTA") throw new Error(r?.status === "PAUSADA" ? "Vaga pausada: retome a vaga para mover candidatos." : "A vaga não está aberta.");
     if (![...cfg.recrutamento.etapas, "REPROVADO", "DESISTIU"].includes(etapa)) throw new Error("Etapa inválida.");
     const upd: Partial<typeof schema.applications.$inferInsert> = { etapa, updatedAt: new Date(), notas: strOrNull(fd, "notas") ?? a.notas, motivoReprovacao: etapa === "REPROVADO" ? strOrNull(fd, "motivo") : a.motivoReprovacao };
+    // v30 · desde quando está na etapa (quadro e saúde da vaga) e a proposta: enviada, aceita (contratado), recusada (desistiu, com motivo) ou retirada
+    if (etapa !== a.etapa) upd.etapaDesde = new Date();
+    if (etapa === "PROPOSTA" && !a.propostaEnviadaEm) upd.propostaEnviadaEm = hoje();
+    if (etapa === "CONTRATADO" && !a.propostaResposta) { upd.propostaEnviadaEm = a.propostaEnviadaEm ?? hoje(); upd.propostaResposta = "ACEITA"; upd.propostaRespostaEm = hoje(); }
+    // quem estava na etapa Proposta recebeu uma proposta: sem data registrada (dado antigo), vale a entrada na etapa
+    const enviadaEm = a.propostaEnviadaEm ?? (a.etapaDesde ? new Date(a.etapaDesde).toISOString().slice(0, 10) : hoje());
+    if (etapa === "DESISTIU" && a.etapa === "PROPOSTA") { const mr = str(fd, "motivoRecusa"); if (!mr) throw new Error("Desistência na proposta: escolha o motivo da recusa (vira indicador de aceite)."); upd.propostaEnviadaEm = enviadaEm; upd.propostaResposta = "RECUSADA"; upd.propostaRespostaEm = hoje(); upd.propostaMotivo = mr; }
+    if (etapa === "REPROVADO" && a.etapa === "PROPOSTA") { upd.propostaEnviadaEm = enviadaEm; upd.propostaResposta = "RETIRADA"; upd.propostaRespostaEm = hoje(); }
     const sc = notas(fd, "sc_", cfg.recrutamento.criterios); if (Object.keys(sc).length) upd.scorecard = { ...(a.scorecard as object ?? {}), ...sc };
     const pv = num(fd, "propostaValor"); if (pv !== null) upd.propostaValor = String(pv);
     if (etapa === "CONTRATADO") {
@@ -211,6 +221,7 @@ export async function moverEtapa(fd: FormData) {
         const [emp] = await db.insert(schema.employees).values({ nome: c.nome, email: c.email, telefone: c.telefone, unitId: r.unitId, positionId: r.positionId, vinculo: r.regime, admissao, situacao: "EM_ADMISSAO", salario: pv !== null ? String(pv) : a.propostaValor }).returning({ id: schema.employees.id });
         await db.insert(schema.documents).values(cfg.documentos.map(([tipo, obrigatorio]) => ({ employeeId: emp.id, tipo: String(tipo), obrigatorio: Boolean(obrigatorio) })));
         const pid = await abrirProcesso(s.id, emp.id, "ADMISSAO", admissao, cfg.admissao); upd.employeeId = emp.id;
+        { const { garantirHistoricoBase } = await import("@/lib/pessoas-v30"); await garantirHistoricoBase([emp.id]); } // v30: admissão no histórico funcional
         if (r.slotId) await sql`UPDATE position_slots s SET employee_id=${emp.id}, updated_at=now() WHERE s.id=${r.slotId} AND (s.employee_id IS NULL OR EXISTS (SELECT 1 FROM employees x WHERE x.id=s.employee_id AND (x.situacao='DESLIGADO' OR x.desligamento IS NOT NULL)))`; // v24: o contratado ocupa a posição de origem
         if (pv !== null || a.propostaValor) await sql`INSERT INTO salary_history (employee_id, data, salario, motivo, obs, user_id) VALUES (${emp.id}, ${admissao}, ${pv ?? Number(a.propostaValor)}, 'ADMISSAO', ${`Proposta aceita — vaga #${reqId}`}, ${s.id})`;
         msg = ` Colaborador pré-cadastrado (admissão #${pid}).`;

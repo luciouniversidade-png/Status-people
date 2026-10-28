@@ -1,4 +1,6 @@
 "use server";
+import { alcadaDesconto, usuariosComDescontoAte } from "@/lib/acesso";
+import { quemAprovaTexto } from "@/lib/acesso";
 import { textoImportacao } from "@/lib/importacao";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -9,8 +11,9 @@ import { audit, str, strOrNull, int, num, hoje, addMonths, getSettings, detectar
 import { normNome, parseValor, parseData } from "@/lib/financeiro";
 import { formaRecebDe, competenciaFechada, mensagemTrava } from "@/lib/conciliacao";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const COBRA = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"];
 function csv(texto: string) { const linhas = texto.split(/\r?\n/).map(l => l.trim()).filter(Boolean); if (linhas.length < 2) throw new Error("Cole o CSV com cabeçalho e ao menos uma linha."); const sep = detectarSeparador(linhas[0]); const head = linhas[0].split(sep).map(normalizarCabecalho); return { linhas: linhas.slice(1), get: (l: string) => { const c = l.split(sep).map(x => x.trim()); return (k: string) => { const i = head.indexOf(k); return i >= 0 ? c[i] ?? "" : ""; }; }, head }; }
 async function unidadePor(nome: string, units: { id: number; nome: string; codigo: string }[]) { return units.find(u => normNome(u.nome) === normNome(nome) || normNome(u.codigo) === normNome(nome)); }
@@ -18,7 +21,7 @@ async function unidadePor(nome: string, units: { id: number; nome: string; codig
 // ---------- Importação de títulos (em aberto e recebidos) ----------
 export async function importarTitulos(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro), "Importar títulos exige: " + cfg.alcadas.financeiro.join(", "));
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "financeiro")) throw new Error("Importar títulos exige: " + (await quemAprovaTexto("financeiro")));
     const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("aluno") || !head.includes("vencimento") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter aluno, vencimento e valor (opcionais: titulo, unidade, tipo, competencia, responsavel, telefone, pago_em, valor_pago, status, forma).");
     const units = await db.select().from(schema.units); const alunos = await sql<{ id: number; nome: string; unit_atual_id: number | null }[]>`SELECT id, nome, unit_atual_id FROM students`; const unidadePadrao = int(fd, "unitId");
     let novos = 0, atualizados = 0; const erros: string[] = [];
@@ -45,7 +48,7 @@ export async function importarTitulos(fd: FormData) {
 // ---------- Cobrança ----------
 export async function registrarCobranca(fd: FormData) {
   const s = await requireSession(); const b = str(fd, "voltar") || "/financeiro/inadimplencia";
-  try { assert(COBRA.includes(s.role), "Seu perfil não registra cobrança."); const receivableId = int(fd, "receivableId"); const etapa = str(fd, "etapa"); if (!etapa) throw new Error("Informe a etapa.");
+  try { assert(COBRA.includes(s.role), "Seu acesso não registra cobrança."); const receivableId = int(fd, "receivableId"); const etapa = str(fd, "etapa"); if (!etapa) throw new Error("Informe a etapa.");
     let alunoNome = str(fd, "alunoNome"); let unitId = int(fd, "unitId");
     if (receivableId) { const [r] = await db.select().from(schema.receivables).where(eq(schema.receivables.id, receivableId)); if (!r) throw new Error("Título não encontrado."); alunoNome = r.alunoNome; unitId = r.unitId; }
     if (!unitId || !alunoNome) throw new Error("Aluno e unidade obrigatórios."); assertScope(s, unitId);
@@ -62,7 +65,7 @@ export async function criarAcordo(fd: FormData) {
     if (titulos.some(t => t.status !== "ABERTO")) throw new Error("Só títulos em aberto entram no acordo."); const un = new Set(titulos.map(t => t.unit_id)); if (un.size !== 1) throw new Error("Títulos de uma única unidade por acordo."); assertScope(s, titulos[0].unit_id);
     const valorOriginal = titulos.reduce((a, t) => a + t.valor, 0); const valorAcordado = num(fd, "valorAcordado") ?? valorOriginal; const parcelas = int(fd, "parcelas") ?? 1; const primeira = str(fd, "primeiraParcela") || hoje();
     if (valorAcordado < 0 || parcelas < 1) throw new Error("Valores inválidos."); const cfg = await getSettings(); const descontoPct = valorOriginal ? Math.round(100 * (1 - valorAcordado / valorOriginal)) : 0;
-    const limite = (cfg.financeiro.alcadaDescontoPct as Record<string, number>)[s.role] ?? 0; if (descontoPct > limite) throw new Error(`Desconto de ${descontoPct}% no acordo excede sua alçada (${limite}%).`);
+    const limite = alcadaDesconto(s, cfg.financeiro.alcadaDescontoPct as Record<string, number>); if (descontoPct > limite) throw new Error(`Desconto de ${descontoPct}% no acordo excede sua alçada (${limite}%).`);
     const [a] = await db.insert(schema.agreements).values({ alunoNome: titulos[0].aluno_nome, studentId: titulos[0].student_id, unitId: titulos[0].unit_id, valorOriginal: String(valorOriginal), valorAcordado: String(valorAcordado), parcelas, primeiraParcela: primeira, obs: strOrNull(fd, "obs"), createdBy: s.id }).returning({ id: schema.agreements.id }); id = a.id;
     const vp = Math.floor(valorAcordado / parcelas * 100) / 100; for (let n = 1; n <= parcelas; n++) await db.insert(schema.agreementInstallments).values({ agreementId: id, numero: n, vencimento: addMonths(primeira, n - 1), valor: String(n === parcelas ? Math.round((valorAcordado - vp * (parcelas - 1)) * 100) / 100 : vp) });
     await sql`UPDATE receivables SET status='NEGOCIADO', agreement_id=${id}, updated_at=now() WHERE id = ANY(${ids})`;
@@ -96,10 +99,10 @@ export async function solicitarDesconto(fd: FormData) {
     const studentId = int(fd, "studentId"); let alunoNome = str(fd, "alunoNome"); let unitId = int(fd, "unitId");
     if (studentId) { const [st] = await sql<{ nome: string; unit_atual_id: number | null }[]>`SELECT nome, unit_atual_id FROM students WHERE id=${studentId}`; if (!st) throw new Error("Aluno não encontrado."); alunoNome = st.nome; unitId = unitId ?? st.unit_atual_id; }
     if (!alunoNome || !unitId) throw new Error("Aluno e unidade obrigatórios."); assertScope(s, unitId);
-    const limite = (cfg.financeiro.alcadaDescontoPct as Record<string, number>)[s.role] ?? 0; const auto = pct <= limite;
+    const limite = alcadaDesconto(s, cfg.financeiro.alcadaDescontoPct as Record<string, number>); const auto = pct <= limite;
     const [d] = await db.insert(schema.discounts).values({ studentId, alunoNome, unitId, ano: int(fd, "ano") ?? cfg.matriculas.anoLetivo, tipo, percentual: String(pct), motivo: strOrNull(fd, "motivo"), validadeAte: strOrNull(fd, "validadeAte"), status: auto ? "APROVADO" : "SOLICITADO", solicitanteUserId: s.id, aprovadorUserId: auto ? s.id : null, decididoEm: auto ? new Date() : null }).returning({ id: schema.discounts.id });
     await audit(s, auto ? "conceder desconto" : "solicitar desconto", "discounts", d.id, null, { alunoNome, tipo, pct, auto });
-    if (!auto) await notificar(await usuariosPorPerfil(Object.entries(cfg.financeiro.alcadaDescontoPct as Record<string, number>).filter(([, v]) => v >= pct).map(([k]) => k)), `Desconto de ${pct}% aguardando aprovação`, `${alunoNome} · ${tipo}`, "/financeiro/descontos", "ACAO");
+    if (!auto) await notificar((await usuariosComDescontoAte(pct)).filter(id => id !== s.id), `Desconto de ${pct}% aguardando aprovação`, `${alunoNome} · ${tipo}`, "/financeiro/descontos", "ACAO");
     msg = auto ? `Desconto de ${pct}% concedido (dentro da sua alçada de ${limite}%).` : `Desconto de ${pct}% enviado para aprovação (sua alçada: ${limite}%).`;
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", msg));
@@ -107,7 +110,7 @@ export async function solicitarDesconto(fd: FormData) {
 export async function decidirDesconto(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const decisao = str(fd, "decisao"); const b = "/financeiro/descontos";
   try { const cfg = await getSettings(); const [d] = await db.select().from(schema.discounts).where(eq(schema.discounts.id, id)); if (!d || d.status !== "SOLICITADO") throw new Error("Desconto não está aguardando decisão.");
-    const limite = (cfg.financeiro.alcadaDescontoPct as Record<string, number>)[s.role] ?? 0; if (Number(d.percentual) > limite) throw new Error(`Este desconto (${d.percentual}%) excede sua alçada (${limite}%).`); if (d.solicitanteUserId === s.id) throw new Error("Quem solicita não aprova o próprio desconto."); assertScope(s, d.unitId);
+    const limite = alcadaDesconto(s, cfg.financeiro.alcadaDescontoPct as Record<string, number>); if (Number(d.percentual) > limite) throw new Error(`Este desconto (${d.percentual}%) excede sua alçada (${limite}%).`); if (d.solicitanteUserId === s.id) throw new Error("Quem solicita não aprova o próprio desconto."); assertScope(s, d.unitId);
     if (decisao !== "APROVADO" && decisao !== "REJEITADO") throw new Error("Decisão inválida.");
     await db.update(schema.discounts).set({ status: decisao, aprovadorUserId: s.id, decididoEm: new Date(), motivoDecisao: strOrNull(fd, "nota") }).where(eq(schema.discounts.id, id)); await audit(s, decisao === "APROVADO" ? "aprovar desconto" : "rejeitar desconto", "discounts", id, { status: "SOLICITADO" }, { status: decisao });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -117,7 +120,7 @@ export async function decidirDesconto(fd: FormData) {
 // ---------- Preços, caixa, orçamento ----------
 export async function salvarPreco(fd: FormData) {
   const s = await requireSession(); const b = "/financeiro/receita";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const ano = int(fd, "ano") ?? cfg.matriculas.anoLetivo; const unitId = int(fd, "unitId"); const valor = num(fd, "valorMensal"); if (!unitId || valor === null) throw new Error("Informe unidade e valor.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "financeiro")); const ano = int(fd, "ano") ?? cfg.matriculas.anoLetivo; const unitId = int(fd, "unitId"); const valor = num(fd, "valorMensal"); if (!unitId || valor === null) throw new Error("Informe unidade e valor.");
     const gradeId = int(fd, "gradeId"); const modalidade = str(fd, "modalidade") || "REGULAR"; const parcelas = int(fd, "parcelas") ?? 12;
     if (str(fd, "todasSeries") === "1" && modalidade === "REGULAR") { const grades = await db.select().from(schema.grades); for (const g of grades) await sql`INSERT INTO tuition_prices (ano, unit_id, grade_id, modalidade, valor_mensal, parcelas) VALUES (${ano}, ${unitId}, ${g.id}, ${modalidade}, ${valor}, ${parcelas}) ON CONFLICT (ano, unit_id, grade_id, modalidade) DO UPDATE SET valor_mensal=EXCLUDED.valor_mensal, parcelas=EXCLUDED.parcelas`; }
     else await sql`INSERT INTO tuition_prices (ano, unit_id, grade_id, modalidade, valor_mensal, parcelas) VALUES (${ano}, ${unitId}, ${gradeId}, ${modalidade}, ${valor}, ${parcelas}) ON CONFLICT (ano, unit_id, grade_id, modalidade) DO UPDATE SET valor_mensal=EXCLUDED.valor_mensal, parcelas=EXCLUDED.parcelas`;
@@ -127,7 +130,7 @@ export async function salvarPreco(fd: FormData) {
 }
 export async function importarCaixa(fd: FormData) {
   const s = await requireSession(); let resumo = "";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("data") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter data e valor (opcionais: tipo, categoria, forma, descricao, unidade, contraparte).");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "financeiro")); const { linhas, get, head } = csv(await textoImportacao(fd)); if (!head.includes("data") || !head.includes("valor")) throw new Error("Cabeçalho precisa ter data e valor (opcionais: tipo, categoria, forma, descricao, unidade, contraparte).");
     const units = await db.select().from(schema.units); const unidadePadrao = int(fd, "unitId"); let ok = 0, dup = 0, travadas = 0; const erros: string[] = []; const travas = new Map<string, boolean>();
     for (const [i, l] of linhas.entries()) { const g = get(l); try {
       const data = parseData(g("data")); let valor = parseValor(g("valor")); if (!data || !Number.isFinite(valor)) throw new Error("data ou valor inválido");
@@ -144,14 +147,14 @@ export async function importarCaixa(fd: FormData) {
 }
 export async function salvarSaldoInicial(fd: FormData) {
   const s = await requireSession(); const b = `/financeiro/caixa?mes=${str(fd, "mes")}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const unitId = int(fd, "unitId"); const mes = str(fd, "mes"); const v = num(fd, "saldoInicial"); if (!unitId || !mes || v === null) throw new Error("Informe unidade, mês e saldo.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "financeiro")); const unitId = int(fd, "unitId"); const mes = str(fd, "mes"); const v = num(fd, "saldoInicial"); if (!unitId || !mes || v === null) throw new Error("Informe unidade, mês e saldo.");
     await sql`INSERT INTO cash_balances (unit_id, mes, saldo_inicial) VALUES (${unitId}, ${mes}, ${v}) ON CONFLICT (unit_id, mes) DO UPDATE SET saldo_inicial=EXCLUDED.saldo_inicial`; await audit(s, "saldo inicial", "cash_balances", null, null, { unitId, mes, v });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Saldo inicial salvo."));
 }
 export async function lancarCaixa(fd: FormData) {
   const s = await requireSession(); const b = `/financeiro/caixa?mes=${str(fd, "data").slice(0, 7)}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const unitId = int(fd, "unitId"); const data = str(fd, "data"); const valor = num(fd, "valor"); const tipo = str(fd, "tipo"); const categoria = str(fd, "categoria"); if (!unitId || !data || valor === null || !tipo || !categoria) throw new Error("Preencha unidade, data, tipo, categoria e valor.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "financeiro")); const unitId = int(fd, "unitId"); const data = str(fd, "data"); const valor = num(fd, "valor"); const tipo = str(fd, "tipo"); const categoria = str(fd, "categoria"); if (!unitId || !data || valor === null || !tipo || !categoria) throw new Error("Preencha unidade, data, tipo, categoria e valor.");
     const trava = await competenciaFechada(data, unitId); if (trava) throw new Error(mensagemTrava(trava));
     await db.insert(schema.cashEntries).values({ unitId, data, tipo, categoria, forma: strOrNull(fd, "forma"), descricao: strOrNull(fd, "descricao"), valor: String(Math.abs(valor)), contraparte: strOrNull(fd, "contraparte") }); await audit(s, "lançar caixa", "cash_entries", null, null, { unitId, data, tipo, categoria, valor });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -159,7 +162,7 @@ export async function lancarCaixa(fd: FormData) {
 }
 export async function salvarOrcamento(fd: FormData) {
   const s = await requireSession(); const ano = int(fd, "ano") ?? Number(hoje().slice(0, 4)); const b = `/financeiro/orcamento?ano=${ano}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro)); const unitId = int(fd, "unitId"); if (!unitId) throw new Error("Escolha a unidade."); let n = 0;
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "financeiro")); const unitId = int(fd, "unitId"); if (!unitId) throw new Error("Escolha a unidade."); let n = 0;
     for (const [k, v] of fd.entries()) { const m = String(k).match(/^b_(ENTRADA|SAIDA)_(\d+)$/); if (!m) continue; const cat = String(fd.get(`c_${m[1]}_${m[2]}`) ?? ""); const val = num(fd, String(k)); if (!cat || val === null) continue; await sql`INSERT INTO budgets (ano, unit_id, tipo, categoria, valor_mensal) VALUES (${ano}, ${unitId}, ${m[1]}, ${cat}, ${val}) ON CONFLICT (ano, unit_id, tipo, categoria) DO UPDATE SET valor_mensal=EXCLUDED.valor_mensal`; n++; void v; }
     await audit(s, "orçamento", "budgets", null, null, { ano, unitId, linhas: n });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -170,7 +173,7 @@ export async function salvarOrcamento(fd: FormData) {
 export async function reclassificarLancamento(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/financeiro/lancamentos/${id}`;
   try {
-    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.financeiro), "Reclassificar exige: " + cfg.alcadas.financeiro.join(", "));
+    const cfg = await getSettings(); if (!can.aprovar(s, "financeiro")) throw new Error("Reclassificar exige: " + (await quemAprovaTexto("financeiro")));
     const [l] = await sql<{ unit_id: number; data: string; tipo: string; categoria: string }[]>`SELECT unit_id, data::text, tipo, categoria FROM cash_entries WHERE id=${id}`; assert(!!l, "Lançamento não encontrado."); assertScope(s, l.unit_id);
     const trava = await competenciaFechada(l.data, l.unit_id); if (trava) throw new Error(mensagemTrava(trava));
     const categoria = str(fd, "categoria"); const motivo = str(fd, "motivo"); assert(motivo.length >= 5, "Explique a reclassificação (fica na trilha).");

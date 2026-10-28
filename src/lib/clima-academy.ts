@@ -1,7 +1,7 @@
 import { sql } from "@/db";
 import { hoje, addDays, addMonths, getSettings } from "./utils";
 
-export const SURVEY_TIPO: Record<string, string> = { CLIMA: "Clima organizacional", ENPS: "eNPS", PULSE: "Pulse (rápida)" };
+export const SURVEY_TIPO: Record<string, string> = { CLIMA: "Clima organizacional", ENPS: "eNPS", PULSE: "Pulse (rápida)", LIDERANCA: "Liderança (o gestor avaliado pela equipe)" };
 export const SURVEY_STATUS: Record<string, string> = { RASCUNHO: "Rascunho", ABERTA: "Aberta", ENCERRADA: "Encerrada" };
 export const ACTION_STATUS: Record<string, string> = { PLANEJADA: "Planejada", EM_ANDAMENTO: "Em andamento", CONCLUIDA: "Concluída" };
 export const COURSE_TIPO: Record<string, string> = { OBRIGATORIO: "Obrigatório", TRILHA_CARGO: "Trilha do cargo", OPCIONAL: "Opcional" };

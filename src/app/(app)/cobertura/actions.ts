@@ -8,8 +8,9 @@ import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { MOTIVO_AUS, SOLUCOES, minutos, turnoDe, diaSemana, sobrepoe, lerDia, gerarAulasDaAusencia, impedimento } from "@/lib/cobertura";
 import { alvoEdicao, choqueProfessor } from "@/lib/grade";
 import { semelhanca } from "@/lib/conciliacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const back = (fd: FormData, fb = "/cobertura") => caminhoSeguro(str(fd, "voltar"), fb);
 const COORD = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
 const coordena = (s: Session) => COORD.includes(s.role);
@@ -68,7 +69,7 @@ export async function registrarAusencia(fd: FormData) {
 export async function avisarAusencia(fd: FormData) {
   const s = await requireSession(); const b = "/cobertura/minha"; let msg = "";
   try {
-    assert(!!s.employeeId, "Seu acesso não está ligado a uma ficha de colaborador."); assert(s.role !== "LEITURA", "Perfil somente leitura não registra ausências.");
+    assert(!!s.employeeId, "Seu acesso não está ligado a uma ficha de colaborador."); assert(s.role !== "LEITURA", "Acesso somente leitura não registra ausências.");
     const motivo = str(fd, "motivo"); if (!["FALTA", "ATESTADO", "FORMACAO", "OUTRO"].includes(motivo)) throw new Error("Escolha o motivo.");
     const p = lerPeriodo(fd); if (p.de < hoje()) throw new Error("Para ausências passadas (mesmo em parte do período), fale com a coordenação.");
     const [e] = await sql<{ nome: string; unit_id: number }[]>`SELECT nome, unit_id FROM employees WHERE id=${s.employeeId!}`;

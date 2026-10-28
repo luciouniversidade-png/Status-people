@@ -1,18 +1,19 @@
 "use server";
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
-import { requireSession, assert, scopeUnit } from "@/lib/auth";
+import { requireSession, assert, scopeUnit, can } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { destinatariosCampanha, aprovadoresMassa, emHorarioComercial, proximaJanela, fmtJanela, dispararCampanha, PUBLICO_CAMPANHA, AUTORES_MASSA_LISTA } from "@/lib/massa";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 
 /** CRQ-COM-V3-01 · campanha (WhatsApp/e-mail) para uma lista: modelo aprovado obrigatório; vai para aprovação de outra pessoa. */
 export async function criarCampanha(fd: FormData) {
   const s = await requireSession(); let b = "/comunicacao/massa";
   try {
-    assert(AUTORES_MASSA_LISTA.includes(s.role), "Seu perfil não cria envio em massa.");
+    assert(AUTORES_MASSA_LISTA.includes(s.role), "Seu acesso não cria envio em massa.");
     const canal = str(fd, "canal"); assert(["WHATSAPP", "EMAIL"].includes(canal), "Escolha o canal.");
     const publico = str(fd, "publico"); assert(!!PUBLICO_CAMPANHA[publico], "Escolha o público."); assert(publico !== "COLABORADORES" || ["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role), "Envio para a equipe: Direção, RH ou diretor(a) da unidade.");
     const templateId = int(fd, "templateId") ?? 0; const [t] = await sql<{ id: number; canal: string; ativo: boolean; titulo: string }[]>`SELECT id, canal, ativo, titulo FROM message_templates WHERE id=${templateId}`;
@@ -32,7 +33,7 @@ export async function criarCampanha(fd: FormData) {
 export async function decidirCampanha(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/comunicacao/massa/${id}`; let msg = "";
   try {
-    const cfg = await getSettings(); assert((cfg.comunicacao.aprovadoresMassa as string[]).includes(s.role), "Aprovação de envio em massa: Direção ou RH.");
+    const cfg = await getSettings(); assert(can.aprovar(s, "massa"), "Aprovação de envio em massa: Direção ou RH.");
     const [c] = await sql<{ status: string; autor_user_id: number; titulo: string; total: number }[]>`SELECT status, autor_user_id, titulo, total FROM message_campaigns WHERE id=${id}`; assert(!!c, "Envio não encontrado.");
     assert(c.status === "AGUARDANDO_APROVACAO", "Este envio não aguarda aprovação."); assert(c.autor_user_id !== s.id, "Quem criou não aprova o próprio envio em massa.");
     const decisao = str(fd, "decisao");
@@ -51,7 +52,7 @@ export async function cancelarCampanha(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = `/comunicacao/massa/${id}`;
   try {
     const cfg = await getSettings(); const [c] = await sql<{ status: string; autor_user_id: number }[]>`SELECT status, autor_user_id FROM message_campaigns WHERE id=${id}`; assert(!!c, "Envio não encontrado.");
-    assert(c.autor_user_id === s.id || (cfg.comunicacao.aprovadoresMassa as string[]).includes(s.role), "Só o autor ou um aprovador cancelam."); assert(["AGUARDANDO_APROVACAO", "AGENDADA"].includes(c.status), "Envio já disparado ou encerrado.");
+    assert(c.autor_user_id === s.id || can.aprovar(s, "massa"), "Só o autor ou um aprovador cancelam."); assert(["AGUARDANDO_APROVACAO", "AGENDADA"].includes(c.status), "Envio já disparado ou encerrado.");
     await sql`UPDATE message_campaigns SET status='CANCELADA' WHERE id=${id}`; await audit(s, "cancelar envio em massa", "message_campaigns", id, { status: c.status }, { status: "CANCELADA" });
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Envio cancelado."));

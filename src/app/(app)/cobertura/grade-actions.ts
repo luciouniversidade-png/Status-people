@@ -7,8 +7,9 @@ import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { turnoDe, sobrepoe } from "@/lib/cobertura";
 import { versao, versaoVigente, copiarAulas, alvoEdicao, choqueProfessor, validarVersao, propostaCh, periodoTxt } from "@/lib/grade";
 import { salvarDias } from "@/lib/ponto";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const COORD = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
 const CH_PERFIS = ["RH", "DIRECAO", "DIRETOR_UNIDADE"];
 type T = typeof sql;

@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje } from "@/lib/utils";
 import { RENOVACAO, TIPO_LICENCA, podeContratos, podeLicencas, PERFIS_CONTRATO, PERFIS_LICENCA } from "@/lib/contratos";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const iso = (v: string | null, rot: string) => { if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new Error(`${rot}: data inválida.`); return v; };
 /** Valor em reais digitado do jeito brasileiro: "2.400,00", "2400", "R$ 2.400" ou "2400.5". */
 const dinheiro = (fd: FormData, k: string, rot: string) => { const t = str(fd, k).replace(/[R$\s]/g, ""); if (!t) return null; const v = Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : /^\d{1,3}(\.\d{3})+$/.test(t) ? t.replace(/\./g, "") : t); if (!Number.isFinite(v) || v < 0) throw new Error(`${rot}: valor inválido.`); return String(Math.round(v * 100) / 100); };

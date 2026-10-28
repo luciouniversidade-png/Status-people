@@ -1,3 +1,4 @@
+import { quemAprovaTexto } from "@/lib/acesso";
 import Link from "@/components/Link";
 import { requireStaff, scopeUnit, can } from "@/lib/auth";
 import { sql, db, schema } from "@/db";
@@ -10,7 +11,7 @@ import { feriasAVencer } from "@/lib/ferias";
 export const dynamic = "force-dynamic";
 
 export default async function Ferias({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const s = await requireStaff(); const sp = await searchParams; const u = scopeUnit(s); const cfg = await getSettings();
+  const s = await requireStaff(); const sp = await searchParams; const u = scopeUnit(s); const cfg = await getSettings(); const quemAprova = await quemAprovaTexto("ferias");
   const status = sp.status ?? "SOLICITADA"; const h = hoje();
   const rows = await sql<{ id: number; nome: string; employee_id: number; unidade: string; tipo: string; inicio: string; fim: string; dias: number; status: string; justificativa: string | null; solicitado_por: number | null }[]>`
     SELECT l.id, e.nome, e.id AS employee_id, u.nome AS unidade, l.tipo, l.inicio::text, l.fim::text, l.dias, l.status, l.justificativa, l.solicitado_por
@@ -18,7 +19,7 @@ export default async function Ferias({ searchParams }: { searchParams: Promise<R
     WHERE 1=1 ${status ? sql`AND l.status=${status}` : sql``} ${u === null ? sql`` : sql`AND e.unit_id=${u}`}
     ORDER BY l.status='SOLICITADA' DESC, l.inicio DESC LIMIT 300`;
   const emps = await db.select({ id: schema.employees.id, nome: schema.employees.nome, unitId: schema.employees.unitId }).from(schema.employees).where(u === null ? ne(schema.employees.situacao, "DESLIGADO") : and(ne(schema.employees.situacao, "DESLIGADO"), eq(schema.employees.unitId, u))).orderBy(asc(schema.employees.nome));
-  const podeAprovar = can.aprovar(s, cfg.alcadas.ferias); const sensivel = can.verSensivel(s);
+  const podeAprovar = can.aprovar(s, "ferias"); const sensivel = can.verSensivel(s);
   const alertas = await feriasAVencer(u, 90);
   return (
     <Page title="Férias e afastamentos" sub="Solicitações passam por aprovação. O saldo de férias é calculado pelos períodos aquisitivos de cada colaborador." actions={<><Btn kind="ghost" href="/ferias/calendario">Quem está fora (calendário)</Btn>{can.editar(s) && <Btn kind="ghost" href="/ferias/importar">Importar histórico</Btn>}<Btn kind="ghost" href="/api/export/ferias">Exportar CSV</Btn></>}>
@@ -61,7 +62,7 @@ export default async function Ferias({ searchParams }: { searchParams: Promise<R
               <div className="grid grid-cols-2 gap-2"><Field label="Início"><Input name="inicio" type="date" required /></Field><Field label="Fim"><Input name="fim" type="date" required /></Field></div>
               <Field label="Justificativa"><Textarea name="justificativa" className="min-h-[60px]" /></Field>
               <Btn>Enviar para aprovação</Btn>
-              <p className="text-xs text-slate-500">Férias: mínimo 5 dias corridos, dentro do saldo do período aquisitivo mais antigo. Aprovam: {cfg.alcadas.ferias.join(", ")}.</p>
+              <p className="text-xs text-slate-500">Férias: mínimo 5 dias corridos, dentro do saldo do período aquisitivo mais antigo. Aprovam: {quemAprova}.</p>
             </form>
           </Card>
         )}

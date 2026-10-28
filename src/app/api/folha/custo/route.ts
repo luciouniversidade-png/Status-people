@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { podeFolha, custosAceitos } from "@/lib/folha";
@@ -8,6 +9,7 @@ import { audit } from "@/lib/utils";
 /** Export agregado do custo de folha (T-056): uma linha por dimensão × competência, com o carimbo do contexto. Nunca nominal. */
 export async function GET(req: Request) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/folha/custo")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (!podeFolha(s) && s.role !== "LEITURA") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const sp = Object.fromEntries(new URL(req.url).searchParams.entries()); const ctx = await lerContexto(s, sp);
   const dim = sp.dim === "unidade" || sp.dim === "area" ? sp.dim : "entidade";

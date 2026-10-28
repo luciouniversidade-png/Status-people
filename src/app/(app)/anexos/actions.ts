@@ -4,11 +4,12 @@ import { sql } from "@/db";
 import { requireSession, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, getSettings, caminhoSeguro } from "@/lib/utils";
 import { unidadeDoRegistro, acessoAnexoRestrito, ENTIDADES } from "@/lib/anexos";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 export async function enviarAnexo(fd: FormData) {
   const s = await requireSession(); const entidade = str(fd, "entidade"); const id = int(fd, "entidadeId") ?? 0; const voltar = caminhoSeguro(str(fd, "voltar"), "/");
-  try { const restritoAntes = ENTIDADES[entidade] ? await acessoAnexoRestrito(s, entidade, id, "editar") : null; assert(s.role !== "LEITURA" || restritoAntes === true, "Perfil somente leitura não anexa arquivos."); const cfg = await getSettings(); const arq = fd.get("arquivo"); if (!arq || typeof arq !== "object" || !("arrayBuffer" in arq) || (arq as File).size === 0) throw new Error("Escolha um arquivo.");
+  try { const restritoAntes = ENTIDADES[entidade] ? await acessoAnexoRestrito(s, entidade, id, "editar") : null; assert(s.role !== "LEITURA" || restritoAntes === true, "Acesso somente leitura não anexa arquivos."); const cfg = await getSettings(); const arq = fd.get("arquivo"); if (!arq || typeof arq !== "object" || !("arrayBuffer" in arq) || (arq as File).size === 0) throw new Error("Escolha um arquivo.");
     const f = arq as File; if (f.size > cfg.plataforma.anexoMaxMb * 1048576) throw new Error(`Arquivo acima de ${cfg.plataforma.anexoMaxMb} MB.`); const mime = f.type || "application/octet-stream"; if (!cfg.plataforma.anexoTipos.includes(mime)) throw new Error(`Tipo não permitido (${mime}). Use PDF, imagem, Word, Excel ou texto.`);
     const unitId = await unidadeDoRegistro(entidade, id); const restrito = await acessoAnexoRestrito(s, entidade, id, "editar"); if (restrito === false) throw new Error("Sem acesso a este registro."); if (unitId && restrito === null) assertScope(s, unitId); if (s.role === "COLABORADOR" && !(entidade === "employee" && id === s.employeeId) && !(entidade === "work_order") && !(entidade === "request" && restrito)) throw new Error("Você só anexa na sua própria ficha, nos seus chamados e nas suas solicitações.");
     if (entidade === "privacy_incident") { const [i] = await sql<{ status: string }[]>`SELECT status FROM privacy_incidents WHERE id=${id}`; if (i?.status === "ENCERRADO") throw new Error("Incidente encerrado: o registro não recebe novos anexos."); }

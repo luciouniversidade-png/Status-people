@@ -4,13 +4,13 @@ import { fmtData, getSettings } from "@/lib/utils";
 import { textoErro } from "@/lib/aviso";
 import { ETAPA_LABEL } from "@/lib/talento";
 import { contextoPortal, DOC_STATUS } from "@/lib/portal-candidato";
-import { enviarDocumentoCandidato, escolherHorarioCandidato, mensagemCandidato, retirarCandidatura, pedirExclusaoCandidato } from "../actions";
+import { enviarDocumentoCandidato, escolherHorarioCandidato, mensagemCandidato, retirarCandidatura, pedirExclusaoCandidato, responderExperiencia } from "../actions";
 import { Btn } from "@/components/Btn";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Minha candidatura · Colégio Status", robots: { index: false, follow: false } };
 const inp = "w-full rounded-md border border-line bg-white px-3 py-2.5 text-base text-ink focus:border-acao focus:outline-none focus:ring-1 focus:ring-acao sm:text-sm";
-const OK: Record<string, string> = { doc: "Documento enviado. O RH confere e avisa por aqui se precisar de outro arquivo.", horario: "Horário confirmado. Até lá!", msg: "Mensagem enviada ao RH.", retirada: "Candidatura retirada. Obrigado pelo interesse no Colégio Status.", exclusao: "Pedido de exclusão registrado." };
+const OK: Record<string, string> = { doc: "Documento enviado. O RH confere e avisa por aqui se precisar de outro arquivo.", horario: "Horário confirmado. Até lá!", msg: "Mensagem enviada ao RH.", retirada: "Candidatura retirada. Obrigado pelo interesse no Colégio Status.", exclusao: "Pedido de exclusão registrado.", experiencia: "Obrigado! Sua opinião é anônima e ajuda a melhorar a seleção.", nova: "Candidatura recebida! Guarde este endereço (salve nos favoritos): é por aqui que você acompanha o processo, envia documentos e conversa com o RH." };
 
 /** T-106 · Portal do candidato (externo): acompanhar a própria candidatura, enviar documentos, escolher horário, conversar com o RH. */
 export default async function MinhaCandidatura({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
@@ -24,6 +24,7 @@ export default async function MinhaCandidatura({ params, searchParams }: { param
     sql<{ at: string; quando: string; texto: string; origem: string }[]>`SELECT at::text, to_char(at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Campo_Grande', 'DD/MM HH24:MI') AS quando, texto, origem FROM application_events WHERE application_id=${c.applicationId} AND origem IN ('CANDIDATO','RH_PARA_CANDIDATO') ORDER BY at DESC LIMIT 30`,
   ]);
   const pos = etapas.indexOf(c.etapa); const encerrada = c.retirada || ["REPROVADO", "DESISTIU", "CONTRATADO"].includes(c.etapa);
+  const [{ respondeu }] = await sql<{ respondeu: boolean }[]>`SELECT (experiencia_em IS NOT NULL) AS respondeu FROM applications WHERE id=${c.applicationId}`;
   const erro = textoErro(sp);
   return (
     <Shell>
@@ -46,6 +47,13 @@ export default async function MinhaCandidatura({ params, searchParams }: { param
             {slots.map((x, i) => <label key={x.id} className="flex items-start gap-2 rounded border border-line px-3 py-2 text-sm"><input type="radio" name="slotId" value={x.id} defaultChecked={i === 0} className="mt-1" /><span>{x.quando} ({x.duracao_min} min){x.local ? <span className="block text-xs text-slate-500">{x.local}</span> : null}</span></label>)}
             <Btn small>Confirmar horário</Btn></form>}
       </section>}
+      {encerrada && !respondeu && <section className="mt-6 rounded border border-sky-200 bg-sky-50 p-3"><h2 className="text-sm font-semibold text-navy">Como foi o processo para você?</h2>
+        <p className="mt-1 text-xs text-slate-600">Quatro perguntas rápidas e anônimas: a resposta não fica ligada ao seu nome e só aparece somada com as de outros candidatos.</p>
+        <form action={responderExperiencia} className="mt-2 space-y-2"><input type="hidden" name="token" value={token} />
+          {([["processo", "Como você avalia o processo seletivo, de modo geral?"], ["clareza", "As informações (etapas, horários, retorno) foram claras?"], ["respeito", "Você foi tratado(a) com respeito e cordialidade?"]] as const).map(([k, t]) => <fieldset key={k} className="text-sm"><legend className="mb-1">{t}</legend><div className="flex flex-wrap gap-1">{[1, 2, 3, 4, 5].map(n => <label key={n} className="flex items-center gap-1 rounded border border-line bg-white px-2 py-1"><input type="radio" name={k} value={n} required />{n}</label>)}</div></fieldset>)}
+          <fieldset className="text-sm"><legend className="mb-1">De 0 a 10, você recomendaria a um amigo candidatar-se no Colégio Status?</legend><div className="flex flex-wrap gap-1">{Array.from({ length: 11 }, (_, n) => <label key={n} className="flex items-center gap-1 rounded border border-line bg-white px-2 py-1"><input type="radio" name="recomendaria" value={n} required />{n}</label>)}</div></fieldset>
+          <textarea name="comentario" maxLength={1000} className={`${inp} min-h-[60px]`} placeholder="O que poderíamos melhorar? (opcional — não escreva seu nome)" aria-label="Comentário" />
+          <Btn small>Enviar</Btn></form></section>}
       <section className="mt-6"><h2 className="text-sm font-semibold text-navy">Mensagens com o RH</h2>
         {!encerrada && <form action={mensagemCandidato} className="mt-2 space-y-2"><input type="hidden" name="token" value={token} /><textarea name="texto" required minLength={5} maxLength={1000} className={`${inp} min-h-[80px]`} placeholder="Dúvida, pedido de remarcação, aviso…" aria-label="Mensagem" /><Btn small>Enviar mensagem</Btn></form>}
         {msgs.length > 0 ? <ul className="mt-3 space-y-1.5 text-sm">{msgs.map((m, i) => <li key={i} className={`rounded px-3 py-2 ${m.origem === "CANDIDATO" ? "bg-mist" : "border border-sky-200 bg-sky-50"}`}><span className="text-[11px] text-slate-500">{m.quando} · {m.origem === "CANDIDATO" ? "você" : "RH do Colégio Status"}</span><div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{m.texto.replace(/^Mensagem( do RH)?: /, "")}</div></li>)}</ul> : <p className="mt-2 text-xs text-slate-500">Nenhuma mensagem ainda.</p>}

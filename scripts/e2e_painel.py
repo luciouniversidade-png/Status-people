@@ -223,7 +223,7 @@ print("== Agentes de IA, organograma, TV, formação exigida, rotina")
 html = page("/governanca/agentes"); aag = aid_of(html, "Cadastrar em piloto")
 ag = {"nome": "Agente de triagem de currículos", "funcao": "Resume currículos por requisitos da vaga", "area": "Pessoas", "positionId": prof, "nivel": "N1", "limites": "Não decide contratação; não contata candidatos"}
 erro(post("/governanca/agentes", aag, ag), "dono humano"); erro(post("/governanca/agentes", aag, {**ag, "donoUserId": uRH, "nivel": "N3", "revisaoHumana": "RH semanal", "dadosSensiveis": "1"}), "N0 ou N1")
-okmsg(post("/governanca/agentes", aag, {**ag, "donoUserId": uRH}), "piloto"); assert "🤖 Agente de triagem" in page("/organograma"); ok("agente exige dono e limites; dados sensíveis só N0/N1; aparece no organograma")
+okmsg(post("/governanca/agentes", aag, {**ag, "donoUserId": uRH}), "piloto"); assert "🤖 Agente de triagem" in page("/organograma?ver=cargos"); ok("agente exige dono e limites; dados sensíveis só N0/N1; aparece no organograma")
 assert "Saúde geral" in page("/tv") and page("/tv", expect=307, sess=SP) is not None and page("/tv?token=errado", expect=307, sess=mk()) is not None and "Saúde geral" in page("/tv?token=tv-teste-123", sess=mk()); ok("Modo TV: gestão ou token de tela; colaborador e token errado barrados")
 html = page("/configuracoes?aba=cargos"); acar = aid_of(html, "Formação exigida (se houver)"); nomep, areap = psql(f"SELECT nome||'|'||area FROM positions WHERE id={prof}").split("|")
 erro(post("/configuracoes", acar, {"id": prof, "nome": nomep, "area": areap, "formacaoExigida": "Licenciatura", "documentoFormacao": ""}), "documento que comprova")

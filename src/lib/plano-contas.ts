@@ -1,5 +1,5 @@
 import { sql } from "@/db";
-import type { Session } from "./auth";
+import { can, type Session } from "./auth";
 import { getSettings, hoje, addDays, audit } from "./utils";
 import { competenciaFechada } from "./conciliacao";
 import { analiticas, ehAnalitica, macrogrupo, normalizar, ordenarContas, sugerir, SIGLA_SEGMENTO, type Conta, type Centro, type Regra, type ContextoSugestao, type Sugestao } from "./plano-contas-calc";
@@ -11,7 +11,7 @@ import { analiticas, ehAnalitica, macrogrupo, normalizar, ordenarContas, sugerir
  */
 type Cfg = Awaited<ReturnType<typeof getSettings>>;
 export const vePlano = (s: Session) => ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role);
-export const editaPlano = (cfg: Cfg, s: Session) => (cfg.alcadas.financeiro as string[]).includes(s.role);
+export const editaPlano = (_cfg: Cfg, s: Session) => can.aprovar(s, "financeiro");
 export const aprovaRateio = (s: Session) => s.role === "DIRECAO";
 
 export async function listarContas(): Promise<Conta[]> {

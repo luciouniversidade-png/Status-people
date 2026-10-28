@@ -567,6 +567,77 @@ CREATE UNIQUE INDEX IF NOT EXISTS classification_rules_uk ON classification_rule
 CREATE TABLE IF NOT EXISTS allocation_rules (id serial PRIMARY KEY, nome text NOT NULL, base text NOT NULL, percentuais jsonb, desde text NOT NULL, status text NOT NULL DEFAULT 'RASCUNHO', motivo text, decisao_motivo text, criado_por integer, aprovado_por integer, aprovado_em timestamp, created_at timestamp NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS budget_hygiene (cash_entry_id integer PRIMARY KEY, decisao text NOT NULL, sinal text, motivo text, user_id integer, user_nome text, decidido_em timestamp NOT NULL DEFAULT now());
 CREATE TABLE IF NOT EXISTS budget_plans (ano integer PRIMARY KEY, params jsonb NOT NULL DEFAULT '{}'::jsonb, status text NOT NULL DEFAULT 'RASCUNHO', versao_aplicada text, resumo jsonb, aplicado_por integer, aplicado_em timestamp, updated_by integer, updated_at timestamp NOT NULL DEFAULT now());
+-- v29 · acesso pelo cargo: o cargo define a atuação, as telas e as aprovações; o usuário herda do cargo da ficha (exceção e substituição ficam à vista)
+ALTER TABLE positions ADD COLUMN IF NOT EXISTS acesso jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS acesso jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS substituicao jsonb;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS aprova text[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS origem_acesso text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS desconto_pct numeric(5,2);
+CREATE INDEX IF NOT EXISTS users_employee_idx ON users(employee_id);
+CREATE INDEX IF NOT EXISTS users_aprova_idx ON users USING gin (aprova);
+ALTER TABLE announcements ADD COLUMN IF NOT EXISTS position_id integer;
+-- v30 · ficha completa: sexo (eSocial; base da igualdade salarial — Lei 14.611/2023), ramal e e-mail institucional (quem é quem)
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS sexo text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS ramal text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS email_institucional text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS no_diretorio boolean NOT NULL DEFAULT true;
+-- v30 · histórico funcional (promoção, mudança de cargo, transferência, efetivação…), formação e itens sob responsabilidade
+CREATE TABLE IF NOT EXISTS employee_moves (id serial PRIMARY KEY, employee_id integer NOT NULL, data date NOT NULL, tipo text NOT NULL, motivo text, de jsonb, para jsonb, obs text, origem text NOT NULL DEFAULT 'MANUAL', user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS employee_moves_emp_idx ON employee_moves(employee_id, data);
+CREATE INDEX IF NOT EXISTS employee_moves_data_idx ON employee_moves(data, tipo);
+CREATE TABLE IF NOT EXISTS employee_qualifications (id serial PRIMARY KEY, employee_id integer NOT NULL, tipo text NOT NULL, curso text NOT NULL, instituicao text, area text, conclusao date, em_andamento boolean NOT NULL DEFAULT false, carga_horas numeric(7,1), registro text, status text NOT NULL DEFAULT 'VALIDADA', attachment_id integer, validado_por integer, validado_em timestamp, motivo_recusa text, criado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS employee_qualifications_emp_idx ON employee_qualifications(employee_id);
+CREATE TABLE IF NOT EXISTS employee_items (id serial PRIMARY KEY, employee_id integer NOT NULL, tipo text NOT NULL, descricao text NOT NULL, identificacao text, asset_id integer, valor numeric(12,2), entregue_em date NOT NULL, entregue_por integer, ciencia_em timestamp, devolver_ate date, devolvido_em date, recebido_por integer, condicao text, obs text, status text NOT NULL DEFAULT 'COM_COLABORADOR', created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS employee_items_emp_idx ON employee_items(employee_id, status);
+CREATE INDEX IF NOT EXISTS employee_items_asset_idx ON employee_items(asset_id) WHERE asset_id IS NOT NULL;
+-- v30 · igualdade salarial: relatório semestral de transparência (Lei 14.611/2023) por CNPJ com 100+ empregados
+CREATE TABLE IF NOT EXISTS pay_transparency_reports (id serial PRIMARY KEY, company_id integer NOT NULL, ano integer NOT NULL, semestre integer NOT NULL, empregados integer, publicado_em date, onde text, link text, diferenca_pct numeric(6,2), plano_acao text, plano_prazo date, obs text, registrado_por integer, registrado_por_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS pay_transparency_reports_uk ON pay_transparency_reports(company_id, ano, semestre);
+-- v30 · recrutamento: vaga pausada, página pública, proposta respondida, avaliadores com notas independentes, experiência do candidato e satisfação do gestor
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS pausada_em date;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS pausa_motivo text;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS dias_pausada integer NOT NULL DEFAULT 0;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS publicar boolean NOT NULL DEFAULT false;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS slug text;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS descricao_publica text;
+ALTER TABLE requisitions ADD COLUMN IF NOT EXISTS visualizacoes integer NOT NULL DEFAULT 0;
+CREATE UNIQUE INDEX IF NOT EXISTS requisitions_slug_idx ON requisitions(slug) WHERE slug IS NOT NULL;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS proposta_enviada_em date;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS proposta_resposta text;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS proposta_resposta_em date;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS proposta_motivo text;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS experiencia_em timestamp;
+ALTER TABLE applications ADD COLUMN IF NOT EXISTS etapa_desde timestamp;
+CREATE TABLE IF NOT EXISTS interview_feedback (id serial PRIMARY KEY, application_id integer NOT NULL, etapa text NOT NULL, avaliador_user_id integer NOT NULL, convidado_por integer, convidado_em timestamp NOT NULL DEFAULT now(), prazo date, notas jsonb, recomendacao text, pontos_fortes text, pontos_atencao text, enviado_em timestamp, cancelado_em timestamp);
+CREATE UNIQUE INDEX IF NOT EXISTS interview_feedback_uk ON interview_feedback(application_id, etapa, avaliador_user_id);
+CREATE INDEX IF NOT EXISTS interview_feedback_aval_idx ON interview_feedback(avaliador_user_id) WHERE enviado_em IS NULL AND cancelado_em IS NULL;
+CREATE TABLE IF NOT EXISTS candidate_experience (id serial PRIMARY KEY, requisition_id integer, unit_id integer, desfecho text, nota_processo integer, nota_clareza integer, nota_respeito integer, recomendaria integer, comentario text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS hire_feedback (id serial PRIMARY KEY, employee_id integer NOT NULL, application_id integer, requisition_id integer, gestor_user_id integer, nota integer, contrataria boolean, comentario text, respondido_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS hire_feedback_emp_idx ON hire_feedback(employee_id);
+CREATE TABLE IF NOT EXISTS public_application_log (id serial PRIMARY KEY, ip text, requisition_id integer, at timestamp NOT NULL DEFAULT now());
+-- v30 · desempenho: pesquisa de liderança (gestor avaliado pela equipe) e metas ligadas à estratégia
+ALTER TABLE climate_responses ADD COLUMN IF NOT EXISTS gestor_id integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS objective_id integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS key_result_id integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS atualizada_em timestamp;
+-- v30 · Academy: custo, instrutor, inscrição com aprovação, avaliação de reação e certificado
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS custo numeric(12,2);
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS instrutor text;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS inscricao_aberta boolean NOT NULL DEFAULT false;
+ALTER TABLE courses ADD COLUMN IF NOT EXISTS exige_aprovacao boolean NOT NULL DEFAULT true;
+ALTER TABLE training_sessions ADD COLUMN IF NOT EXISTS custo numeric(12,2);
+ALTER TABLE training_progress ADD COLUMN IF NOT EXISTS certificado text;
+CREATE TABLE IF NOT EXISTS training_enrollments (id serial PRIMARY KEY, course_id integer NOT NULL, session_id integer, employee_id integer NOT NULL, status text NOT NULL DEFAULT 'AGUARDANDO_APROVACAO', motivo text, decidido_por integer, decidido_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS training_enrollments_uk ON training_enrollments(course_id, employee_id);
+CREATE TABLE IF NOT EXISTS training_feedback (id serial PRIMARY KEY, course_id integer NOT NULL, employee_id integer NOT NULL, nota integer NOT NULL, aplicavel integer, comentario text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS training_feedback_uk ON training_feedback(course_id, employee_id);
+-- v30 · benefícios (inclusive bolsa de estudos para filho de colaborador) e remuneração total
+CREATE TABLE IF NOT EXISTS benefit_plans (id serial PRIMARY KEY, nome text NOT NULL, tipo text NOT NULL, fornecedor text, custo_empresa numeric(12,2), custo_empresa_pct numeric(6,2), desconto_colab numeric(12,2), desconto_colab_pct numeric(6,2), custo_dependente numeric(12,2), elegibilidade jsonb, carencia_dias integer NOT NULL DEFAULT 0, ativo boolean NOT NULL DEFAULT true, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS benefit_enrollments (id serial PRIMARY KEY, plan_id integer NOT NULL, employee_id integer NOT NULL, inicio date NOT NULL, fim date, status text NOT NULL DEFAULT 'ATIVO', dependentes integer NOT NULL DEFAULT 0, student_id integer, bolsa_pct numeric(5,2), valor_empresa numeric(12,2), valor_colab numeric(12,2), obs text, motivo_fim text, criado_por integer, encerrado_por integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS benefit_enrollments_emp_idx ON benefit_enrollments(employee_id, status);
+-- v30 · relatório sob medida (colunas, filtros e agrupamento escolhidos pela pessoa; salvo e compartilhável com a equipe de RH)
+CREATE TABLE IF NOT EXISTS custom_reports (id serial PRIMARY KEY, nome text NOT NULL, definicao jsonb NOT NULL, dono_user_id integer NOT NULL, compartilhado boolean NOT NULL DEFAULT false, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
 `;
 
 // Estrutura vigente ditada em 16/07/2026 (22 cargos) + Professor e Pedagoga (corpo docente).
@@ -753,6 +824,11 @@ export const DEFAULT_SETTINGS = {
     maxPrioridadesAtivas: 3,                 // PDIs de crescimento ativos por pessoa (configurável)
     checkinDias: { PROFESSORES: 30, COORDENACAO: 30, SECRETARIA: 45, ATENDIMENTO_COMERCIAL: 30, APOIO_OPERACIONAL: 60, GESTAO: 30, PADRAO: 45 } as Record<string, number>, // periodicidade de acompanhamento por família
     dimensoesDocentes: ["Clareza dos objetivos de aprendizagem", "Planejamento", "Estratégias de ensino", "Verificação da compreensão", "Qualidade das devolutivas", "Gestão do ambiente de aprendizagem", "Práticas inclusivas", "Comunicação profissional", "Uso pedagógico dos recursos disponíveis"], // sujeitas à homologação pedagógica
+    // v30 · calibração: distribuição de REFERÊNCIA para a conversa (nenhuma cota é aplicada) e consistência entre avaliadores
+    referencia: { DESTAQUE: 15, CONSISTENTE: 70, PRIORITARIO: 15 } as Record<string, number>,
+    consistenciaMinAvaliados: 5,             // avaliador com menos avaliados não entra na comparação
+    consistenciaDelta: 0.5,                  // média do avaliador a mais de N pontos da média do ciclo = “olhar na calibração”
+    metaSemAtualizacaoDias: 30,              // meta sem atualização há mais de N dias = “precisa de atualização”
     boxes: { "3-3": "Talento estratégico", "3-2": "Alto desempenho consistente", "3-1": "Especialista sólido", "2-3": "Alto potencial em desenvolvimento", "2-2": "Mantenedor confiável", "2-1": "Contribuidor estável", "1-3": "Enigma — investigar", "1-2": "Em desenvolvimento", "1-1": "Atenção — plano de melhoria" },
   },
   clima: {
@@ -767,10 +843,39 @@ export const DEFAULT_SETTINGS = {
       ["Relação com famílias e alunos", "Sinto-me apoiado(a) pela escola na relação com famílias e alunos."],
     ],
     minimoAnonimato: 5,
+    // v30 · pesquisa de liderança: cada pessoa avalia o próprio gestor direto; resultado por gestor só com o mínimo de respostas
+    lideranca: {
+      dimensoes: [
+        ["Clareza de expectativas", "Meu gestor deixa claro o que se espera do meu trabalho e como ele será avaliado."],
+        ["Feedback", "Recebo do meu gestor devolutivas frequentes e úteis sobre o meu trabalho."],
+        ["Reconhecimento", "Meu gestor reconhece quando faço um bom trabalho."],
+        ["Apoio ao desenvolvimento", "Meu gestor apoia o meu crescimento (PDI, formação, novas responsabilidades)."],
+        ["Condições para trabalhar", "Meu gestor remove obstáculos e garante o que preciso para trabalhar bem."],
+        ["Comunicação e escuta", "Meu gestor me mantém informado(a) e ouve as minhas ideias e preocupações."],
+        ["Confiança e respeito", "Confio no meu gestor e me sinto tratado(a) com respeito."],
+      ] as [string, string][],
+      minimo: 5,                  // respostas mínimas para mostrar o resultado de um gestor (nunca menos de 3)
+      favoravelAlvo: 70,          // índice de efetividade (% favorável) esperado
+      atencaoAbaixo: 60,          // dimensão abaixo de N% favorável = ponto de atenção do gestor
+    },
   },
   academy: {
     areas: ["Integração institucional", "Pedagógico", "Atendimento e relacionamento", "Segurança e saúde", "Sistemas e processos", "Liderança", "Desenvolvimento pessoal"],
     alertaVencimentoDias: 60,
+    reacaoMinima: 3,              // v30 · avaliações de reação necessárias para mostrar a nota de um treinamento
+  },
+  // v30 · igualdade salarial entre mulheres e homens (Lei 14.611/2023 · CLT art. 461) e diversidade
+  igualdade: {
+    grupoMinimo: 3,               // mulheres E homens no mesmo cargo para comparar a remuneração (abaixo disso: “grupo pequeno”)
+    limiteDiferencaPct: 5,        // diferença acima de N% no mesmo cargo e nível pede explicação por critério objetivo
+    empregadosObrigatorio: 100,   // CNPJ com 100+ empregados publica o relatório de transparência salarial (março e setembro)
+    familiasLideranca: ["GESTAO", "COORDENACAO"] as string[], // famílias de cargo que contam como liderança (além de quem tem equipe direta)
+  },
+  // v30 · benefícios e remuneração total (estimativas: o cálculo oficial da folha é do contador)
+  beneficios: {
+    tipos: { VT: "Vale-transporte", VA: "Vale-alimentação", VR: "Vale-refeição", SAUDE: "Plano de saúde", ODONTO: "Plano odontológico", VIDA: "Seguro de vida", BOLSA_DEPENDENTE: "Bolsa de estudos para filho(a)", CRECHE: "Auxílio-creche", CESTA: "Cesta básica", OUTRO: "Outro" } as Record<string, string>,
+    vtDescontoMaxPct: 6,          // desconto máximo do VT sobre o salário-base (Lei 7.418/1985)
+    fgtsPct: 8,                   // FGTS sobre remuneração, 13º e férias (estimativa da remuneração total)
   },
   analytics: {
     // pesos do People Health Score (parte de 100; cada indicador fora da meta desconta até o peso)
@@ -798,6 +903,13 @@ export const DEFAULT_SETTINGS = {
       slaVagaDias: 30,            // vaga aberta há mais de N dias sem preencher = atraso (quando não há prazo)
       retencaoDias: 90,           // contratado que sai em até N dias conta como "não ficou"
     },
+    // v30 · avaliadores, proposta, qualidade da contratação, saúde das vagas e página pública
+    avaliacaoPrazoDias: 3,        // avaliador convidado tem N dias para enviar as notas
+    motivosRecusa: ["Salário ou benefícios", "Aceitou outra proposta", "Distância ou deslocamento", "Horário ou jornada", "Desistência pessoal", "Outro"] as string[],
+    satisfacaoGestorDias: 90,     // N dias depois da admissão, o gestor diz como está a contratação
+    minimoExperiencia: 5,         // respostas mínimas para mostrar a experiência do candidato (anônima)
+    candidatosPorVaga: 3,         // vaga saudável: pelo menos N candidaturas ativas por posição
+    paginaPublica: { ativa: false, titulo: "Trabalhe no Colégio Status", texto: "Conheça as vagas abertas nas nossas unidades. A candidatura é simples: conte um pouco da sua trajetória e acompanhe pelo link que você vai receber.", limitePorHora: 5 },
   },
   governanca: {
     areas: ["Atendimento e Comercial", "Matrículas e Secretaria", "Financeiro", "Pedagógico", "Pessoas e RH", "Operações e Infraestrutura", "Comunicação e Marketing", "Direção e Governança"],
@@ -1327,6 +1439,12 @@ export async function seedMatriculas() {
 
 // Chaves estrangeiras (integridade referencial). Aplicadas de forma idempotente; RESTRICT protege contra apagar o que ainda é referenciado.
 const FKS: [string, string, string, string][] = [
+  // v30 · ficha completa, recrutamento, Academy e benefícios (o histórico acompanha a ficha; o que é da vaga acompanha a vaga)
+  ["employee_moves", "employee_id", "employees", "CASCADE"], ["employee_qualifications", "employee_id", "employees", "CASCADE"], ["employee_items", "employee_id", "employees", "CASCADE"], ["employee_items", "asset_id", "assets", "SET NULL"],
+  ["pay_transparency_reports", "company_id", "companies", "CASCADE"], ["interview_feedback", "application_id", "applications", "CASCADE"], ["interview_feedback", "avaliador_user_id", "users", "CASCADE"],
+  ["hire_feedback", "employee_id", "employees", "CASCADE"], ["training_enrollments", "course_id", "courses", "CASCADE"], ["training_enrollments", "employee_id", "employees", "CASCADE"],
+  ["training_enrollments", "session_id", "training_sessions", "SET NULL"], ["training_feedback", "course_id", "courses", "CASCADE"], ["training_feedback", "employee_id", "employees", "CASCADE"], ["benefit_enrollments", "plan_id", "benefit_plans", "RESTRICT"], ["benefit_enrollments", "employee_id", "employees", "CASCADE"],
+  ["benefit_enrollments", "student_id", "students", "SET NULL"], ["custom_reports", "dono_user_id", "users", "CASCADE"], ["perf_goals", "objective_id", "objectives", "SET NULL"], ["perf_goals", "key_result_id", "key_results", "SET NULL"],
   // v28 · plano de contas e centros de custo: conta com lançamento não some (RESTRICT); a decisão de higienização acompanha o lançamento
   ["chart_accounts", "pai_id", "chart_accounts", "RESTRICT"], ["cash_entries", "conta_id", "chart_accounts", "RESTRICT"], ["cash_entries", "cost_center_id", "cost_centers", "RESTRICT"],
   ["payables", "conta_id", "chart_accounts", "RESTRICT"], ["payables", "cost_center_id", "cost_centers", "RESTRICT"], ["cost_centers", "unit_id", "units", "RESTRICT"], ["cost_centers", "responsavel_user_id", "users", "SET NULL"],
@@ -1443,7 +1561,79 @@ export async function seedBase(adminPassword: string) {
   if (u === 0) {
     const hash = await bcrypt.hash(adminPassword, 10);
     await sql`INSERT INTO users (email, nome, senha_hash, role) VALUES ('rh@colegiostatus', 'RH Colégio Status', ${hash}, 'RH')`;
-    log.push("Usuário inicial: rh@colegiostatus (perfil RH). Troque a senha no primeiro acesso.");
+    log.push("Usuário inicial: rh@colegiostatus (conta sem ficha, atuação RH). Troque a senha no primeiro acesso.");
   }
+  log.push(...(await seedAcessoV29()));
+  log.push(...(await seedV30()));
   return log;
+}
+
+/**
+ * v30 · uma vez por banco: o histórico funcional começa com as admissões, os desligamentos e as promoções já registradas no histórico
+ * salarial; e as telas novas entram nos cargos que têm lista de telas personalizada — o quem é quem para todos, a composição da equipe
+ * para quem já via o People Analytics e a igualdade salarial para quem já via Cargos e salários.
+ */
+export async function seedV30(): Promise<string[]> {
+  const log: string[] = [];
+  try {
+    const { garantirHistoricoBase } = await import("../lib/pessoas-v30"); await garantirHistoricoBase();
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v30_historico'`;
+    if (!feito) {
+      const r = await sql`INSERT INTO employee_moves (employee_id, data, tipo, motivo, obs, origem, user_nome) SELECT h.employee_id, h.data, 'PROMOCAO', 'Registrada no histórico salarial', h.obs, 'SALARIO', 'atualização v30' FROM salary_history h WHERE h.motivo='PROMOCAO' AND NOT EXISTS (SELECT 1 FROM employee_moves m WHERE m.employee_id=h.employee_id AND m.tipo='PROMOCAO' AND m.data=h.data)`;
+      await sql`INSERT INTO settings (key, value) VALUES ('v30_historico', ${JSON.stringify({ em: new Date().toISOString(), promocoes: r.count })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+      log.push(`Histórico funcional (v30): admissões e desligamentos registrados; ${r.count} promoção(ões) trazida(s) do histórico salarial.`);
+    }
+  } catch (e) { log.push(`Histórico funcional (v30) pendente: ${e instanceof Error ? e.message : String(e)}`); }
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v30_telas'`; if (feito) return log;
+    const NOVAS_PARA_TODOS = new Set(["COLABORADOR", "COMERCIAL", "FINANCEIRO", "OPERACOES"]);
+    const ajustar = (atuacao: string | undefined, telas: string[]) => { const t = new Set(telas); if (atuacao && NOVAS_PARA_TODOS.has(atuacao)) t.add("/organograma"); if (t.has("/analytics")) t.add("/analytics/composicao"); if (t.has("/cargos-salarios")) t.add("/analytics/igualdade"); if (t.has("/folha/arquivo")) t.add("/beneficios"); if (t.has("/relatorios/biblioteca")) t.add("/relatorios/montar"); if (t.has("/operacoes/ativos")) t.add("/operacoes/itens"); return [...t]; };
+    let n = 0;
+    for (const c of await sql<{ id: number; acesso: { atuacao?: string; telas?: string[] | null } | null }[]>`SELECT id, acesso FROM positions WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) {
+      const novo = ajustar(c.acesso?.atuacao, c.acesso!.telas!); if (novo.length !== c.acesso!.telas!.length) { await sql`UPDATE positions SET acesso=jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${c.id}`; n++; }
+    }
+    for (const u of await sql<{ id: number; role: string; acesso: { atuacao?: string; telas?: string[] | null } | null }[]>`SELECT id, role, acesso FROM users WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) {
+      const novo = ajustar(u.acesso?.atuacao ?? u.role, u.acesso!.telas!); if (novo.length !== u.acesso!.telas!.length) { await sql`UPDATE users SET acesso=jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${u.id}`; n++; }
+    }
+    await sql`INSERT INTO settings (key, value) VALUES ('v30_telas', ${JSON.stringify({ em: new Date().toISOString(), ajustados: n })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+    if (n) log.push(`Telas novas da v30 incluídas em ${n} acesso(s) com lista personalizada.`);
+  } catch (e) { log.push(`Telas da v30 pendentes: ${e instanceof Error ? e.message : String(e)}`); }
+  return log;
+}
+
+/**
+ * v29 · acesso pelo cargo (uma vez por banco). Cada cargo recebe a atuação mais usada pelas pessoas dele que já tinham acesso
+ * (ou, sem ninguém, a sugestão pelo nome do cargo). Quem tinha um perfil diferente do cargo continua exatamente como estava,
+ * como exceção individual com motivo — nada muda para ninguém no dia da atualização; o RH revisa a lista em Acesso por cargo.
+ */
+export async function seedAcessoV29(): Promise<string[]> {
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='acesso_v29'`; if (feito) return [];
+    const { atuacaoSugerida, sincronizarAcessos, ATUACAO } = await import("../lib/acesso");
+    const cargos = await sql<{ id: number; nome: string; familia: string | null; acesso: unknown }[]>`SELECT id, nome, familia, acesso FROM positions ORDER BY id`;
+    const vinc = await sql<{ id: number; role: string; unit_id: number | null; position_id: number | null; e_unit: number }[]>`SELECT u.id, u.role, u.unit_id, e.position_id, e.unit_id AS e_unit FROM users u JOIN employees e ON e.id=u.employee_id`;
+    const hojeIso = new Date().toISOString().slice(0, 10); let nCargos = 0;
+    const atuacaoDo = new Map<number, string>();
+    for (const c of cargos) {
+      const existente = (c.acesso as { atuacao?: string } | null)?.atuacao;
+      if (existente && existente in ATUACAO) { atuacaoDo.set(c.id, existente); continue; }
+      const conta = new Map<string, number>(); for (const v of vinc) if (v.position_id === c.id && v.role in ATUACAO) conta.set(v.role, (conta.get(v.role) ?? 0) + 1);
+      const maisUsada = [...conta.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      const atuacao = (maisUsada ?? atuacaoSugerida(c.nome, c.familia)) as keyof typeof ATUACAO;
+      await sql`UPDATE positions SET acesso=${JSON.stringify({ atuacao, telas: null, aprova: null, atualizadoEm: hojeIso, atualizadoPor: maisUsada ? "atualização v29 (atuação de quem já tinha acesso)" : "atualização v29 (sugestão pelo nome do cargo)", sugerida: !maisUsada })}::jsonb WHERE id=${c.id}`;
+      atuacaoDo.set(c.id, atuacao); nCargos++;
+    }
+    let nExc = 0;
+    for (const v of vinc) {
+      const doCargo = v.position_id ? atuacaoDo.get(v.position_id) ?? "COLABORADOR" : "COLABORADOR";
+      if (!(v.role in ATUACAO) || v.role === doCargo) continue;
+      const unitId = ATUACAO[v.role as keyof typeof ATUACAO].alcance === "UNIDADE" ? v.unit_id ?? v.e_unit : null;
+      await sql`UPDATE users SET acesso=${JSON.stringify({ atuacao: v.role, telas: null, aprova: null, unitId, motivo: `Acesso mantido da versão anterior (perfil ${v.role}); o cargo da ficha dá ${doCargo}. Revise: ajuste o cargo, mantenha a exceção ou volte ao acesso do cargo.`, em: hojeIso, por: "atualização v29" })}::jsonb WHERE id=${v.id} AND acesso IS NULL`;
+      nExc++;
+    }
+    const r = await sincronizarAcessos();
+    await sql`INSERT INTO settings (key, value) VALUES ('acesso_v29', ${JSON.stringify({ em: new Date().toISOString(), cargos: nCargos, excecoes: nExc, sincronizados: r.mudaram })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+    await sql`INSERT INTO audit_log (user_id, user_nome, acao, entidade, entidade_id, antes, depois) VALUES (NULL, 'sistema', 'acesso pelo cargo (v29): cargos e exceções iniciais', 'positions', NULL, NULL, ${JSON.stringify({ cargos: nCargos, excecoes: nExc })}::jsonb)`;
+    return [`Acesso pelo cargo (v29): ${nCargos} cargo(s) com atuação definida; ${nExc} acesso(s) mantido(s) como exceção para revisão.`];
+  } catch (e) { return [`Acesso pelo cargo (v29) pendente: ${e instanceof Error ? e.message : String(e)}`]; }
 }

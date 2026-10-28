@@ -6,9 +6,10 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, erroMsg, getSettings, hoje, addDays, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { reservarVaga, confirmarMatricula, cancelarMatricula, transferir, entrarNaFila } from "@/lib/matriculas";
+import { comMensagem } from "@/lib/redirecionar";
 
 const back = (fd: FormData, fb: string) => str(fd, "voltar") || fb;
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 
 // ---------- Alunos ----------
 function lerAluno(fd: FormData) {
@@ -106,7 +107,7 @@ export async function transferirAcao(fd: FormData) {
 export async function prorrogar(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/matriculas/reservas"); const id = Number(fd.get("id"));
   try {
-    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.matricula), "Prorrogar reserva exige o perfil que confirma matrículas.");
+    const cfg = await getSettings(); assert(can.aprovar(s, "matricula"), "Prorrogar reserva exige a aprovação de confirmar matrículas (marcada no cargo).");
     const dias = int(fd, "dias") ?? cfg.matriculas.reservaDias;
     const [e] = await sql<{ id: number; status: string; reserva_ate: string; unit_id: number }[]>`SELECT e.id, e.status, e.reserva_ate::text, c.unit_id FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.id=${id}`;
     if (!e || e.status !== "RESERVADA") throw new Error("Só reservas ativas podem ser prorrogadas.");

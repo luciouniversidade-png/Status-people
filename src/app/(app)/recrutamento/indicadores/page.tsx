@@ -6,6 +6,7 @@ import { ETAPA_LABEL, ORIGEM_CAND } from "@/lib/talento";
 import { indicadoresRecrutamento, qualidadeContratacao } from "@/lib/recrutamento-indicadores";
 import { DECISAO_LABEL } from "@/lib/recrutamento-fit";
 import { redirect } from "next/navigation";
+import { IndicadoresV30 } from "./_v30";
 
 export const dynamic = "force-dynamic";
 const pct = (v: number | null | undefined) => v == null ? "—" : `${Math.round(v * 100)}%`;
@@ -31,7 +32,7 @@ export default async function IndicadoresRecrutamento({ searchParams }: { search
       </div>
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Mês a mês">
-          <div className="flex items-end gap-2 overflow-x-auto pb-1" style={{ minHeight: 150 }}>{R.mensal.map(m => <div key={m.mes} className="flex min-w-[46px] flex-1 flex-col items-center gap-1 text-[10px]">
+          <div className="flex items-end gap-1 overflow-x-auto pb-1" style={{ minHeight: 150 }}>{R.mensal.map(m => <div key={m.mes} className="flex min-w-[32px] flex-1 flex-col items-center gap-1 text-[10px]">
             <div className="flex h-[110px] items-end gap-0.5"><div title={`${m.candidaturas} candidaturas`} className="w-3 rounded-t bg-acao/70" style={{ height: `${(m.candidaturas / maxM) * 100}%` }} /><div title={`${m.contratacoes} contratações`} className="w-3 rounded-t bg-ok" style={{ height: `${(m.contratacoes * 4 / maxM) * 100}%` }} /></div>
             <div className="text-slate-500">{MES[Number(m.mes.slice(5)) - 1]}/{m.mes.slice(2, 4)}</div><div className="text-slate-700">{m.candidaturas} · <b className="text-ok">{m.contratacoes}</b></div></div>)}</div>
           <p className="mt-1 text-[11px] text-slate-500"><span className="text-acao">■</span> candidaturas · <span className="text-ok">■</span> contratações (escala ×4). Vagas abertas no período: {R.mensal.reduce((x, m) => x + m.abertas, 0)} · preenchidas: {R.mensal.reduce((x, m) => x + m.preenchidas, 0)}.</p>
@@ -45,13 +46,14 @@ export default async function IndicadoresRecrutamento({ searchParams }: { search
         <Table head={["Vaga", "Unidade", "Aberta há", "Prazo", "Situação", "Em processo", "Sem movimento", "Previsão de preenchimento"]} empty="Nenhuma vaga aberta.">{R.abertas.map(v => <tr key={v.id}><Td><Link className="text-acao" href={`/recrutamento/vagas/${v.id}`}>{v.titulo}</Link></Td><Td className="text-xs">{v.unidade}</Td><Td>{v.dias} d</Td><Td className="text-xs">{fmtData(v.limite)}{v.prazo ? "" : <span className="text-slate-400"> (padrão)</span>}</Td><Td>{v.atrasada ? <span className="font-medium text-erro">fora do prazo</span> : <span className="text-ok">no prazo</span>}</Td><Td>{v.ativos}{v.ativos === 0 && <span className="text-xs text-aviso"> · sem candidato</span>}</Td><Td className={v.parada > 7 ? "text-aviso" : ""}>{v.parada} d</Td><Td className="text-xs">{fmtData(v.previsao)}</Td></tr>)}</Table>
         <p className="mt-1 text-[11px] text-slate-500">Previsão = abertura + tempo médio de preenchimento das vagas fechadas no período (sem histórico, {cfg.recrutamento.indicadores.slaVagaDias} dias). Vaga sem prazo usa {cfg.recrutamento.indicadores.slaVagaDias} dias como referência.</p>
       </Card>
+      <IndicadoresV30 u={u} meses={meses} mensal={R.mensal} cfg={{ indicadores: cfg.recrutamento.indicadores, candidatosPorVaga: Number(cfg.recrutamento.candidatosPorVaga) || 3, minimoExperiencia: Math.max(3, Number(cfg.recrutamento.minimoExperiencia) || 5), satisfacaoGestorDias: Number(cfg.recrutamento.satisfacaoGestorDias) || 90 }} />
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card title="Candidaturas paradas além do prazo">
           <Table head={["Candidato", "Vaga", "Etapa", "Parado há"]} empty="Nenhuma candidatura parada. 👍">{R.parados.slice(0, 15).map(p => <tr key={p.id}><Td><Link className="text-acao" href={`/recrutamento/candidatos/${p.candidate_id}`}>{p.nome}</Link></Td><Td className="text-xs"><Link className="text-acao" href={`/recrutamento/vagas/${p.requisition_id}`}>{p.vaga}</Link></Td><Td className="text-xs">{ETAPA_LABEL[p.etapa] ?? p.etapa}</Td><Td className="text-aviso">{p.dias} d</Td></tr>)}</Table>
           {R.parados.length > 15 && <p className="mt-1 text-xs text-slate-500">+ {R.parados.length - 15} outras.</p>}
         </Card>
         <Card title="De onde vêm as boas contratações">
-          <Table head={["Origem", "Candidaturas", "Contratados", "Taxa", "Saíram em até " + cfg.recrutamento.indicadores.retencaoDias + " d"]} empty="Sem candidaturas no período.">{R.origens.map(o => <tr key={o.origem}><Td>{ORIGEM_CAND[o.origem] ?? o.origem}</Td><Td>{o.candidaturas}</Td><Td>{o.contratados}</Td><Td>{o.candidaturas ? pct(o.contratados / o.candidaturas) : "—"}</Td><Td className={o.naoFicaram ? "text-erro" : ""}>{o.naoFicaram}</Td></tr>)}</Table>
+          <Table head={["Origem", "Candidaturas", "Contratados", "Taxa", "Saíram ≤ " + cfg.recrutamento.indicadores.retencaoDias + " d"]} empty="Sem candidaturas no período.">{R.origens.map(o => <tr key={o.origem}><Td>{ORIGEM_CAND[o.origem] ?? o.origem}</Td><Td>{o.candidaturas}</Td><Td>{o.contratados}</Td><Td>{o.candidaturas ? pct(o.contratados / o.candidaturas) : "—"}</Td><Td className={o.naoFicaram ? "text-erro" : ""}>{o.naoFicaram}</Td></tr>)}</Table>
         </Card>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">

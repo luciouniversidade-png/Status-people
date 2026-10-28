@@ -9,7 +9,7 @@ const go = (k: "ok" | "erro", msg: string) => `/eu?${k}=${encodeURIComponent(msg
 export async function atualizarContato(fd: FormData) {
   const s = await requireSession();
   try {
-    assert(!!s.employeeId, "Seu acesso não está ligado a uma ficha de colaborador."); assert(s.role !== "LEITURA", "Perfil somente leitura.");
+    assert(!!s.employeeId, "Seu acesso não está ligado a uma ficha de colaborador."); assert(s.role !== "LEITURA", "Acesso somente leitura.");
     const telefone = strOrNull(fd, "telefone"), email = strOrNull(fd, "email"), endereco = strOrNull(fd, "endereco"), emerg = strOrNull(fd, "contatoEmergencia");
     if (telefone) assert(telefone.replace(/\D/g, "").length >= 10 && telefone.replace(/\D/g, "").length <= 13, "Telefone: informe DDD e número.");
     if (email) assert(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email), "E-mail inválido.");

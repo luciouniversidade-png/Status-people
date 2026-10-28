@@ -1,7 +1,7 @@
 import Link from "@/components/Link";
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
-import { requireSession, scopeUnit } from "@/lib/auth";
+import { requireSession, scopeUnit, EQUIPE_FICHAS } from "@/lib/auth";
 import { Page, Card, Flash, Stat, Table, Td, Btn, Field, Select, Input } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { Colunas, Rosca, Situacao, COR } from "@/components/graficos";
@@ -41,7 +41,7 @@ export default async function Quadro({ searchParams }: { searchParams: Promise<R
       <Card title={`${filtro ? STATUS_POSICAO[filtro].rotulo : "Todas as posições"} (${lista.length})`} actions={filtro ? <Link href="/quadro" className="text-xs text-acao">ver todas</Link> : undefined}>
         <Table head={["Cargo · área", "Unidade", "Situação", "Ocupante", "Jornada · FTE", "Vaga", ""]} empty="Nenhuma posição.">
           {lista.map(p => <tr key={p.id}><Td><b>{p.cargo}</b><div className="text-[11px] text-slate-500">{p.area}</div></Td><Td className="text-xs">{p.unidade}</Td><Td><Situacao tom={STATUS_POSICAO[p.status].tom} texto={STATUS_POSICAO[p.status].rotulo} /></Td>
-            <Td className="text-xs">{p.ocupante && p.situacao_ocupante !== "DESLIGADO" ? <Link href={`/colaboradores/${p.employee_id}`} className="text-acao">{p.ocupante}</Link> : <span className="text-slate-400">—</span>}{p.desligamento && p.situacao_ocupante !== "DESLIGADO" ? <div className="text-aviso">sai {fmtData(p.desligamento)}</div> : null}</Td>
+            <Td className="text-xs">{p.ocupante && p.situacao_ocupante !== "DESLIGADO" ? (EQUIPE_FICHAS.includes(s.role) ? <Link href={`/colaboradores/${p.employee_id}`} className="text-acao">{p.ocupante}</Link> : <span>{p.ocupante}</span>) : <span className="text-slate-400">—</span>}{p.desligamento && p.situacao_ocupante !== "DESLIGADO" ? <div className="text-aviso">sai {fmtData(p.desligamento)}</div> : null}</Td>
             <Td className="whitespace-nowrap text-xs tabular-nums">{fmtMin(p.jornada_min_dia).replace("+", "")}/dia · {fmtNumero(p.fte, 2)}</Td>
             <Td className="text-xs">{p.vaga_id ? <Link href={`/recrutamento/vagas/${p.vaga_id}`} className="text-acao">#{p.vaga_id} · {p.vaga_status === "ABERTA" ? "em seleção" : "no gate"}</Link> : (p.status === "VAGA" || p.status === "VAGA_EM_BREVE") && p.autorizada ? <Link href={`/recrutamento?slot=${p.id}#gate`} className="font-medium text-acao">abrir vaga (gate)</Link> : "—"}</Td>
             <Td>{gestao && <Modal label="Editar" kind="link" title={`${p.cargo} · ${p.unidade}`}><div className="space-y-3">

@@ -1,3 +1,4 @@
+import { quemAprovaTexto } from "./acesso";
 import { sql } from "@/db";
 import { hoje, addDays, getSettings } from "./utils";
 import type { Session } from "./auth";
@@ -46,12 +47,12 @@ export async function reservarVaga(s: Session, inp: ReservaInput) {
     let excecao: string | null = null;
     if (ocupadas >= c.vagas) {
       if (!inp.excecao) throw new Error(`Turma ${c.nome} está lotada (${ocupadas}/${c.vagas}). Coloque o aluno na lista de espera ou registre uma exceção autorizada.`);
-      if (!can.aprovar(s, cfg.alcadas.excecaoCapacidade)) throw new Error("Matrícula acima da capacidade exige autorização de: " + cfg.alcadas.excecaoCapacidade.join(", ") + ".");
+      if (!can.aprovar(s, "excecaoCapacidade")) throw new Error("Matrícula acima da capacidade exige autorização de: " + (await quemAprovaTexto("excecaoCapacidade")) + ".");
       excecao = inp.excecao;
     }
     const confirmar = !!inp.confirmarDireto;
     if (confirmar) {
-      if (!can.aprovar(s, cfg.alcadas.matricula)) throw new Error("Seu perfil não confirma matrículas.");
+      if (!can.aprovar(s, "matricula")) throw new Error("Seu acesso não confirma matrículas.");
       if (!inp.contrato || !inp.financeiro) throw new Error("Matrícula só é confirmada com contrato assinado e financeiro OK.");
     }
     const [e] = await tx<{ id: number }[]>`INSERT INTO enrollments (student_id, class_id, ano, modalidade, status, reserva_ate, contrato_assinado, financeiro_ok, confirmada_em, excecao, responsavel_user_id, obs)
@@ -64,7 +65,7 @@ export async function reservarVaga(s: Session, inp: ReservaInput) {
 
 export async function confirmarMatricula(s: Session, enrollmentId: number, contrato: boolean, financeiro: boolean) {
   const cfg = await getSettings(); const h = hoje();
-  if (!can.aprovar(s, cfg.alcadas.matricula)) throw new Error("Seu perfil não confirma matrículas.");
+  if (!can.aprovar(s, "matricula")) throw new Error("Seu acesso não confirma matrículas.");
   if (!contrato || !financeiro) throw new Error("Matrícula só é confirmada com contrato assinado e financeiro OK.");
   return sql.begin(async tx => {
     const [e] = await tx<{ id: number; status: string; reserva_ate: string | null; class_id: number; unit_id: number; nome: string }[]>`SELECT e.id, e.status, e.reserva_ate::text, e.class_id, c.unit_id, c.nome FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.id=${enrollmentId} FOR UPDATE OF e`;
@@ -83,7 +84,7 @@ export async function cancelarMatricula(s: Session, enrollmentId: number, motivo
     const [e] = await tx<{ id: number; status: string; unit_id: number; class_id: number; grade_id: number | null; ano: number; modalidade: string; nome: string }[]>`SELECT e.id, e.status, c.unit_id, e.class_id, c.grade_id, c.ano, c.modalidade, c.nome FROM enrollments e JOIN classes c ON c.id=e.class_id WHERE e.id=${enrollmentId} FOR UPDATE OF e`;
     if (!e) throw new Error("Registro não encontrado.");
     const u = scopeUnit(s); if (u !== null && u !== e.unit_id) throw new Error("Sem acesso a esta unidade.");
-    if (e.status === "CONFIRMADA" && !can.aprovar(s, cfg.alcadas.matricula)) throw new Error("Cancelar uma matrícula confirmada exige o mesmo perfil que a confirma.");
+    if (e.status === "CONFIRMADA" && !can.aprovar(s, "matricula")) throw new Error("Cancelar uma matrícula confirmada exige a mesma aprovação de quem confirma matrículas.");
     if (!["RESERVADA", "CONFIRMADA"].includes(e.status)) throw new Error("Este registro já está encerrado.");
     if (!motivo) throw new Error("Informe o motivo (padronizado).");
     await tx`UPDATE enrollments SET status='CANCELADA', motivo_cancelamento=${motivo}, updated_at=now() WHERE id=${e.id}`;
@@ -115,7 +116,7 @@ export async function transferir(s: Session, enrollmentId: number, novaClassId: 
     let exc: string | null = null;
     if (ocup >= c.vagas) {
       if (!excecao) throw new Error(`Turma ${c.nome} está lotada (${ocup}/${c.vagas}).`);
-      if (!can.aprovar(s, cfg.alcadas.excecaoCapacidade)) throw new Error("Transferência acima da capacidade exige autorização de: " + cfg.alcadas.excecaoCapacidade.join(", ") + ".");
+      if (!can.aprovar(s, "excecaoCapacidade")) throw new Error("Transferência acima da capacidade exige autorização de: " + (await quemAprovaTexto("excecaoCapacidade")) + ".");
       exc = excecao;
     }
     await tx`UPDATE enrollments SET status='TRANSFERIDA', updated_at=now() WHERE id=${e.id}`;

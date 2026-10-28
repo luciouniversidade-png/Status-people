@@ -21,7 +21,7 @@ export default async function Pop({ params, searchParams }: { params: Promise<{ 
     sql<{ nome: string; at: Date; versao: number }[]>`SELECT u.nome, a.at, a.versao FROM procedure_acks a JOIN users u ON u.id=a.user_id WHERE a.procedure_id=${pid} AND a.versao=${p.versao} ORDER BY a.at DESC`,
     usuariosGestao(), db.select().from(schema.units), p.ownerUserId ? db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, p.ownerUserId)) : Promise.resolve([undefined]),
   ]);
-  const podeEditar = can.editar(s) || p.ownerUserId === s.id; const podePublicar = can.aprovar(s, cfg.alcadas.pops); const jaDeu = (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM procedure_acks WHERE procedure_id=${pid} AND versao=${p.versao} AND user_id=${s.id}`)[0].n > 0;
+  const podeEditar = can.editar(s) || p.ownerUserId === s.id; const podePublicar = can.aprovar(s, "pops"); const jaDeu = (await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM procedure_acks WHERE procedure_id=${pid} AND versao=${p.versao} AND user_id=${s.id}`)[0].n > 0;
   const passos = (p.passos ?? "").split("\n").map(x => x.trim()).filter(Boolean);
   return (
     <Page title={`${p.codigo} — ${p.titulo}`} sub={<span className="flex flex-wrap items-center gap-2"><Badge v={p.status === "VIGENTE" ? "APROVADA" : p.status === "EM_REVISAO" ? "PENDENTE" : p.status === "OBSOLETO" ? "CANCELADA" : "EM_AQUISICAO"} label={POP_STATUS[p.status]} /> v{p.versao} · {p.area} · dono: {owner?.nome ?? <span className="text-aviso">não definido</span>}{p.publicadoEm && ` · publicado ${fmtDataHora(p.publicadoEm)}`}{p.revisarEm && ` · revisar em ${fmtData(p.revisarEm)}`} · <Link className="text-acao" href="/governanca/pops">biblioteca</Link></span>}

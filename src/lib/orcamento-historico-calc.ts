@@ -143,14 +143,16 @@ export function detectarSinais(movs: MovHist[], o: OpcoesSinais): { flags: Map<n
     else if (m.natureza === "EXTRAORDINARIA") marca(m, { sinal: "EXTRAORDINARIO", sugestao: "FORA", motivo: `Título extraordinário em contas a pagar${parc}: não se repete como custo do dia a dia`, par: null, mediana: null });
   }
   // fora do padrão: muito acima da mediana da conta na base e sem igual no mesmo mês do ano anterior. Sem conta, compara dentro da
-  // mesma contraparte (a categoria sem conta mistura fornecedores). O ano anterior é olhado pela conta e pela contraparte — a
-  // classificação pode ter começado no meio do caminho.
-  const grupoPico = (m: MovHist) => m.conta_id ? chaveGrupo(m) : `${chaveGrupo(m)}|${normalizar(m.contraparte)}`;
+  // mesma contraparte (a categoria sem conta mistura fornecedores) e, sem contraparte, dentro do mesmo histórico do extrato
+  // (“LIQUIDACAO COBRANCA” não é comparada com “PIX RECEBIDO”: o total do dia do boleto não é pico). O ano anterior é olhado pela
+  // conta e pela contraparte — a classificação pode ter começado no meio do caminho.
+  const historico = (t: string | null) => normalizar(t).replace(/[0-9]+/g, " ").split(/[^a-z]+/).filter(w => w.length >= 3).slice(0, 3).join(" ");
+  const grupoPico = (m: MovHist): string | null => { if (m.conta_id) return chaveGrupo(m); const cp = normalizar(m.contraparte); if (cp) return `${chaveGrupo(m)}|${cp}`; const h = historico(m.descricao); return h ? `${chaveGrupo(m)}|ds:${h}` : null; };
   const chavesAnt = (m: MovHist) => { const mm = m.data.slice(5, 7); const cp = normalizar(m.contraparte); return [`${chaveGrupo(m)}|${mm}`, ...(cp ? [`${m.unit_id}|cp|${m.categoria}|${cp}|${mm}`] : [])]; };
   const porGrupo = new Map<string, MovHist[]>(); const anterior = new Map<string, number>();
   for (const m of ord) {
     if (m.tipo === "TRANSFERENCIA") continue;
-    if (naBase(m)) { if (!(flags.get(m.id)?.sugestao === "FORA")) { const g = grupoPico(m); porGrupo.set(g, [...(porGrupo.get(g) ?? []), m]); } }
+    if (naBase(m)) { if (!(flags.get(m.id)?.sugestao === "FORA")) { const g = grupoPico(m); if (g) porGrupo.set(g, [...(porGrupo.get(g) ?? []), m]); } }
     else if (m.data < o.iniBase) for (const k of chavesAnt(m)) anterior.set(k, (anterior.get(k) ?? 0) + m.valor);
   }
   const sazonal = (m: MovHist) => chavesAnt(m).some(k => (anterior.get(k) ?? 0) >= 0.5 * m.valor); // o mesmo mês do ano anterior teve valor parecido

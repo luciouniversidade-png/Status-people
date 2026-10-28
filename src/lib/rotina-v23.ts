@@ -1,3 +1,4 @@
+import { sessaoDoUsuario } from "./acesso";
 import { sql } from "@/db";
 import { rotinaInsights } from "./insights-rotina";
 import { minhasPendencias, resumoPendencias, situacaoPend } from "./pendencias";
@@ -18,7 +19,8 @@ export async function lembretePendencias(h: string, orcamentoMs = 20000) {
     WHERE u.ativo AND u.role <> 'LEITURA' AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.user_id=u.id AND n.chave=${`pend:${h}`} ) ORDER BY u.id`;
   for (const u of users) {
     if (Date.now() - t0 > orcamentoMs) { r.interrompido = true; break; }
-    const s: Session = { id: u.id, nome: u.nome, email: u.email, role: u.role, unitId: u.unit_id, employeeId: u.employee_id };
+    // v29: a mesma sessão da tela (cargo, telas e aprovações), não só a atuação gravada
+    const s: Session = (await sessaoDoUsuario(u.id)) ?? { id: u.id, nome: u.nome, email: u.email, role: u.role, unitId: u.unit_id, employeeId: u.employee_id };
     const { itens } = await minhasPendencias(s, { semTreinamentos: true }); r.pessoas++;
     const R = resumoPendencias(itens, h); if (!R.vencidas && !R.hoje) continue;
     const urgentes = itens.filter(i => ["VENCIDA", "HOJE"].includes(situacaoPend(i.prazo, h)));

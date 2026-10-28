@@ -5,8 +5,9 @@ import { requireSession, assert, scopeUnit, can, type Session } from "@/lib/auth
 import { audit, str, strOrNull, int, hoje, addMonths, getSettings, fmtData, caminhoSeguro } from "@/lib/utils";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { VISITA_TIPO, FUNCAO_BRIGADA, GRAVIDADE, GESTAO_SEG, conferirRetirada, gruposChamada, podePortaria, normNome } from "@/lib/seguranca";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const back = (fd: FormData, fb: string) => caminhoSeguro(str(fd, "voltar"), fb);
 const naUnidade = (s: Session, unitId: number) => { const u = scopeUnit(s); if (u !== null && u !== unitId) throw new Error("Sem acesso a esta unidade."); };
 const horaAgora = () => new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Campo_Grande", hour: "2-digit", minute: "2-digit" });
@@ -16,7 +17,7 @@ const gestaoUnidade = async (unitId: number) => [...await usuariosPorPerfil(["DI
 export async function registrarVisita(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/operacoes/seguranca");
   try {
-    assert(await podePortaria(s), "Seu perfil não opera a portaria.");
+    assert(await podePortaria(s), "Seu acesso não opera a portaria.");
     const unitId = int(fd, "unitId") ?? scopeUnit(s) ?? 0; naUnidade(s, unitId); const [u] = await sql`SELECT 1 FROM units WHERE id=${unitId}`; if (!u) throw new Error("Escolha a unidade.");
     const tipo = str(fd, "tipo"); const nome = str(fd, "nome"); if (!VISITA_TIPO[tipo]) throw new Error("Escolha o tipo."); if (nome.length < 3) throw new Error("Informe o nome de quem entra.");
     const [v] = await sql<{ id: number }[]>`INSERT INTO visits (unit_id, tipo, nome, documento, empresa, motivo, visitado, cracha, registrado_por) VALUES (${unitId}, ${tipo}, ${nome}, ${strOrNull(fd, "documento")}, ${strOrNull(fd, "empresa")}, ${strOrNull(fd, "motivo")}, ${strOrNull(fd, "visitado")}, ${strOrNull(fd, "cracha")}, ${s.id}) RETURNING id`;
@@ -27,7 +28,7 @@ export async function registrarVisita(fd: FormData) {
 export async function registrarSaidaVisita(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/operacoes/seguranca");
   try {
-    assert(await podePortaria(s), "Seu perfil não opera a portaria.");
+    assert(await podePortaria(s), "Seu acesso não opera a portaria.");
     const [v] = await sql<{ id: number; unit_id: number; saida: string | null }[]>`SELECT id, unit_id, saida::text FROM visits WHERE id=${int(fd, "id") ?? 0}`; if (!v) throw new Error("Registro não encontrado."); naUnidade(s, v.unit_id); if (v.saida) throw new Error("Saída já registrada.");
     await sql`UPDATE visits SET saida=now(), saida_por=${s.id} WHERE id=${v.id}`;
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
@@ -65,7 +66,7 @@ export async function desativarAutorizacao(fd: FormData) {
 export async function registrarRetirada(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/operacoes/seguranca"); let msg = ""; let bloqueio = "";
   try {
-    assert(await podePortaria(s), "Seu perfil não opera a portaria.");
+    assert(await podePortaria(s), "Seu acesso não opera a portaria.");
     const [st] = await sql<{ id: number; nome: string; unit_atual_id: number | null; aluno_atual: boolean }[]>`SELECT id, nome, unit_atual_id, aluno_atual FROM students WHERE id=${int(fd, "studentId") ?? 0}`;
     if (!st || !st.aluno_atual || !st.unit_atual_id) throw new Error("Aluno não encontrado entre os alunos atuais."); naUnidade(s, st.unit_atual_id);
     const eventId = int(fd, "eventId");
@@ -122,7 +123,7 @@ export async function salvarBrigadista(fd: FormData) {
 export async function iniciarEmergencia(fd: FormData) {
   const s = await requireSession(); let id = 0;
   try {
-    assert(await podePortaria(s) || can.operacoes(s), "Seu perfil não inicia simulados ou emergências.");
+    assert(await podePortaria(s) || can.operacoes(s), "Seu acesso não inicia simulados ou emergências.");
     const cfg = await getSettings(); const unitId = int(fd, "unitId") ?? scopeUnit(s) ?? 0; naUnidade(s, unitId);
     const tipo = str(fd, "tipo") === "REAL" ? "REAL" : "SIMULADO"; const cenario = str(fd, "cenario"); if (!cenario) throw new Error("Escolha o cenário.");
     const [ab] = await sql`SELECT 1 FROM emergency_events WHERE unit_id=${unitId} AND status='EM_ANDAMENTO'`; if (ab) throw new Error("Já há um evento em andamento nesta unidade: encerre-o antes.");

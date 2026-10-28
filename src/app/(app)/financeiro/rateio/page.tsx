@@ -43,7 +43,7 @@ export default async function Rateio({ searchParams }: { searchParams: Promise<R
         <Stat label="Custo por aluno ao mês" value={r.rede.custoAlunoMes === null ? "—" : brl(r.rede.custoAlunoMes)} hint={`${r.rede.alunos.toLocaleString("pt-BR")} alunos atuais · ${r.meses} mês(es)`} />
       </div>
       <Card title={`Resultado por unidade — antes e depois do rateio (${periodoTxt})`} className="mb-4">
-        <Table head={["Unidade", "Receita", { label: "Custos da unidade", className: "hidden md:table-cell" }, "Antes do rateio", "Rateio", "Depois", { label: "Custo/aluno/mês", className: "hidden sm:table-cell" }]}>
+        <Table denso head={["Unidade", "Receita", { label: "Custos da unidade", className: "hidden md:table-cell" }, "Antes do rateio", "Rateio", "Depois", { label: "Custo/aluno/mês", className: "hidden sm:table-cell" }]}>
           {linhas.map(l => <tr key={l.unitId}><Td className="min-w-[8.5rem] font-medium"><span className="whitespace-nowrap">{l.nome}</span><div className="whitespace-nowrap text-[11px] text-slate-500">{l.alunos.toLocaleString("pt-BR")} alunos · margem {pct(l.margem)}</div></Td>
             <Td className="whitespace-nowrap tabular-nums">{brl0(l.receita)}</Td>
             <Td className="hidden whitespace-nowrap tabular-nums md:table-cell">{brl0(l.diretos + l.indiretos + l.naoClassificados)}<div className="text-[11px] text-slate-500">diretos {brl0(l.diretos)} · indiretos {brl0(l.indiretos)}</div>{l.naoClassificados ? <div className="text-[11px] text-aviso">sem conta {brl0(l.naoClassificados)}</div> : null}</Td>
@@ -58,8 +58,8 @@ export default async function Rateio({ searchParams }: { searchParams: Promise<R
         <Card title="Memória do rateio">
           <dl className="mb-2 space-y-1 text-sm"><div><dt className="text-xs text-slate-500">Regra vigente em {mesRef}</dt><dd>{r.regra ? <>{r.regra.nome} · desde {r.regra.desde.split("-").reverse().join("/")} · aprovada por {r.regra.aprovado_por ?? "—"}{r.regra.aprovado_em ? ` em ${fmtData(r.regra.aprovado_em.slice(0, 10))}` : ""}</> : <span className="text-aviso">nenhuma aprovada — provisória por alunos atuais</span>}</dd></div>
             <div><dt className="text-xs text-slate-500">Corporativo a ratear no período</dt><dd>{brl(r.corporativo)} <span className="text-xs text-slate-500">(centro CORP, todas as unidades pagadoras)</span></dd></div></dl>
-          <Table head={["Unidade", `Base (${ROTULO_BASE[r.base].toLowerCase()})`, "Participação", "Rateado"]}>
-            {r.linhas.filter(l => escopo === null || l.unitId === escopo).map(l => <tr key={l.unitId}><Td>{l.nome}</Td><Td className="tabular-nums">{r.base === "RECEITA" ? brl(r.valores.get(l.unitId) ?? 0) : r.base === "PERCENTUAL" ? `${(r.valores.get(l.unitId) ?? 0).toLocaleString("pt-BR")}%` : (r.valores.get(l.unitId) ?? 0).toLocaleString("pt-BR")}</Td><Td className="tabular-nums">{pct(100 * l.pctRateio)}</Td><Td className="tabular-nums">{brl(l.rateio)}</Td></tr>)}
+          <Table denso head={["Unidade", `Base (${ROTULO_BASE[r.base].toLowerCase()})`, "Participação", "Rateado"]}>
+            {r.linhas.filter(l => escopo === null || l.unitId === escopo).map(l => <tr key={l.unitId}><Td className="whitespace-nowrap">{l.nome}</Td><Td className="tabular-nums">{r.base === "RECEITA" ? brl(r.valores.get(l.unitId) ?? 0) : r.base === "PERCENTUAL" ? `${(r.valores.get(l.unitId) ?? 0).toLocaleString("pt-BR")}%` : (r.valores.get(l.unitId) ?? 0).toLocaleString("pt-BR")}</Td><Td className="tabular-nums">{pct(100 * l.pctRateio)}</Td><Td className="tabular-nums">{brl(l.rateio)}</Td></tr>)}
           </Table>
           <p className="mt-2 text-[11px] text-slate-500">A regra vale a partir do mês “desde” até outra ser aprovada. Arredondamento: os centavos ficam na maior participação, para a soma rateada fechar com o corporativo.</p>
         </Card>

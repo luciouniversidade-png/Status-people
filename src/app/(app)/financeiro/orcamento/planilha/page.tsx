@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 /** Orçamento mês a mês de uma unidade: categorias × 12 meses (13º, material de janeiro, campanhas). Vazio = valor mensal fixo. */
 export default async function Planilha({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireFinanceiro(); const sp = await searchParams; const cfg = await getSettings();
-  if (!can.aprovar(s, cfg.alcadas.financeiro as string[])) redirect("/financeiro/orcamento");
+  if (!can.aprovar(s, "financeiro")) redirect("/financeiro/orcamento");
   const escopo = scopeUnit(s); const units = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM units ORDER BY nome`;
   const unitId = escopo ?? (units.some(u => u.id === Number(sp.unidade)) ? Number(sp.unidade) : units[0]?.id);
   const anoAtual = Number(hoje().slice(0, 4)); const ano = Number(sp.ano) >= 2020 && Number(sp.ano) <= anoAtual + 1 ? Number(sp.ano) : anoAtual;
@@ -45,7 +45,7 @@ export default async function Planilha({ searchParams }: { searchParams: Promise
               <thead className="bg-mist text-[11px] text-slate-600"><tr><th className="sticky left-0 z-[1] bg-mist px-2 py-2 font-medium">Categoria</th>{MESES_CURTOS.map(m => <th key={m} className="px-1 py-2 text-center font-medium">{m}</th>)}<th className="px-2 py-2 text-right font-medium">Ano</th></tr></thead>
               <tbody className="divide-y divide-line">{cats.map((c, i) => <tr key={c}>
                 <th scope="row" className="sticky left-0 z-[1] bg-white px-2 py-1 text-left font-medium">{c}<input type="hidden" name={`c_${tipo}_${i}`} value={c} />{fix(tipo, c) !== null && <span className="block text-[10px] font-normal text-slate-400">fixo {fmtReais(fix(tipo, c), true)}/mês</span>}</th>
-                {MESES_CURTOS.map((m, j) => <td key={m} className="px-0.5 py-1"><input name={`v_${tipo}_${i}_${j + 1}`} aria-label={`${c} — ${m}`} inputMode="decimal" defaultValue={fmtCampo(cel(tipo, c, j + 1))} placeholder={fix(tipo, c) !== null ? fmtCampo(fix(tipo, c)) : ""} className="w-full min-w-[78px] rounded border border-line px-1.5 py-1 text-right tabular-nums placeholder:text-slate-300 focus:border-acao focus:outline-none" /></td>)}
+                {MESES_CURTOS.map((m, j) => <td key={m} className="px-0.5 py-1"><input name={`v_${tipo}_${i}_${j + 1}`} aria-label={`${c} — ${m}`} inputMode="decimal" defaultValue={fmtCampo(cel(tipo, c, j + 1))} placeholder={fix(tipo, c) !== null ? fmtCampo(fix(tipo, c)) : ""} className="w-full min-w-[84px] rounded border border-line px-1 py-1 text-right tabular-nums placeholder:text-slate-300 focus:border-acao focus:outline-none" /></td>)}
                 <td className="px-2 py-1 text-right font-medium tabular-nums">{fmtReais(total(tipo, c), true)}</td>
               </tr>)}</tbody>
             </table></div>

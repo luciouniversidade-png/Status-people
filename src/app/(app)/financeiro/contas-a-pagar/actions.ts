@@ -1,4 +1,5 @@
 "use server";
+import { usuariosQueAprovam } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
 import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
@@ -9,9 +10,10 @@ import { aprovaCP, operaCP, baixaManualCP, motivosAprovacao, aprovacoesExigidas,
 import { contaParaLancar, classificarPelaBaixa, garantirCentrosPadrao } from "@/lib/plano-contas";
 import { gerarParcelas, lerValorBr, somaCentavos, fmtBr, fmtDataBr, proximoDiaUtil, INTERVALO_LABEL, type Intervalo } from "@/lib/parcelas";
 import { lerBoleto, lerChaveNFe } from "@/lib/documentos-fiscais";
+import { comMensagem } from "@/lib/redirecionar";
 
 type Cfg = Awaited<ReturnType<typeof getSettings>>;
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + "T00:00:00Z")) && d >= "2000-01-01" && d <= "2100-12-31" && new Date(d + "T00:00:00Z").toISOString().slice(0, 10) === d;
 const mesOk = (m: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -41,9 +43,9 @@ async function recalcularStatus(payableId: number) {
       WHEN p.status='QUITADO' THEN 'ATIVO' ELSE p.status END, updated_at=now()
     WHERE p.id=${payableId} AND p.status IN ('ATIVO','QUITADO')`;
 }
-async function aprovadores(cfg: Cfg, excluir: number[]) {
-  const papeis = (cfg.alcadas.contasPagar ?? ["DIRECAO"]) as string[];
-  return (await sql<{ id: number }[]>`SELECT id FROM users WHERE ativo AND role = ANY(${papeis})`).map(u => u.id).filter(id => !excluir.includes(id));
+async function aprovadores(_cfg: Cfg, excluir: number[]) {
+  // v29: quem tem a aprovação de contas a pagar no cargo (ou no padrão da atuação)
+  return (await usuariosQueAprovam("contasPagar")).filter(id => !excluir.includes(id));
 }
 const rotuloParcela = (p: { numero: number; parcelas: number }, i: { parcela: number }) => `${numeroCP(p.numero)} · parcela ${i.parcela}/${p.parcelas}`;
 /** Segregação de funções: quem aprovou o título não registra o pagamento dele. */

@@ -35,6 +35,7 @@ export const positions = pgTable("positions", {
   familia: text("familia"),                 // família para o modelo de avaliação: PROFESSORES · COORDENACAO · SECRETARIA · ATENDIMENTO_COMERCIAL · APOIO_OPERACIONAL · GESTAO
   asoMeses: integer("aso_meses"),                  // v24: periodicidade do exame periódico (PCMSO)
   epis: jsonb("epis"),                             // v24: EPIs exigidos pelo cargo (ids)
+  acesso: jsonb("acesso"),                         // v29: acesso do cargo { atuacao, telas (null = todas), aprova (null = padrão da atuação) }
 });
 
 export const employees = pgTable("employees", {
@@ -65,6 +66,10 @@ export const employees = pgTable("employees", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   contatoEmergencia: text("contato_emergencia"),          // v25 · T-104: atualizado pelo próprio colaborador
   terminoContrato: date("termino_contrato"),              // v27 · estágio (fim do TCE), temporário ou prazo determinado
+  sexo: text("sexo"),                                      // v30 · F · M (eSocial) — base da igualdade salarial (Lei 14.611/2023); nulo = não informado
+  ramal: text("ramal"),                                    // v30 · quem é quem
+  emailInstitucional: text("email_institucional"),         // v30 · quem é quem (o e-mail da ficha pode ser pessoal e não aparece no diretório)
+  noDiretorio: boolean("no_diretorio").notNull().default(true), // v30 · aparece no “quem é quem”
 });
 
 export const users = pgTable("users", {
@@ -72,8 +77,8 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   nome: text("nome").notNull(),
   senhaHash: text("senha_hash").notNull(),
-  role: text("role").notNull(),            // DIRECAO · RH · DIRETOR_UNIDADE · GESTOR · LEITURA
-  unitId: integer("unit_id"),              // escopo do DIRETOR_UNIDADE / GESTOR
+  role: text("role").notNull(),            // v29: atuação efetiva (do cargo da ficha; na conta sem ficha, definida no acesso) — DIRECAO · RH · DIRETOR_UNIDADE · GESTOR · FINANCEIRO · COMERCIAL · OPERACOES · LEITURA · COLABORADOR
+  unitId: integer("unit_id"),              // alcance: unidade da ficha quando a atuação é de unidade (DIRETOR_UNIDADE / GESTOR / COLABORADOR); nulo = rede
   employeeId: integer("employee_id"),
   ativo: boolean("ativo").notNull().default(true),
   totpSecret: text("totp_secret"),
@@ -81,6 +86,11 @@ export const users = pgTable("users", {
   backupCodes: jsonb("backup_codes"),      // hashes bcrypt dos códigos de recuperação
   trocarSenha: boolean("trocar_senha").notNull().default(false), // senha temporária: obriga troca no próximo acesso
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  acesso: jsonb("acesso"),                 // v29: exceção individual (conta com ficha) ou telas/aprovações da conta sem ficha
+  substituicao: jsonb("substituicao"),     // v29: substituição temporária { positionId, ate, motivo }
+  aprova: text("aprova").array(),          // v29: aprovações efetivas (gravadas pelo sistema a partir do cargo)
+  origemAcesso: text("origem_acesso"),     // v29: CARGO · SEM_CARGO · EXCECAO · DIRETO
+  descontoPct: numeric("desconto_pct", { precision: 5, scale: 2 }), // v29: alçada de desconto efetiva (%)
 });
 
 export const leaveRequests = pgTable("leave_requests", {
@@ -621,6 +631,7 @@ export const perfGoals = pgTable("perf_goals", {
   original: jsonb("original"),
   alteracoes: jsonb("alteracoes"),                        // [{ em, por, de, para, justificativa }]
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  objectiveId: integer("objective_id"), keyResultId: integer("key_result_id"), atualizadaEm: timestamp("atualizada_em"), // v30 · meta ligada à estratégia · última atualização do andamento
 });
 
 export const perfCheckins = pgTable("perf_checkins", {
@@ -670,6 +681,8 @@ export const requisitions = pgTable("requisitions", {
   slotId: integer("slot_id"),                      // v24: posição de origem (gate de reposição)
   gate: jsonb("gate"),                             // v24: motivo, orçamento, alternativa avaliada e decisão
   criteriosFit: jsonb("criterios_fit"),            // v26: critérios de aderência [{id, texto, tipo, termos}]
+  pausadaEm: date("pausada_em"), pausaMotivo: text("pausa_motivo"), diasPausada: integer("dias_pausada").notNull().default(0), // v30 · vaga pausada (o prazo não corre)
+  publicar: boolean("publicar").notNull().default(false), slug: text("slug"), descricaoPublica: text("descricao_publica"), visualizacoes: integer("visualizacoes").notNull().default(0), // v30 · página pública de vagas
 });
 
 export const candidates = pgTable("candidates", {
@@ -702,6 +715,8 @@ export const applications = pgTable("applications", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   retiradaEm: timestamp("retirada_em"),                    // v25 · T-106: retirada pelo candidato no portal
+  propostaEnviadaEm: date("proposta_enviada_em"), propostaResposta: text("proposta_resposta"), propostaRespostaEm: date("proposta_resposta_em"), propostaMotivo: text("proposta_motivo"), // v30 · ACEITA · RECUSADA
+  experienciaEm: timestamp("experiencia_em"), etapaDesde: timestamp("etapa_desde"), // v30 · já respondeu a pesquisa de experiência (anônima) · desde quando está na etapa
 });
 
 export const applicationEvents = pgTable("application_events", {
@@ -764,6 +779,7 @@ export const climateResponses = pgTable("climate_responses", {
   respostas: jsonb("respostas").notNull(),              // { qid: valor }
   comentario: text("comentario"),
   at: timestamp("at").notNull().defaultNow(),
+  gestorId: integer("gestor_id"), // v30 · pesquisa de liderança: o gestor avaliado (nunca quem respondeu)
 });
 
 export const climateActions = pgTable("climate_actions", {
@@ -796,6 +812,7 @@ export const courses = pgTable("courses", {
   paraRegime: text("para_regime"),                      // DOCENTE · ADMINISTRATIVO · null
   ativo: boolean("ativo").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  custo: numeric("custo", { precision: 12, scale: 2 }), instrutor: text("instrutor"), inscricaoAberta: boolean("inscricao_aberta").notNull().default(false), exigeAprovacao: boolean("exige_aprovacao").notNull().default(true), // v30
 });
 
 export const trainingProgress = pgTable("training_progress", {
@@ -810,6 +827,7 @@ export const trainingProgress = pgTable("training_progress", {
   evidencia: text("evidencia"),
   registradoPor: integer("registrado_por"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  certificado: text("certificado"), // v30 · código de verificação do certificado
 });
 
 export const trainingSessions = pgTable("training_sessions", {
@@ -823,6 +841,7 @@ export const trainingSessions = pgTable("training_sessions", {
   vagas: integer("vagas"),
   obs: text("obs"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  custo: numeric("custo", { precision: 12, scale: 2 }), // v30
 });
 
 export const sessionAttendance = pgTable("session_attendance", {
@@ -1257,7 +1276,8 @@ export const announcements = pgTable("announcements", {
   id: serial("id").primaryKey(),
   titulo: text("titulo").notNull(),
   texto: text("texto").notNull(),
-  publico: text("publico").notNull().default("TODOS"),   // TODOS · UNIDADE · PERFIL
+  publico: text("publico").notNull().default("TODOS"),   // TODOS · UNIDADE · CARGO (v29) · PERFIL (atuação)
+  positionId: integer("position_id"),                     // v29: comunicado para um cargo (ex.: todos os professores)
   unitId: integer("unit_id"),
   role: text("role"),
   requerCiencia: boolean("requer_ciencia").notNull().default(false),

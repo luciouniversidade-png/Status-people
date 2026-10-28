@@ -7,8 +7,9 @@ import { competenciaFechada, mensagemTrava } from "@/lib/conciliacao";
 import { notificar } from "@/lib/comunicacao";
 import { excecoesDespesa, EXCECAO_ROTULO, categoriaDoTipo } from "@/lib/despesas";
 import { lerCampos, lerEtapas, montarEtapas, podeDecidir, perfilDe, fmtValorBr, type Campo, type Etapa, type EtapaSnap } from "@/lib/solicitacoes";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 type Tipo = { id: number; nome: string; campos: Campo[]; etapas: Etapa[]; prazo_dias: number; perfis: string[] | null; ativo: boolean };
 type Req = { id: number; numero: string; titulo: string; type_id: number; status: string; etapa_atual: number; etapas: EtapaSnap[]; solicitante_user_id: number; unit_id: number | null; valor: string | null };
 
@@ -39,9 +40,9 @@ const avisarEtapa = async (r: { id: number; numero: string; titulo: string }, e:
 export async function abrirSolicitacao(fd: FormData) {
   const s = await requireSession(); let id = 0; const tid = int(fd, "typeId") ?? 0;
   try {
-    assert(s.role !== "LEITURA", "Perfil somente leitura não abre solicitações.");
+    assert(s.role !== "LEITURA", "Acesso somente leitura não abre solicitações.");
     const [t] = await sql<Tipo[]>`SELECT id, nome, campos, etapas, prazo_dias, perfis, ativo FROM request_types WHERE id=${tid}`; if (!t || !t.ativo) throw new Error("Tipo de solicitação indisponível.");
-    if (t.perfis?.length && !t.perfis.includes(s.role)) throw new Error("Seu perfil não abre este tipo de solicitação.");
+    if (t.perfis?.length && !t.perfis.includes(s.role)) throw new Error("Seu acesso não abre este tipo de solicitação.");
     const { dados, valor } = lerDados(fd, t.campos); const unitId = await unidadeDo(s, fd);
     const titulo = str(fd, "titulo") || `${t.nome}${typeof dados[t.campos[0]?.id] === "string" ? ` — ${String(dados[t.campos[0].id]).slice(0, 60)}` : ""}`;
     const etapas = await montarEtapas(t.etapas, valor, unitId, s.id);

@@ -71,11 +71,11 @@ export const CALCS: Record<string, Calc> = {
     calc: async c => Promise.all(c.units.map(async u => { const m = await matrizTreinamento(u); const den = m.linhas.reduce((a, l) => a + l.total, 0); return { periodo: c.ate, unit_id: u, num: den ? m.linhas.reduce((a, l) => a + l.ok, 0) : null, den: den || null }; })),
   },
   "pessoas.vagas_abertas": {
-    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, r.unit_id, sum(r.quantidade)::float AS valor FROM m JOIN requisitions r ON r.aberta_em < m.corte AND (r.fechada_em IS NULL OR r.fechada_em >= m.corte) AND (r.status IN ('ABERTA','PREENCHIDA') OR (r.status='CANCELADA' AND r.fechada_em IS NOT NULL)) GROUP BY 1, 2`,
+    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, r.unit_id, sum(r.quantidade)::float AS valor FROM m JOIN requisitions r ON r.aberta_em < m.corte AND (r.fechada_em IS NULL OR r.fechada_em >= m.corte) AND (r.status IN ('ABERTA','PAUSADA','PREENCHIDA') OR (r.status='CANCELADA' AND r.fechada_em IS NOT NULL)) GROUP BY 1, 2`,
     inicio: () => primeiro(sql`SELECT min(aberta_em)::text AS d FROM requisitions`),
   },
   "pessoas.tempo_contratacao": {
-    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, r.unit_id, sum(r.fechada_em - r.aberta_em)::float AS num, count(*)::float AS den FROM m JOIN requisitions r ON r.status='PREENCHIDA' AND r.aberta_em IS NOT NULL AND r.fechada_em >= m.ini AND r.fechada_em < m.corte GROUP BY 1, 2`,
+    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, r.unit_id, sum(greatest(0, r.fechada_em - r.aberta_em - coalesce(r.dias_pausada, 0)))::float AS num, count(*)::float AS den FROM m JOIN requisitions r ON r.status='PREENCHIDA' AND r.aberta_em IS NOT NULL AND r.fechada_em >= m.ini AND r.fechada_em < m.corte GROUP BY 1, 2`,
   },
   "pessoas.cobertura_aulas": {
     calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, a.unit_id, count(*) FILTER (WHERE a.status IN ('CONFIRMADA','REALIZADA'))::float AS num, count(*)::float AS den FROM m JOIN cover_assignments a ON a.data >= m.ini AND a.data < m.corte AND a.status <> 'CANCELADA' GROUP BY 1, 2`,
@@ -261,6 +261,61 @@ export const CALCS: Record<string, Calc> = {
   },
   "pessoas.sucessao": {
     calc: c => sql<Linha[]>`SELECT ${c.ate}::text AS periodo, coalesce(cp.unit_id, 0) AS unit_id, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM successors sc WHERE sc.critical_position_id=cp.id AND sc.ativo AND sc.prontidao IN ('PRONTO','UM_DOIS_ANOS')))::float AS num, count(*)::float AS den FROM critical_positions cp GROUP BY 1, 2`,
+  },
+  // v30 · capital humano
+  "pessoas.hcroi": {
+    calc: c => { const d = c.cfg.dre as { pessoal: string[]; financeiras: string[]; internas: string[]; naoDespesa?: string[] }; const fora = [...d.pessoal, ...d.financeiras, ...d.internas, ...(d.naoDespesa ?? [])];
+      return sql<Linha[]>`WITH ${M(c)}, folha AS (SELECT pc.competencia AS periodo, coalesce(r.unit_id, 0) AS unit_id, sum(r.salarios + r.inss + r.fgts + r.provisao_13 + r.provisao_ferias + r.beneficios + r.rescisoes + r.outros)::float AS v FROM payroll_cycles pc JOIN payroll_results r ON r.cycle_id=pc.id WHERE pc.aceito_em IS NOT NULL GROUP BY 1, 2),
+        caixa AS (SELECT m.periodo, ce.unit_id, coalesce(sum(ce.valor) FILTER (WHERE ce.tipo='ENTRADA' AND NOT (coalesce(ce.categoria,'') = ANY(${d.internas}))), 0)::float AS receita, coalesce(sum(ce.valor) FILTER (WHERE ce.tipo='SAIDA' AND NOT (coalesce(ce.categoria,'') = ANY(${fora}))), 0)::float AS opex FROM m JOIN cash_entries ce ON ce.data >= m.ini AND ce.data < m.corte GROUP BY 1, 2)
+        SELECT f.periodo, f.unit_id, (cx.receita - cx.opex)::float AS num, nullif(f.v, 0)::float AS den FROM folha f JOIN m ON m.periodo=f.periodo JOIN caixa cx ON cx.periodo=f.periodo AND cx.unit_id=f.unit_id`; },
+  },
+  "pessoas.receita_colaborador": {
+    calc: c => sql<Linha[]>`WITH ${M(c)}, rec AS (SELECT m.periodo, ce.unit_id, sum(ce.valor)::float AS v FROM m JOIN cash_entries ce ON ce.tipo='ENTRADA' AND ce.data >= m.ini AND ce.data < m.corte AND NOT (coalesce(ce.categoria,'') = ANY(${(c.cfg.dre as { internas: string[] }).internas})) GROUP BY 1, 2),
+      hc AS (SELECT m.periodo, e.unit_id, count(*)::float AS n FROM m JOIN employees e ON ${ATIVO} GROUP BY 1, 2)
+      SELECT rec.periodo, rec.unit_id, rec.v AS num, hc.n AS den FROM rec JOIN hc ON hc.periodo=rec.periodo AND hc.unit_id=rec.unit_id`,
+    inicio: () => primeiro(sql`SELECT min(data)::text AS d FROM cash_entries`),
+  },
+  "pessoas.amplitude": {
+    // liderados contam na unidade deles; cada gestor conta uma vez, na unidade dele (quem lidera gente de várias unidades não vira vários gestores na rede)
+    calc: c => sql<Linha[]>`SELECT ${c.ate}::text AS periodo, x.unit_id, sum(x.num)::float AS num, sum(x.den)::float AS den FROM (
+        SELECT e.unit_id, count(*) AS num, 0 AS den FROM employees e JOIN employees g ON g.id=e.gestor_id AND g.situacao IN ('ATIVO','FERIAS','AFASTADO') WHERE e.situacao IN ('ATIVO','FERIAS','AFASTADO') GROUP BY 1
+        UNION ALL
+        SELECT g.unit_id, 0, count(*) FROM employees g WHERE g.situacao IN ('ATIVO','FERIAS','AFASTADO') AND EXISTS (SELECT 1 FROM employees e WHERE e.gestor_id=g.id AND e.situacao IN ('ATIVO','FERIAS','AFASTADO')) GROUP BY 1
+      ) x GROUP BY 2`,
+  },
+  "pessoas.mulheres_lideranca": {
+    calc: c => { const fams = ((c.cfg.igualdade as { familiasLideranca?: string[] } | undefined)?.familiasLideranca ?? ["GESTAO", "COORDENACAO"]);
+      return sql<Linha[]>`SELECT ${c.ate}::text AS periodo, e.unit_id, count(*) FILTER (WHERE e.sexo='F')::float AS num, count(*) FILTER (WHERE e.sexo IN ('F','M'))::float AS den FROM employees e JOIN positions p ON p.id=e.position_id WHERE e.situacao IN ('ATIVO','FERIAS','AFASTADO') AND p.familia = ANY(${fams}) GROUP BY 2`; },
+  },
+  "pessoas.qualidade_contratacao": {
+    calc: async c => {
+      const { indiceContratacao } = await import("./recrutamento-v30");
+      const rows = await sql<{ unit_id: number; admissao: string; desligamento: string | null; nota_gestor: number | null; nota1: number | null }[]>`SELECT e.unit_id, e.admissao::text, e.desligamento::text, f.nota::float AS nota_gestor,
+          (SELECT coalesce((pr.calc->>'N')::numeric, pr.nota_final)::float FROM perf_reviews pr WHERE pr.employee_id=e.id AND coalesce((pr.calc->>'N')::numeric, pr.nota_final) IS NOT NULL ORDER BY pr.id LIMIT 1) AS nota1
+        FROM applications a JOIN employees e ON e.id=a.employee_id LEFT JOIN hire_feedback f ON f.employee_id=e.id AND f.respondido_em IS NOT NULL
+        WHERE a.etapa='CONTRATADO' AND e.situacao <> 'EM_ADMISSAO' AND e.admissao >= ${c.de + "-01"}::date AND e.admissao < ${c.amanha}::date`;
+      const ret = Number((c.cfg.recrutamento as { indicadores?: { retencaoDias?: number } }).indicadores?.retencaoDias ?? 90); const acc = new Map<string, Linha>();
+      for (const r of rows) { const q = indiceContratacao({ admissao: r.admissao, desligamento: r.desligamento, notaGestor: r.nota_gestor, nota1: r.nota1 }, ret, c.hoje); if (q.indice === null) continue; const k = `${r.admissao.slice(0, 7)}|${r.unit_id}`; const l = acc.get(k) ?? { periodo: r.admissao.slice(0, 7), unit_id: r.unit_id, num: 0, den: 0 }; l.num = (l.num ?? 0) + q.indice; l.den = (l.den ?? 0) + 1; acc.set(k, l); }
+      return [...acc.values()];
+    },
+  },
+  "pessoas.horas_treinamento": {
+    calc: c => sql<Linha[]>`WITH ${M(c)}, h AS (SELECT m.periodo, e.unit_id, sum(coalesce(co.carga_horas, 0))::float AS v FROM m JOIN training_progress p ON p.status='CONCLUIDO' AND p.concluido_em >= m.ini AND p.concluido_em < m.corte JOIN courses co ON co.id=p.course_id AND co.formato <> 'POP' JOIN employees e ON e.id=p.employee_id GROUP BY 1, 2),
+      hc AS (SELECT m.periodo, e.unit_id, count(*)::float AS n FROM m JOIN employees e ON ${ATIVO} GROUP BY 1, 2)
+      SELECT hc.periodo, hc.unit_id, coalesce(h.v, 0)::float AS num, hc.n AS den FROM hc LEFT JOIN h ON h.periodo=hc.periodo AND h.unit_id=hc.unit_id`,
+    inicio: () => primeiro(sql`SELECT min(concluido_em)::text AS d FROM training_progress WHERE status='CONCLUIDO'`),
+  },
+  "pessoas.promocoes": {
+    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, e.unit_id, (SELECT count(*) FROM employee_moves mv JOIN employees x ON x.id=mv.employee_id WHERE x.unit_id=e.unit_id AND mv.tipo='PROMOCAO' AND mv.data >= m.corte - 366 AND mv.data < m.corte)::float AS num, count(*)::float AS den FROM m JOIN employees e ON ${ATIVO} GROUP BY m.periodo, m.corte, e.unit_id`,
+    inicio: () => primeiro(sql`SELECT min(data)::text AS d FROM employee_moves WHERE tipo='PROMOCAO'`),
+  },
+  "pessoas.aceite_propostas": {
+    calc: c => sql<Linha[]>`WITH ${M(c)} SELECT m.periodo, r.unit_id, count(*) FILTER (WHERE a.proposta_resposta='ACEITA')::float AS num, count(*) FILTER (WHERE a.proposta_resposta IN ('ACEITA','RECUSADA'))::float AS den FROM m JOIN applications a ON a.proposta_resposta_em >= m.ini AND a.proposta_resposta_em < m.corte JOIN requisitions r ON r.id=a.requisition_id GROUP BY 1, 2`,
+  },
+  "pessoas.lideranca": {
+    calc: c => sql<Linha[]>`SELECT to_char(sv.fim, 'YYYY-MM') AS periodo, coalesce(r.unit_id, 0) AS unit_id,
+        sum((SELECT count(*) FILTER (WHERE x.value ~ '^[1-5]$' AND x.value::int >= 4)::float / nullif(count(*) FILTER (WHERE x.value ~ '^[1-5]$'), 0) FROM jsonb_each_text(r.respostas) x WHERE x.key ~ '^l[0-9]+$'))::float AS num, count(*)::float AS den
+      FROM climate_surveys sv JOIN climate_responses r ON r.survey_id=sv.id WHERE sv.tipo='LIDERANCA' AND sv.status='ENCERRADA' AND sv.fim >= ${c.de + "-01"}::date AND sv.fim < ${c.amanha}::date GROUP BY 1, 2`,
   },
   "estrategia.okrs_on_track": {
     calc: c => sql<Linha[]>`SELECT ${c.ate}::text AS periodo, coalesce(o.unit_id, 0) AS unit_id, count(*) FILTER (WHERE k.confianca >= 2)::float AS num, count(*) FILTER (WHERE k.confianca IS NOT NULL)::float AS den FROM key_results k JOIN objectives o ON o.id=k.objective_id WHERE o.ciclo=${c.cfg.estrategia.cicloAtual} AND o.status <> 'CANCELADO' GROUP BY 1, 2`,

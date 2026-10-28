@@ -1,5 +1,5 @@
 import { sql } from "@/db";
-import type { Session } from "./auth";
+import { can, type Session } from "./auth";
 import { getSettings, hoje, addDays } from "./utils";
 import { orcamentoMes, categoriaDoTipo } from "./despesas";
 import { somaCentavos, fmtBr, type OpcoesFeriado } from "./parcelas";
@@ -26,8 +26,9 @@ export const CP_STATUS: Record<string, { rotulo: string; tom: string }> = {
 export const VER_CP = ["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"];
 export const veCP = (s: Session) => VER_CP.includes(s.role);
 export const operaCP = (s: Session) => ["DIRECAO", "FINANCEIRO"].includes(s.role);
-export const aprovaCP = (cfg: Cfg, s: Session) => ((cfg.alcadas.contasPagar ?? ["DIRECAO"]) as string[]).includes(s.role);
-export const baixaManualCP = (cfg: Cfg, s: Session) => operaCP(s) && ((cfg.contasPagar.baixaManualPerfis ?? ["DIRECAO", "FINANCEIRO"]) as string[]).includes(s.role);
+/** v29: aprovação de contas a pagar e baixa manual são marcadas no cargo (Configurações → Acesso por cargo). */
+export const aprovaCP = (_cfg: Cfg, s: Session) => can.aprovar(s, "contasPagar");
+export const baixaManualCP = (_cfg: Cfg, s: Session) => operaCP(s) && can.aprovar(s, "baixaManual");
 export const numeroCP = (n: number) => `CP-${String(n).padStart(4, "0")}`;
 export function opcoesFeriado(cfg: Cfg): OpcoesFeriado {
   const c = cfg.contasPagar; return { locais: (c.feriadosLocais ?? []) as string[], carnaval: c.carnavalSemBanco !== false, corpusChristi: c.corpusChristiSemBanco !== false };

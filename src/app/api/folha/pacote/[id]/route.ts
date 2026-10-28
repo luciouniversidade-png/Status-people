@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { podeFolha, cicloPorId, pacoteCsv } from "@/lib/folha";
@@ -7,6 +8,7 @@ import { sql } from "@/db";
 /** Pacote da folha (CSV) gerado no passo 2 — exatamente o retrato guardado no ciclo (o hash confere com a trilha). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/folha")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (!podeFolha(s)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const { id } = await params; const c = await cicloPorId(Number(id));
   if (!c?.pacote) return NextResponse.json({ erro: "Pacote não gerado." }, { status: 404 });

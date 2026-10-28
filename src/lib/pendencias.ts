@@ -1,5 +1,6 @@
 import { sql } from "@/db";
-import { scopeUnit, type Session } from "./auth";
+import { can, scopeUnit, aprovaSoEquipe, type Session } from "./auth";
+import { veTela, alcadaDesconto, type Alcada } from "./acesso";
 import { getSettings, hoje, addDays } from "./utils";
 import { podePrivacidade, PEDIDO_TIPO, PEDIDO_ABERTO } from "./privacidade";
 import { ehComite, ETICA_ABERTO } from "./etica";
@@ -48,7 +49,7 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
   const cfg = await getSettings(); const h = hoje(); const escopo = scopeUnit(s); const itens: Pendencia[] = []; const falhas: string[] = [];
   const bloco = async (nome: string, f: () => Promise<Pendencia[]>) => { try { itens.push(...(await f())); } catch (e) { falhas.push(`${nome}: ${e instanceof Error ? e.message : String(e)}`); } };
   const uf = (col: string) => escopo === null ? sql`` : sql`AND ${sql(col)}=${escopo}`;
-  const alc = cfg.alcadas as Record<string, string[]>; const tem = (k: string) => (alc[k] ?? []).includes(s.role);
+  const tem = (k: string) => can.aprovar(s, k as Alcada); // v29: aprovações do cargo
   const staff = s.role !== "COLABORADOR";
   const me = s.id; const emp = s.employeeId;
 
@@ -64,17 +65,17 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
     bloco("férias", async () => {
       if (!staff || !tem("ferias")) return [];
       const r = await sql<{ id: number; nome: string; tipo: string; inicio: string; fim: string; criado: string }[]>`SELECT l.id, e.nome, l.tipo, l.inicio::text, l.fim::text, ${diaLocal(sql`l.created_at`)} AS criado FROM leave_requests l JOIN employees e ON e.id=l.employee_id
-        WHERE l.status='SOLICITADA' AND e.id IS DISTINCT FROM ${emp ?? null} ${uf("e.unit_id")} ORDER BY l.inicio LIMIT 100`;
+        WHERE l.status='SOLICITADA' AND e.id IS DISTINCT FROM ${emp ?? null} ${uf("e.unit_id")} ${aprovaSoEquipe(s) ? sql`AND e.gestor_id=${emp ?? 0}` : sql``} ORDER BY l.inicio LIMIT 100`;
       const pf = Number((cfg as { fluxos?: { prazoFeriasDias?: number } }).fluxos?.prazoFeriasDias ?? 3);
-      return r.map(x => { const lim = addDays(x.criado, pf); const vesp = addDays(x.inicio, -1); return { chave: `fer${x.id}`, grupo: "APROVAR" as const, modulo: "Férias e afastamentos", acao: "Aprovar", titulo: `${x.nome} · ${ESTADO_LEAVE[x.tipo] ?? x.tipo}`, sub: `${x.inicio.split("-").reverse().join("/")} a ${x.fim.split("-").reverse().join("/")}`, href: "/ferias", prazo: lim < vesp ? lim : vesp }; });
+      return r.map(x => { const lim = addDays(x.criado, pf); const vesp = addDays(x.inicio, -1); return { chave: `fer${x.id}`, grupo: "APROVAR" as const, modulo: "Férias e afastamentos", acao: "Aprovar", titulo: `${x.nome} · ${ESTADO_LEAVE[x.tipo] ?? x.tipo}`, sub: `${x.inicio.split("-").reverse().join("/")} a ${x.fim.split("-").reverse().join("/")}`, href: aprovaSoEquipe(s) ? "/aprovacoes?aba=ferias" : "/ferias", prazo: lim < vesp ? lim : vesp }; });
     }),
     bloco("banco de horas", async () => {
       if (!staff || !tem("banco")) return [];
-      const [r] = await sql<{ n: number; desde: string | null }[]>`SELECT count(*)::int AS n, min(${sql.unsafe("(h.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Campo_Grande')::date")})::text AS desde FROM hour_entries h JOIN employees e ON e.id=h.employee_id WHERE h.status='PENDENTE' AND e.id IS DISTINCT FROM ${emp ?? null} ${uf("e.unit_id")}`;
-      return r.n ? [{ chave: "banco", grupo: "APROVAR" as const, modulo: "Banco de horas", acao: "Aprovar", titulo: `${r.n} ${r.n === 1 ? "lançamento aguardando" : "lançamentos aguardando"} aprovação`, sub: r.desde ? `o mais antigo desde ${r.desde.split("-").reverse().join("/")}` : null, href: "/banco-de-horas", prazo: r.desde ? addDays(r.desde, 7) : null, quantidade: r.n }] : [];
+      const [r] = await sql<{ n: number; desde: string | null }[]>`SELECT count(*)::int AS n, min(${sql.unsafe("(h.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Campo_Grande')::date")})::text AS desde FROM hour_entries h JOIN employees e ON e.id=h.employee_id WHERE h.status='PENDENTE' AND e.id IS DISTINCT FROM ${emp ?? null} ${uf("e.unit_id")} ${aprovaSoEquipe(s) ? sql`AND e.gestor_id=${emp ?? 0}` : sql``}`;
+      return r.n ? [{ chave: "banco", grupo: "APROVAR" as const, modulo: "Banco de horas", acao: "Aprovar", titulo: `${r.n} ${r.n === 1 ? "lançamento aguardando" : "lançamentos aguardando"} aprovação`, sub: r.desde ? `o mais antigo desde ${r.desde.split("-").reverse().join("/")}` : null, href: aprovaSoEquipe(s) ? "/aprovacoes?aba=banco" : "/banco-de-horas", prazo: r.desde ? addDays(r.desde, 7) : null, quantidade: r.n }] : [];
     }),
     bloco("descontos", async () => {
-      const lim = Number((cfg.financeiro.alcadaDescontoPct as Record<string, number>)[s.role] ?? 0); if (!lim) return [];
+      const lim = alcadaDesconto(s, cfg.financeiro.alcadaDescontoPct as Record<string, number>); if (!lim) return []; // v29: alçada de desconto do cargo
       const pd = Number((cfg as { fluxos?: { prazoDecisaoDias?: number } }).fluxos?.prazoDecisaoDias ?? 2);
       const r = await sql<{ id: number; aluno: string; pct: number; tipo: string; criado: string }[]>`SELECT d.id, d.aluno_nome AS aluno, d.percentual::float AS pct, d.tipo, ${diaLocal(sql`d.created_at`)} AS criado FROM discounts d WHERE d.status='SOLICITADO' AND d.percentual <= ${lim} AND d.solicitante_user_id IS DISTINCT FROM ${me} ${uf("d.unit_id")} ORDER BY d.created_at LIMIT 100`;
       return r.map(x => ({ chave: `desc${x.id}`, grupo: "APROVAR" as const, modulo: "Descontos e bolsas", acao: "Aprovar", titulo: `${x.aluno} · ${x.pct.toLocaleString("pt-BR")}%`, sub: x.tipo, href: "/financeiro/descontos", prazo: addDays(x.criado, pd) }));
@@ -189,7 +190,7 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
     }),
     bloco("comunicados", async () => {
       const r = await sql<{ id: number; titulo: string; prazo: string | null }[]>`SELECT a.id, a.titulo, a.prazo_ciencia::text AS prazo FROM announcements a WHERE a.requer_ciencia AND (a.expira_em IS NULL OR a.expira_em >= ${h}::date)
-        AND (a.publico='TODOS' OR (a.publico='UNIDADE' AND (${s.unitId === null} OR a.unit_id=${s.unitId ?? 0})) OR (a.publico='PERFIL' AND a.role=${s.role}))
+        AND (a.publico='TODOS' OR (a.publico='UNIDADE' AND (${s.unitId === null} OR a.unit_id=${s.unitId ?? 0})) OR (a.publico='PERFIL' AND a.role=${s.role}) OR (a.publico='CARGO' AND a.position_id=${s.positionId ?? 0}))
         AND NOT EXISTS (SELECT 1 FROM announcement_acks k WHERE k.announcement_id=a.id AND k.user_id=${me}) ORDER BY a.prazo_ciencia NULLS LAST LIMIT 30`;
       return r.map(x => ({ chave: `com${x.id}`, grupo: "CIENCIA" as const, modulo: "Comunicados", acao: "Ler e dar ciência", titulo: x.titulo, href: "/comunicacao/comunicados", prazo: x.prazo }));
     }),
@@ -223,8 +224,11 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
   ]);
   // v24 · Nova Arquitetura: alertas com dono, orçamento, obrigações, folha, onboarding, auditorias, fiscalizações e SST (contagem)
   try { const { pendenciasV24 } = await import("./pendencias-v24"); const v = await pendenciasV24(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v24: ${e instanceof Error ? e.message : String(e)}`); }
+  // v30 · ciência de itens, formação a validar, avaliações de candidatos, satisfação com a contratação, inscrições, reação e transparência salarial
+  try { const { pendenciasV30 } = await import("./pendencias-v30"); const v = await pendenciasV30(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v30: ${e instanceof Error ? e.message : String(e)}`); }
   // sem duplicatas (o mesmo registro pode surgir por dois caminhos)
-  const vistos = new Set<string>(); const unicos = itens.filter(i => vistos.has(i.chave) ? false : (vistos.add(i.chave), true));
+  // v29: pendência de uma tela fora do acesso do cargo não entra (a pessoa não teria onde resolvê-la)
+  const vistos = new Set<string>(); const unicos = itens.filter(i => vistos.has(i.chave) ? false : (vistos.add(i.chave), true)).filter(i => veTela(s, i.href));
   return { itens: ordenar(unicos, h), falhas };
 }
 

@@ -7,8 +7,9 @@ import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth"
 import { audit, str, strOrNull, int, num, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaOs, OS_STATUS } from "@/lib/operacoes";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 async function evento(id: number, s: { nome: string }, tipo: string, texto: string | null) { await db.insert(schema.workOrderEvents).values({ workOrderId: id, userNome: s.nome, tipo, texto }); }
 
 // ---------- Chamados / ordens de serviço ----------
@@ -28,7 +29,7 @@ export async function atualizarChamado(fd: FormData) {
   try { const [w] = await db.select().from(schema.workOrders).where(eq(schema.workOrders.id, id)); if (!w) throw new Error("Chamado não encontrado.");
     const gestor = can.operacoes(s); const dono = w.solicitanteUserId === s.id;
     const novo = strOrNull(fd, "status"); const upd: Partial<typeof schema.workOrders.$inferInsert> = { updatedAt: new Date() };
-    if (novo && novo !== w.status) { if (!OS_STATUS[novo]) throw new Error("Situação inválida."); if (!gestor && !(dono && novo === "CANCELADO")) throw new Error("Seu perfil não muda a situação do chamado."); if (gestor) assertScope(s, w.unitId);
+    if (novo && novo !== w.status) { if (!OS_STATUS[novo]) throw new Error("Situação inválida."); if (!gestor && !(dono && novo === "CANCELADO")) throw new Error("Seu acesso não muda a situação do chamado."); if (gestor) assertScope(s, w.unitId);
       upd.status = novo; if (novo === "EM_EXECUCAO" && !w.iniciadoEm) upd.iniciadoEm = new Date();
       if (novo === "CONCLUIDO") { upd.concluidoEm = new Date(); const cr = num(fd, "custoReal"); if (cr !== null) upd.custoReal = String(cr); upd.evidencia = strOrNull(fd, "evidencia") ?? w.evidencia; if (w.assetId) { await db.update(schema.assets).set({ status: "EM_USO", ...(w.tipo === "PREVENTIVA" ? { ultimaPreventiva: hoje() } : {}) }).where(eq(schema.assets.id, w.assetId)); } msg = "Chamado concluído."; }
       await evento(id, s, "STATUS", `${OS_STATUS[w.status]} → ${OS_STATUS[novo]}${strOrNull(fd, "nota") ? `: ${str(fd, "nota")}` : ""}`); }
@@ -46,7 +47,7 @@ export async function atualizarChamado(fd: FormData) {
 // ---------- Ativos ----------
 export async function salvarAtivo(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const b = "/operacoes/ativos";
-  try { assert(can.operacoes(s), "Seu perfil não cadastra ativos."); const nome = str(fd, "nome"); const unitId = int(fd, "unitId"); if (!nome || !unitId) throw new Error("Informe nome e unidade."); assertScope(s, unitId);
+  try { assert(can.operacoes(s), "Seu acesso não cadastra ativos."); const nome = str(fd, "nome"); const unitId = int(fd, "unitId"); if (!nome || !unitId) throw new Error("Informe nome e unidade."); assertScope(s, unitId);
     const d = { codigo: strOrNull(fd, "codigo"), nome, categoria: str(fd, "categoria") || "Outro", unitId, ambiente: strOrNull(fd, "ambiente"), aquisicao: strOrNull(fd, "aquisicao"), valor: num(fd, "valor") === null ? null : String(num(fd, "valor")), fornecedor: strOrNull(fd, "fornecedor"), garantiaAte: strOrNull(fd, "garantiaAte"), status: str(fd, "status") || "EM_USO", preventivaDias: int(fd, "preventivaDias"), ultimaPreventiva: strOrNull(fd, "ultimaPreventiva"), obs: strOrNull(fd, "obs") };
     if (id) await db.update(schema.assets).set(d).where(eq(schema.assets.id, id)); else await db.insert(schema.assets).values(d);
     await audit(s, id ? "editar ativo" : "criar ativo", "assets", id, null, { nome, unitId, categoria: d.categoria });
@@ -67,7 +68,7 @@ export async function importarAtivos(fd: FormData) {
 // ---------- Vistorias ----------
 export async function registrarVistoria(fd: FormData) {
   const s = await requireSession(); let msg = ""; let abertos = 0;
-  try { assert(can.operacoes(s), "Seu perfil não registra vistorias."); const cfg = await getSettings(); const unitId = int(fd, "unitId"); const tipo = str(fd, "tipo"); const ambiente = str(fd, "ambiente"); const data = str(fd, "data") || hoje(); if (!unitId || !tipo || !ambiente) throw new Error("Informe unidade, tipo de checklist e ambiente."); assertScope(s, unitId);
+  try { assert(can.operacoes(s), "Seu acesso não registra vistorias."); const cfg = await getSettings(); const unitId = int(fd, "unitId"); const tipo = str(fd, "tipo"); const ambiente = str(fd, "ambiente"); const data = str(fd, "data") || hoje(); if (!unitId || !tipo || !ambiente) throw new Error("Informe unidade, tipo de checklist e ambiente."); assertScope(s, unitId);
     const modelo = (cfg.operacoes.checklists as Record<string, string[]>)[tipo]; if (!modelo) throw new Error("Checklist não encontrado.");
     const itens = modelo.map((item, i) => ({ item, ok: str(fd, `ok_${i}`) === "1", obs: strOrNull(fd, `obs_${i}`) })); const conformes = itens.filter(x => x.ok).length;
     const [v] = await db.insert(schema.inspections).values({ unitId, ambiente, tipo, data, inspetorUserId: s.id, itens, conformes, total: itens.length, obs: strOrNull(fd, "obs") }).returning({ id: schema.inspections.id });

@@ -4,7 +4,7 @@ import { enviarEmail } from "./notify";
 
 export const CANAL: Record<string, string> = { WHATSAPP: "WhatsApp", EMAIL: "E-mail", TELEFONE: "Telefone", PRESENCIAL: "Presencial" };
 export const MSG_STATUS: Record<string, string> = { REGISTRADA: "Registrada", ENVIADA: "Enviada", ENTREGUE: "Entregue", FALHOU: "Falhou", AGENDADA: "Agendada" };
-export const PUBLICO: Record<string, string> = { TODOS: "Toda a equipe", UNIDADE: "Uma unidade", PERFIL: "Um perfil" };
+export const PUBLICO: Record<string, string> = { TODOS: "Toda a equipe", UNIDADE: "Uma unidade", CARGO: "Um cargo", PERFIL: "Uma atuação" };
 
 /** Telefone BR → formato internacional para wa.me (55 + DDD + número). */
 export function foneWa(v: string | null | undefined) { if (!v) return null; let d = v.replace(/\D/g, ""); if (!d) return null; if (d.startsWith("0")) d = d.slice(1); if (d.length === 10 || d.length === 11) d = "55" + d; return d.length >= 12 ? d : null; }

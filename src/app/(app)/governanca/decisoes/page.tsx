@@ -16,7 +16,7 @@ export default async function Decisoes({ searchParams }: { searchParams: Promise
     FROM decisions d LEFT JOIN units un ON un.id=d.unit_id LEFT JOIN users us ON us.id=d.responsavel_user_id
     WHERE 1=1 ${u === null ? sql`` : sql`AND (d.unit_id IS NULL OR d.unit_id=${u})`} ${status ? sql`AND d.status=${status}` : sql``} ${q ? sql`AND (d.titulo ILIKE ${"%" + q + "%"} OR d.decisao ILIKE ${"%" + q + "%"} OR d.contexto ILIKE ${"%" + q + "%"})` : sql``} ORDER BY d.data DESC, d.id DESC LIMIT 300`;
   const [users, units] = await Promise.all([usuariosGestao(), db.select().from(schema.units).orderBy(asc(schema.units.nome))]);
-  const podeRegistrar = can.aprovar(s, cfg.alcadas.pops);
+  const podeRegistrar = can.aprovar(s, "pops");
   return (
     <Page title="Registro de decisões" sub="Decision Log da Direção: o que foi decidido, em que contexto, quais alternativas foram descartadas e quando revisar." actions={<Btn kind="ghost" href="/api/export/decisoes">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />

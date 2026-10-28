@@ -1,4 +1,5 @@
 "use server";
+import { quemAprovaTexto } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
@@ -8,8 +9,9 @@ import { modeloInicial, FASES_ORDEM, validarFaixas, FAIXAS_PADRAO, type Criterio
 import { calcularRevisao } from "@/lib/avaliacao-server";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { acessoColaborador } from "@/lib/desenvolvimento";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}${hash}`;
+const go = (b: string, k: "ok" | "erro", msg: string, hash = "") => comMensagem(b, k, msg, hash);
 const RH = ["DIRECAO", "RH"]; const GESTOR = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR"];
 type Review = typeof schema.perfReviews.$inferSelect; type Cycle = typeof schema.perfCycles.$inferSelect;
 
@@ -60,7 +62,7 @@ export async function novaVersaoModelo(fd: FormData) {
 // ---------- Ciclo: vincular modelo (congela critérios), fase, prazos ----------
 export async function configurarCiclo(fd: FormData) {
   const s = await requireSession(); const cid = Number(fd.get("cycleId")); const b = `/desempenho/ciclos/${cid}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao) || RH.includes(s.role)); const [c] = await db.select().from(schema.perfCycles).where(eq(schema.perfCycles.id, cid)); if (!c) throw new Error("Ciclo não encontrado.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "calibracao") || RH.includes(s.role)); const [c] = await db.select().from(schema.perfCycles).where(eq(schema.perfCycles.id, cid)); if (!c) throw new Error("Ciclo não encontrado.");
     const upd: Partial<typeof schema.perfCycles.$inferInsert> = { prazoAvaliacao: strOrNull(fd, "prazoAvaliacao"), prazoFeedback: strOrNull(fd, "prazoFeedback"), familias: fd.getAll("familias").map(String).filter(Boolean), piloto: str(fd, "piloto") === "1" };
     if (c.fase === "PLANEJAMENTO") { const fontes: Record<string, { peso: number; minimo: number }> = {}; for (const g of ["PAR", "LIDERADO"]) { const peso = int(fd, `peso_${g}`), minimo = int(fd, `min_${g}`); if (peso && peso > 0) fontes[g] = { peso, minimo: Math.max(3, minimo ?? 3) }; } if (Object.keys(fontes).length) { const pg = int(fd, "peso_GESTOR") ?? 100; fontes.GESTOR = { peso: pg, minimo: 1 }; } upd.fontes = Object.keys(fontes).length ? fontes : null; }
     const mudPrazo = (upd.prazoAvaliacao ?? null) !== (c.prazoAvaliacao ?? null) || (upd.prazoFeedback ?? null) !== (c.prazoFeedback ?? null); if (mudPrazo && c.fase !== "PLANEJAMENTO" && !str(fd, "justificativa")) throw new Error("Alterar prazos com o ciclo em andamento exige justificativa.");
@@ -74,7 +76,7 @@ export async function configurarCiclo(fd: FormData) {
 }
 export async function avancarFase(fd: FormData) {
   const s = await requireSession(); const cid = Number(fd.get("cycleId")); const nova = str(fd, "fase"); const b = `/desempenho/ciclos/${cid}`; const just = strOrNull(fd, "justificativa");
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Mudar fase exige: " + cfg.alcadas.calibracao.join(", ")); const [c] = await db.select().from(schema.perfCycles).where(eq(schema.perfCycles.id, cid)); if (!c) throw new Error("Ciclo não encontrado."); if (!FASES_ORDEM.includes(nova)) throw new Error("Fase inválida.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Mudar fase exige: " + (await quemAprovaTexto("calibracao"))); const [c] = await db.select().from(schema.perfCycles).where(eq(schema.perfCycles.id, cid)); if (!c) throw new Error("Ciclo não encontrado."); if (!FASES_ORDEM.includes(nova)) throw new Error("Fase inválida.");
     const de = FASES_ORDEM.indexOf(c.fase), para = FASES_ORDEM.indexOf(nova); if (para < de && !just) throw new Error("Voltar de fase exige justificativa."); if (para > de + 1) throw new Error("Avance uma fase por vez.");
     if (nova === "ACOMPANHAMENTO" && !c.criterios) throw new Error("Vincule um modelo de avaliação antes de sair do planejamento.");
     if (nova === "ACOMPANHAMENTO" && c.modelId) await db.update(schema.evalModels).set({ congeladoEm: new Date(), status: "ATIVO" }).where(eq(schema.evalModels.id, c.modelId)); // congela critérios, rubricas e pesos
@@ -138,7 +140,7 @@ export async function aprovarNA(fd: FormData) {
 /** Calibração: exige justificativa, preserva notas originais, recalcula pelo motor oficial. */
 export async function calibrarCriterios(fd: FormData) {
   const s = await requireSession(); const rid = Number(fd.get("id")); const voltar = `/desempenho/avaliacoes/${rid}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Calibrar exige: " + cfg.alcadas.calibracao.join(", ")); const { r, c, criterios } = await carregar(rid); if (!["ENVIADA", "EM_CALIBRACAO"].includes(r.estado)) throw new Error("Só avaliações enviadas entram em calibração."); const just = str(fd, "justificativa"); if (!just) throw new Error("Calibração exige justificativa."); const evid = str(fd, "evidenciaCalibracao"); if (!evid) throw new Error("Mudança na calibração exige a evidência que a sustenta.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Calibrar exige: " + (await quemAprovaTexto("calibracao"))); const { r, c, criterios } = await carregar(rid); if (!["ENVIADA", "EM_CALIBRACAO"].includes(r.estado)) throw new Error("Só avaliações enviadas entram em calibração."); const just = str(fd, "justificativa"); if (!just) throw new Error("Calibração exige justificativa."); const evid = str(fd, "evidenciaCalibracao"); if (!evid) throw new Error("Mudança na calibração exige a evidência que a sustenta.");
     if (r.employeeId === s.employeeId) throw new Error("Conflito de interesse: ninguém calibra a própria avaliação."); await trava(rid, int(fd, "versao"));
     const atuais = (r.notasCriterios as Notas | null) ?? {}; const novas = lerNotas(fd, criterios, "n_", atuais); for (const k of Object.keys(novas)) if (atuais[k]?.na && atuais[k].naAprovado && novas[k].na) novas[k].naAprovado = true;
     const mem = await calcularRevisao(r, c, novas); if (!mem.publicavel) throw new Error(`Calibração deixaria a avaliação incompleta: ${mem.motivos.join(" ")}`);
@@ -149,7 +151,7 @@ export async function calibrarCriterios(fd: FormData) {
 }
 export async function publicarAvaliacao(fd: FormData) {
   const s = await requireSession(); const rid = Number(fd.get("id")); const voltar = `/desempenho/avaliacoes/${rid}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Publicar exige: " + cfg.alcadas.calibracao.join(", ")); const { r, c, criterios } = await carregar(rid); if (!["ENVIADA", "EM_CALIBRACAO"].includes(r.estado)) throw new Error("Só avaliações enviadas ou calibradas podem ser publicadas."); if (!["CALIBRACAO", "FEEDBACK", "AVALIACAO"].includes(c.fase)) throw new Error("Publique na fase de calibração ou feedback.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Publicar exige: " + (await quemAprovaTexto("calibracao"))); const { r, c, criterios } = await carregar(rid); if (!["ENVIADA", "EM_CALIBRACAO"].includes(r.estado)) throw new Error("Só avaliações enviadas ou calibradas podem ser publicadas."); if (!["CALIBRACAO", "FEEDBACK", "AVALIACAO"].includes(c.fase)) throw new Error("Publique na fase de calibração ou feedback.");
     if (r.employeeId === s.employeeId) throw new Error("Conflito de interesse: ninguém publica a própria avaliação."); const mem = await calcularRevisao(r, c); if (!mem.publicavel) throw new Error(`Não publicável: ${mem.motivos.join(" ")}`);
     await db.update(schema.perfReviews).set({ calc: { ...((r.calc as object | null) ?? {}), ...mem, publicadaEm: new Date().toISOString(), modelVersao: c.modelVersao }, estado: "PUBLICADA", status: "CONCLUIDA", aprovadoPor: s.id, notaFinal: mem.N === null ? null : mem.N.toFixed(2), desempenhoNivel: mem.N === null ? null : mem.N >= ((c.faixas as { final?: number[] } | null)?.final?.[1] ?? 4) ? 3 : mem.N >= ((c.faixas as { final?: number[] } | null)?.final?.[0] ?? 3) ? 2 : 1, publicadaEm: new Date(), versao: r.versao + 1, updatedAt: new Date() }).where(eq(schema.perfReviews.id, rid));
     await audit(s, "publicar avaliação", "perf_reviews", rid, null, { N: mem.N }); const [u] = await sql<{ id: number }[]>`SELECT id FROM users WHERE employee_id=${r.employeeId} AND ativo`; if (u) await notificar([u.id], "Sua avaliação foi publicada", "Veja o resultado, registre ciência e, se quiser, comente.", `/colaboradores/${r.employeeId}/painel?aba=avaliacoes`, "INFO", `pub:${rid}`);
@@ -169,7 +171,7 @@ export async function cienciaAvaliacao(fd: FormData) {
 }
 export async function responderContestacao(fd: FormData) {
   const s = await requireSession(); const rid = Number(fd.get("id")); const voltar = `/desempenho/avaliacoes/${rid}`;
-  try { assert(RH.includes(s.role) || can.aprovar(s, (await getSettings()).alcadas.calibracao)); const { r } = await carregar(rid); const resp = str(fd, "resposta"); if (!resp) throw new Error("Escreva a resposta."); await db.update(schema.perfReviews).set({ respostaContestacao: resp, versao: r.versao + 1, updatedAt: new Date() }).where(eq(schema.perfReviews.id, rid)); await audit(s, "responder contestação", "perf_reviews", rid, null, null);
+  try { assert(RH.includes(s.role) || can.aprovar(s, "calibracao")); const { r } = await carregar(rid); const resp = str(fd, "resposta"); if (!resp) throw new Error("Escreva a resposta."); await db.update(schema.perfReviews).set({ respostaContestacao: resp, versao: r.versao + 1, updatedAt: new Date() }).where(eq(schema.perfReviews.id, rid)); await audit(s, "responder contestação", "perf_reviews", rid, null, null);
     const [u] = await sql<{ id: number }[]>`SELECT id FROM users WHERE employee_id=${r.employeeId} AND ativo`; if (u) await notificar([u.id], "Sua contestação foi respondida", null, `/colaboradores/${r.employeeId}/painel?aba=avaliacoes`, "INFO", `resp:${rid}`);
   } catch (e) { redirect(go(voltar, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(voltar, "ok", "Resposta registrada; a avaliação publicada permanece como versão oficial."));
@@ -279,7 +281,7 @@ export async function registrarPerfil(fd: FormData) {
 /** Encerramento administrativo sem nota: evidências insuficientes. Exige aprovação (alçada de calibração) e justificativa; não gera nota final. */
 export async function encerrarInconclusiva(fd: FormData) {
   const s = await requireSession(); const rid = Number(fd.get("id")); const voltar = `/desempenho/avaliacoes/${rid}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.calibracao), "Encerrar como inconclusiva exige: " + cfg.alcadas.calibracao.join(", ")); const { r, c } = await carregar(rid); if (r.employeeId === s.employeeId) throw new Error("Conflito de interesse.");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Encerrar como inconclusiva exige: " + (await quemAprovaTexto("calibracao"))); const { r, c } = await carregar(rid); if (r.employeeId === s.employeeId) throw new Error("Conflito de interesse.");
     if (["PUBLICADA", "CONTESTADA", "INCONCLUSIVA"].includes(r.estado)) throw new Error("Avaliação já encerrada."); const just = str(fd, "justificativa"); if (!just) throw new Error("Justifique o encerramento como inconclusiva.");
     const mem = await calcularRevisao(r, c); if (mem.publicavel) throw new Error("Há base suficiente para concluir: publique ou calibre em vez de encerrar como inconclusiva.");
     await db.update(schema.perfReviews).set({ estado: "INCONCLUSIVA", status: "CONCLUIDA", calc: { ...mem, N: null, inconclusiva: true }, notaFinal: null, inconclusivaJustificativa: just, inconclusivaAprovadaPor: s.id, versao: r.versao + 1, updatedAt: new Date() }).where(eq(schema.perfReviews.id, rid));

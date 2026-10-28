@@ -96,7 +96,7 @@ export function BuscaGlobal({ paginas, variante = "barra", atalho = true }: { pa
           {norm(q).length >= 2 && !carregando && itens.length === 0 && <p className="px-4 py-6 text-center text-sm text-slate-500">{erro ?? "Nada encontrado."}</p>}
           {erro && itens.length > 0 && <p className="px-4 py-2 text-xs text-aviso">{erro}</p>}
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-2 text-[11px] text-slate-500"><span>↑ ↓ navegar</span><span>Enter abrir</span><span>Esc fechar</span><span>termine com “?” para perguntar</span><span className="ml-auto">só o que o seu perfil pode ver</span></div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line px-3 py-2 text-[11px] text-slate-500"><span>↑ ↓ navegar</span><span>Enter abrir</span><span>Esc fechar</span><span>termine com “?” para perguntar</span><span className="ml-auto">só o que o seu acesso pode ver</span></div>
       </dialog>
     </>
   );

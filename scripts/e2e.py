@@ -176,7 +176,7 @@ html = page("/"); assert "risco de férias em dobro" in html
 
 # ---- autoatendimento (COLABORADOR)
 html = page("/configuracoes"); aid = find_form_aid(html, "Criar acesso")
-joao = re.search(r'<option value="(\d+)">João Import</option>', html).group(1)
+joao = re.search(r'<option value="(\d+)">João Import(?: · [^<]*)?</option>', html).group(1)  # v29: a lista mostra pessoa · cargo · unidade
 loc = post("/configuracoes", aid, {"nome": "João Import", "email": "joao@self", "role": "COLABORADOR", "employeeId": joao, "senha": "senha12345"}); assert "ok=" in loc, loc
 S3 = requests.Session(); S3.headers.update({"Origin": B}); html = S3.get(B + "/login").text; aid = action_ids(html)[0]
 loc = post("/login", aid, {"email": "joao@self", "senha": "senha12345"}, sess=S3)

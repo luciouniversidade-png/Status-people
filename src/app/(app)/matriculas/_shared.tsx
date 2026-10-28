@@ -55,7 +55,7 @@ export function AcoesMatricula({ e, voltar, podeConfirmar, podeCancelarMat, turm
             <label className="flex items-center gap-2"><input type="checkbox" name="contrato" value="1" defaultChecked={e.contrato} /> Contrato assinado</label>
             <label className="flex items-center gap-2"><input type="checkbox" name="financeiro" value="1" defaultChecked={e.fin} /> Financeiro OK</label>
             <Btn small>Confirmar matrícula</Btn></form></Modal>)}
-      {e.status === "RESERVADA" && podeConfirmar && <form action={prorrogar} className="flex items-center gap-1"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} /><input name="dias" type="number" min={1} max={30} defaultValue={3} className="w-14 rounded border border-line px-1 py-1 text-xs" aria-label="dias" /><Btn small kind="ghost">Prorrogar</Btn></form>}
+      {e.status === "RESERVADA" && podeConfirmar && <form action={prorrogar} className="flex items-center gap-1"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} /><input name="dias" type="number" min={1} max={30} defaultValue={3} className="w-16 rounded border border-line px-1 py-1 text-xs" aria-label="dias" /><Btn small kind="ghost">Prorrogar</Btn></form>}
       <Modal label={"Transferir"} kind="ghost">
         <form action={transferirAcao} className="absolute z-10 space-y-2"><input type="hidden" name="id" value={e.id} /><input type="hidden" name="voltar" value={voltar} />
           <Field label="Nova turma"><Select name="novaClassId" required><option value="">Escolha</option>{turmas.filter(t => t.id !== e.class_id).map(t => <option key={t.id} value={t.id}>{rotuloTurma(t)}</option>)}</Select></Field>

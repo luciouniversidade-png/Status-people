@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { lerContexto } from "@/lib/contexto";
@@ -8,6 +9,7 @@ import { audit } from "@/lib/utils";
 /** Export da DRE com os filtros declarados (contexto, dimensão, visão e modo) no cabeçalho. */
 export async function GET(req: Request) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/financeiro/dre")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (!["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE", "RH"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const sp = Object.fromEntries(new URL(req.url).searchParams.entries()); const ctx = await lerContexto(s, sp);
   const dim: DimDre = sp.dim === "entidade" || sp.dim === "mes" ? sp.dim : "unidade"; const visao: VisaoDre = sp.visao === "acumulado" ? "acumulado" : "mes";

@@ -1,7 +1,7 @@
 import Link from "@/components/Link";
 import { notFound } from "next/navigation";
 import { eq, asc } from "drizzle-orm";
-import { db, schema } from "@/db";
+import { db, schema, sql } from "@/db";
 import { requireStaff, can, scopeUnit } from "@/lib/auth";
 import { Page, Card, Badge, Btn, Flash, Field, Input } from "@/components/ui";
 import { fmtData, fmtDataHora, PROC_LABEL, PROC_STATUS, getSettings, hoje } from "@/lib/utils";
@@ -17,8 +17,10 @@ export default async function Processo({ params, searchParams }: { params: Promi
   const itens = await db.select().from(schema.processItems).where(eq(schema.processItems.processId, pid)).orderBy(asc(schema.processItems.ordem), asc(schema.processItems.id));
   const users = await db.select({ id: schema.users.id, nome: schema.users.nome }).from(schema.users);
   const nomeUser = (uid: number | null) => users.find(u => u.id === uid)?.nome ?? "";
-  const cfg = await getSettings(); const podeConcluir = can.aprovar(s, cfg.alcadas.processos);
+  const cfg = await getSettings(); const podeConcluir = can.aprovar(s, "processos");
   const feitos = itens.filter(i => i.concluido).length; const aberto = p.status === "ABERTO"; const h = hoje();
+  // v30 · no desligamento, os itens que estão com a pessoa aparecem aqui e travam a conclusão até a devolução (ou o extravio) ser registrada
+  const itensCom = p.tipo === "DESLIGAMENTO" && e ? await sql<{ id: number; tipo: string; descricao: string; identificacao: string | null; entregue_em: string }[]>`SELECT id, tipo, descricao, identificacao, entregue_em::text FROM employee_items WHERE employee_id=${e.id} AND status='COM_COLABORADOR' ORDER BY entregue_em` : [];
 
   return (
     <Page title={`${PROC_LABEL[p.tipo]} — ${e?.nome ?? "?"}`}
@@ -51,6 +53,10 @@ export default async function Processo({ params, searchParams }: { params: Promi
           )}
         </Card>
         <div className="space-y-4">
+          {p.tipo === "DESLIGAMENTO" && e && <Card title={`Itens a devolver${itensCom.length ? ` (${itensCom.length})` : ""}`}>
+            {itensCom.length === 0 ? <p className="text-sm text-ok">Nada com a pessoa — chaves, equipamentos e crachá em dia.</p> : <><ul className="space-y-1 text-sm">{itensCom.map(i => <li key={i.id}>{i.descricao}{i.identificacao ? <span className="text-xs text-slate-500"> · {i.identificacao}</span> : null}<span className="text-xs text-slate-500"> · desde {fmtData(i.entregue_em)}</span></li>)}</ul>
+              <p className="mt-2 text-xs text-aviso">O desligamento só conclui com a devolução (ou o extravio) registrada. <Link className="text-acao underline" href={`/colaboradores/${e.id}#itens`}>Registrar na ficha</Link></p></>}
+          </Card>}
           {aberto && podeConcluir && (
             <Card title="Encerrar">
               <form action={concluirProcesso} className="space-y-2"><input type="hidden" name="processId" value={pid} />

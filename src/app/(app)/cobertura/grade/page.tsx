@@ -46,7 +46,7 @@ export default async function GradeHoraria({ searchParams }: { searchParams: Pro
     <Field label="Sala (opcional)"><Select name="spaceId" defaultValue={t?.space_id ?? ""}><option value="">—</option>{salas.filter(x => !unidade || x.unit_id === unidade).map(x => <option key={x.id} value={x.id}>{x.unidade} · {x.nome}</option>)}</Select></Field>
     <Btn small>{t ? "Salvar aula" : "Incluir aula"}</Btn>
     {sit === "VIGENTE" && v && v.vigencia_inicio < h && <p className="text-[11px] text-slate-500">Na grade em vigor, mudar professor, dia ou horário (ou incluir/retirar aula) vale a partir de hoje — o que passou fica como era.</p>}</form>;
-  const acoes = (t: Aula) => editavel && <div className="flex gap-1"><Modal label="Editar" title={`Aula de ${t.professor}`}><Form t={t} /></Modal><form action={removerAula}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="voltar" value={voltar} /><Btn small kind="ghost">Remover</Btn></form></div>;
+  const acoes = (t: Aula) => editavel && <div className="flex flex-col items-stretch gap-1 2xl:flex-row"><Modal label="Editar" title={`Aula de ${t.professor}`}><Form t={t} /></Modal><form action={removerAula}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="voltar" value={voltar} /><Btn small kind="ghost">Remover</Btn></form></div>;
   // CH da grade por professor (para a coluna da visão por professor)
   const chs = new Map([...new Set(slots.map(x => x.employee_id))].map(id => [id, chDeAulas(slots.filter(x => x.employee_id === id))]));
   const hm = (m: number) => `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, "0") : ""}`;

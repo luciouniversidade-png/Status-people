@@ -92,7 +92,7 @@ h = page("/configuracoes"); aid = find_form_aid(h, "Criar acessos de quem ainda 
 antes = int(psql("SELECT count(*) FROM users"))
 loc = post("/configuracoes", aid, {"unitId": ""})
 criados = int(psql("SELECT count(*) FROM users")) - antes
-ok(criados >= 2 and "acesso(s) de autoatendimento criado(s)" in loc and "Carga Teste Sem Email" in loc, f"lote: {criados} acessos criados; quem não tem e-mail é listado ({loc[:160]})")
+ok(criados >= 2 and "acesso(s) criado(s) pelo cargo de cada ficha" in loc and "Carga Teste Sem Email" in loc, f"lote: {criados} acessos criados; quem não tem e-mail é listado ({loc[:160]})")
 u = psql("SELECT role||'|'||trocar_senha||'|'||(employee_id IS NOT NULL)||'|'||(unit_id IS NOT NULL) FROM users WHERE email='carga.antiga@exemplo.com'")
 ok(u == "COLABORADOR|true|true|true", f"acesso criado com perfil Colaborador, vinculado à ficha e à unidade, com troca de senha obrigatória ({u})")
 loc = post("/configuracoes", aid, {"unitId": ""}); ok(loc.split("ok=")[-1].startswith("0 acesso"), "rodar de novo não duplica")

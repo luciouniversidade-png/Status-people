@@ -5,8 +5,9 @@ import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, int, hoje, caminhoSeguro, getSettings, addDays } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { prazosContratuais, decidePrazo, DECISAO_LABEL, TIPO_PRAZO, type TipoPrazo, type Prazo } from "@/lib/contratos-prazo";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const msgErro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + "T00:00:00Z"));
 const br = (d: string) => d.split("-").reverse().join("/");

@@ -7,8 +7,9 @@ import { foneWa, linkWa, enviarWhatsApp, preencher } from "@/lib/comunicacao";
 import { gerarLink, painelRematricula } from "@/lib/rematricula";
 import { MARCA_RASCUNHO_CONTRATO } from "@/db/setup";
 import { appUrl } from "@/lib/url";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const B = "/matriculas/rematricula";
 const back = (fd: FormData) => caminhoSeguro(str(fd, "voltar"), B);
 const numero = (fd: FormData, k: string, min: number, max: number, rotulo: string) => { const v = str(fd, k); const n = Number(v); if (!v || !Number.isInteger(n) || n < min || n > max) throw new Error(`${rotulo}: informe um número inteiro entre ${min} e ${max}.`); return n; };
@@ -23,7 +24,7 @@ async function linkDoEscopo(s: Awaited<ReturnType<typeof requireSession>>, id: n
 export async function gerarLinkRematricula(fd: FormData) {
   const s = await requireSession(); const b = back(fd); let msg = "";
   try {
-    assert(can.reservar(s), "Seu perfil não gera links de rematrícula.");
+    assert(can.reservar(s), "Seu acesso não gera links de rematrícula.");
     const cfg = await getSettings(); const ano = cfg.matriculas.anoLetivo as number;
     const [c] = await sql`SELECT 1 FROM contract_templates WHERE ano=${ano} AND status='VIGENTE'`; if (!c) throw new Error(`Publique o contrato ${ano} antes de gerar links (Rematrícula → Contrato).`);
     const studentId = int(fd, "studentId"); if (!studentId) throw new Error("Aluno não informado.");
@@ -40,7 +41,7 @@ export async function gerarLinkRematricula(fd: FormData) {
 export async function gerarLinksEmLote(fd: FormData) {
   const s = await requireSession(); let msg = "";
   try {
-    assert(can.reservar(s), "Seu perfil não gera links de rematrícula.");
+    assert(can.reservar(s), "Seu acesso não gera links de rematrícula.");
     const cfg = await getSettings(); const ano = cfg.matriculas.anoLetivo as number;
     const [c] = await sql`SELECT 1 FROM contract_templates WHERE ano=${ano} AND status='VIGENTE'`; if (!c) throw new Error(`Publique o contrato ${ano} antes de gerar links.`);
     const escopo = scopeUnit(s); const unidade = escopo ?? int(fd, "unidade"); const serie = strOrNull(fd, "serie");
@@ -57,7 +58,7 @@ export async function gerarLinksEmLote(fd: FormData) {
 export async function enviarConviteRematricula(fd: FormData) {
   const s = await requireSession(); const b = back(fd); let destino = "";
   try {
-    assert(can.reservar(s), "Seu perfil não envia convites de rematrícula.");
+    assert(can.reservar(s), "Seu acesso não envia convites de rematrícula.");
     const l = await linkDoEscopo(s, int(fd, "id") ?? 0); if (l.status !== "PENDENTE") throw new Error("Este link não está ativo.");
     const cfg = await getSettings(); const fone = foneWa(l.telefone); if (!fone) throw new Error(`Telefone de ${l.nome} ausente ou inválido — corrija na ficha do aluno.`);
     const base = { responsavel: l.responsavel ?? "família", aluno: l.nome, ano: l.ano, prazo: fmtData(l.expira_em), unidade: l.unidade ?? "Colégio Status" };

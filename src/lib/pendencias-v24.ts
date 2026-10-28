@@ -1,6 +1,6 @@
 import { sql } from "@/db";
 import { escopoDo } from "./alertas";
-import { scopeUnit, type Session } from "./auth";
+import { can, scopeUnit, type Session } from "./auth";
 import { hoje, addDays } from "./utils";
 import type { Pendencia } from "./pendencias";
 
@@ -42,7 +42,7 @@ export async function pendenciasV24(s: Session): Promise<{ itens: Pendencia[]; f
     bloco("contas a pagar", async () => {
       // v27 · quem tem a alçada: títulos aguardando a sua aprovação (sem os que a pessoa lançou ou já aprovou); Financeiro/Direção: o que vence sem programação e o que está programado para hoje
       const { getSettings } = await import("./utils"); const cfg = await getSettings(); const out: Pendencia[] = []; const fu = escopo === null ? sql`` : sql`AND p.unit_id=${escopo}`;
-      if (((cfg.alcadas.contasPagar ?? ["DIRECAO"]) as string[]).includes(s.role)) {
+      if (can.aprovar(s, "contasPagar")) {
         const r = await sql<{ id: number; numero: number; descricao: string; categoria: string; total: number; criado: string; dupla: boolean }[]>`SELECT p.id, p.numero, p.descricao, p.categoria, coalesce((SELECT sum(i.valor) FROM payable_installments i WHERE i.payable_id=p.id AND i.status='A_PAGAR'), 0)::float AS total, ${dl(sql`p.created_at`)} AS criado, p.aprovacoes_necessarias > 1 AS dupla
           FROM payables p WHERE p.status='AGUARDANDO_APROVACAO' AND p.created_by IS DISTINCT FROM ${me} AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(p.aprovacoes) x WHERE (x->>'userId')::int = ${me}) ${fu} ORDER BY p.created_at LIMIT 30`;
         out.push(...r.map(x => ({ chave: `cp${x.id}`, grupo: "APROVAR" as const, modulo: "Contas a pagar", acao: x.dupla ? "Aprovar (dupla checagem)" : "Aprovar", titulo: `CP-${String(x.numero).padStart(4, "0")} · ${x.descricao}`, sub: `${x.categoria} · ${x.total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`, href: `/financeiro/contas-a-pagar/${x.id}`, prazo: addDays(x.criado, 2) })));

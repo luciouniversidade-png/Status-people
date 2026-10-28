@@ -6,8 +6,9 @@ import { audit, str, strOrNull, int, hoje, addDays, caminhoSeguro } from "@/lib/
 import { podeSst, podeIncidente, TIPOS_ASO, RESULTADO_ASO, TIPOS_INCIDENTE, GRAVIDADE_INCIDENTE, FUNCOES_CIPA, REPRESENTACAO_CIPA, prazoCat } from "@/lib/sst";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { getSettings } from "@/lib/utils";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
 

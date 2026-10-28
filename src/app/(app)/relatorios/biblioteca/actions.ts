@@ -4,8 +4,9 @@ import { sql } from "@/db";
 import { requireSession, assert } from "@/lib/auth";
 import { audit, str, int, hoje, caminhoSeguro } from "@/lib/utils";
 import { REL, podeRelatoriosRh } from "@/lib/relatorios-rh";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 
 export async function favoritarRelatorio(fd: FormData) {
@@ -23,7 +24,7 @@ export async function favoritarRelatorio(fd: FormData) {
 export async function agendarRelatorio(fd: FormData) {
   const voltar = caminhoSeguro(str(fd, "voltar"), "/relatorios/biblioteca"); let txt = "";
   try {
-    const s = await requireSession(); assert(podeRelatoriosRh(s) && s.role !== "LEITURA", "Seu perfil não agenda relatórios."); const chave = str(fd, "chave"); assert(!!REL[chave], "Relatório desconhecido.");
+    const s = await requireSession(); assert(podeRelatoriosRh(s) && s.role !== "LEITURA", "Seu acesso não agenda relatórios."); const chave = str(fd, "chave"); assert(!!REL[chave], "Relatório desconhecido.");
     if (str(fd, "acao") === "cancelar") { await sql`UPDATE report_schedules SET ativo=false WHERE user_id=${s.id} AND relatorio=${chave}`; txt = "Agendamento cancelado."; }
     else { const dia = int(fd, "dia") ?? 1; assert(dia >= 1 && dia <= 28, "Dia do mês entre 1 e 28."); const unitId = int(fd, "unitId");
       await sql`INSERT INTO report_schedules (user_id, relatorio, params, dia, ativo) VALUES (${s.id}, ${chave}, ${JSON.stringify({ unitId })}::jsonb, ${dia}, true) ON CONFLICT (user_id, relatorio) DO UPDATE SET params=EXCLUDED.params, dia=EXCLUDED.dia, ativo=true`;

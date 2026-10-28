@@ -5,8 +5,9 @@ import { requireSession, assert, scopeUnit, can, type Session } from "@/lib/auth
 import { audit, str, strOrNull, int, hoje, addDays, getSettings, fmtData, caminhoSeguro, localParaUtc } from "@/lib/utils";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { podePrivacidade, PEDIDO_TIPO, TITULAR_TIPO, PEDIDO_STATUS, INC_RISCO, INC_STATUS, CATEGORIAS_DADOS, EXIGE_IDENTIDADE, novoProtocolo, prazoIncidente } from "@/lib/privacidade";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const back = (fd: FormData, fb: string) => caminhoSeguro(str(fd, "voltar"), fb);
 const BP = "/governanca/privacidade";
 const exigir = async (s: Session) => assert(await podePrivacidade(s), "Só a Direção, o RH e o encarregado (DPO) tratam privacidade.");
@@ -54,7 +55,7 @@ export async function salvarFinalidade(fd: FormData) {
 export async function registrarConsentimento(fd: FormData) {
   const s = await requireSession(); const sid = int(fd, "studentId") ?? 0; const b = back(fd, `/matriculas/alunos/${sid}`); let msg = "";
   try {
-    assert(can.reservar(s) || await podePrivacidade(s), "Seu perfil não registra autorizações.");
+    assert(can.reservar(s) || await podePrivacidade(s), "Seu acesso não registra autorizações.");
     const [st] = await sql<{ id: number; nome: string; unit_atual_id: number | null }[]>`SELECT id, nome, unit_atual_id FROM students WHERE id=${sid}`; if (!st) throw new Error("Aluno não encontrado.");
     const u = scopeUnit(s); if (u !== null && st.unit_atual_id !== u) throw new Error("Sem acesso a este aluno.");
     const [f] = await sql<{ id: number; titulo: string; versao: number; codigo: string }[]>`SELECT id, titulo, versao, codigo FROM consent_purposes WHERE id=${int(fd, "purposeId") ?? 0} AND ativo`; if (!f) throw new Error("Escolha a finalidade.");

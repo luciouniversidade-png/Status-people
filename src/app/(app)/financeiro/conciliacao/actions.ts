@@ -7,12 +7,13 @@ import { audit, str, strOrNull, int, caminhoSeguro, hoje, detectarSeparador, nor
 import { textoImportacao } from "@/lib/importacao";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { lerOFX, lerExtratoCSV, lerCielo, classificarLinha, categoriaCaixa, processarConciliacao, mesesInteiros, competenciaFechada, mensagemTrava, gateFechamento, podeOperar, podeTriar, CLASSES_IGNORA, semAcento, type LinhaExtrato } from "@/lib/conciliacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const BASE = "/financeiro/conciliacao";
 async function operador() { const s = await requireSession(); if (!podeOperar(s)) { await audit(s, "acesso negado: conciliação (escrita)", "bank_lines", null, null, { papel: s.role }); throw new Error("Só Financeiro e Direção operam a conciliação."); } return s; }
-async function triagem() { const s = await requireSession(); if (!podeTriar(s)) { await audit(s, "acesso negado: triagem de PIX", "bank_lines", null, null, { papel: s.role }); throw new Error("Seu perfil não faz a triagem de pagamentos."); } return s; }
+async function triagem() { const s = await requireSession(); if (!podeTriar(s)) { await audit(s, "acesso negado: triagem de PIX", "bank_lines", null, null, { papel: s.role }); throw new Error("Seu acesso não faz a triagem de pagamentos."); } return s; }
 const ultimoDia = (comp: string) => { const [a, m] = comp.split("-").map(Number); return new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10); };
 
 // ---------------------------------------------------------------- contas bancárias

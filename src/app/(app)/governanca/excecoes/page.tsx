@@ -1,3 +1,4 @@
+import { quemAprovaTexto } from "@/lib/acesso";
 import { Modal } from "@/components/Modal";
 import Link from "@/components/Link";
 import { scopeUnit, can } from "@/lib/auth";
@@ -12,7 +13,7 @@ import { requireGestao, popsLista } from "../_shared";
 export const dynamic = "force-dynamic";
 
 export default async function Excecoes({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const s = await requireGestao(); const sp = await searchParams; const cfg = await getSettings(); await expirarExcecoes();
+  const s = await requireGestao(); const sp = await searchParams; const cfg = await getSettings(); await expirarExcecoes(); const quemAprova = await quemAprovaTexto("excecao");
   const u = scopeUnit(s); const status = sp.status ?? "ATIVAS";
   const rows = await sql<{ id: number; regra: string; motivo: string; descricao: string | null; referencia: string | null; status: string; validade_ate: string | null; unidade: string | null; solicitante: string; aprovador: string | null; created_at: Date; motivo_decisao: string | null; solicitante_id: number; pop: string | null }[]>`
     SELECT e.id, e.regra, e.motivo, e.descricao, e.referencia, e.status, e.validade_ate::text, un.nome AS unidade, us.nome AS solicitante, e.solicitante_user_id AS solicitante_id, ua.nome AS aprovador, e.created_at, e.motivo_decisao, p.codigo AS pop
@@ -20,7 +21,7 @@ export default async function Excecoes({ searchParams }: { searchParams: Promise
     WHERE 1=1 ${u === null ? sql`` : sql`AND (e.unit_id IS NULL OR e.unit_id=${u})`} ${status === "ATIVAS" ? sql`AND e.status IN ('SOLICITADA','APROVADA','EXPIRADA')` : status ? sql`AND e.status=${status}` : sql``}
     ORDER BY (e.status='SOLICITADA') DESC, (e.status='EXPIRADA') DESC, e.created_at DESC LIMIT 300`;
   const [pops, units] = await Promise.all([popsLista(), db.select().from(schema.units).orderBy(asc(schema.units.nome))]);
-  const podeAprovar = can.aprovar(s, cfg.alcadas.excecao); const h = hoje();
+  const podeAprovar = can.aprovar(s, "excecao"); const h = hoje();
   return (
     <Page title="Exceções a regras e POPs" sub="Toda exceção tem motivo padronizado, aprovador, validade e revisão. Três exceções iguais em 90 dias = a regra precisa mudar." actions={<Btn kind="ghost" href="/api/export/excecoes">Exportar CSV</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
@@ -45,7 +46,7 @@ export default async function Excecoes({ searchParams }: { searchParams: Promise
             <Field label="Impacto (financeiro, pedagógico, legal, reputacional)"><Input name="impacto" /></Field>
             <div className="grid grid-cols-2 gap-2"><Field label="Unidade"><Select name="unitId" defaultValue={u ?? ""}><option value="">Rede</option>{units.filter(x => u === null || x.id === u).map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field><Field label="Validade sugerida"><Input name="validadeAte" type="date" defaultValue={addDays(h, cfg.governanca.excecaoValidadeDias)} /></Field></div>
             <Btn small>Enviar para aprovação</Btn>
-            <p className="text-xs text-slate-500">Aprovam: {cfg.alcadas.excecao.join(", ")}. Quem solicita não aprova a própria exceção. Toda exceção expira e é revisada.</p>
+            <p className="text-xs text-slate-500">Aprovam: {quemAprova}. Quem solicita não aprova a própria exceção. Toda exceção expira e é revisada.</p>
           </form>
         </Card>
       </div>

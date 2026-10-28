@@ -5,8 +5,9 @@ import { requireSession, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, addDays, caminhoSeguro, getSettings } from "@/lib/utils";
 import { notificar } from "@/lib/comunicacao";
 import { STATUS_AUDITORIA, TIPOS_AUDITORIA, gravidadeReincidente } from "@/lib/auditorias";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const BASE = "/governanca/auditorias";
 const GOV = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR"];

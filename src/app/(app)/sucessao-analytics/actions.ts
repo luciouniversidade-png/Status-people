@@ -5,8 +5,9 @@ import { db, schema, sql } from "@/db";
 import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int } from "@/lib/utils";
 import { contextoIA, perguntarIA } from "@/lib/talentos-analytics";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const podeSucessao = (r: string) => ["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(r);
 
 export async function salvarPosicaoCritica(fd: FormData) {

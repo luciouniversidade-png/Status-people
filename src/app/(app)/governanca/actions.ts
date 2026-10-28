@@ -1,4 +1,5 @@
 "use server";
+import { quemAprovaTexto, usuariosQueAprovam } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
@@ -6,8 +7,9 @@ import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, addDays, addMonths, getSettings, caminhoSeguro } from "@/lib/utils";
 import { FREQ_DIAS } from "@/lib/governanca";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const GESTAO = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"];
 const EQUIPE = [...GESTAO, "COMERCIAL"];
 
@@ -22,14 +24,14 @@ export async function salvarPop(fd: FormData) {
   try {
     const d = lerPop(fd);
     if (id) { const antes = await pop(id); assert(can.editar(s) || antes.ownerUserId === s.id, "Só RH, Direção ou o dono editam este POP."); await db.update(schema.procedures).set({ ...d, updatedAt: new Date() }).where(eq(schema.procedures.id, id)); await audit(s, "editar", "procedures", id, { titulo: antes.titulo, versao: antes.versao }, d); }
-    else { assert(GESTAO.includes(s.role), "Seu perfil não cria POPs."); const [r] = await db.insert(schema.procedures).values(d).returning({ id: schema.procedures.id }); novoId = r.id; await audit(s, "criar", "procedures", r.id, null, d); }
+    else { assert(GESTAO.includes(s.role), "Seu acesso não cria POPs."); const [r] = await db.insert(schema.procedures).values(d).returning({ id: schema.procedures.id }); novoId = r.id; await audit(s, "criar", "procedures", r.id, null, d); }
   } catch (e) { redirect(go(id ? `/governanca/pops/${id}` : "/governanca/pops", "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/governanca/pops/${novoId}`, "ok", "POP salvo."));
 }
 export async function publicarPop(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = `/governanca/pops/${id}`;
   try {
-    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops), "Publicar POP exige: " + cfg.alcadas.pops.join(", ") + ".");
+    const cfg = await getSettings(); if (!can.aprovar(s, "pops")) throw new Error("Publicar POP exige: " + (await quemAprovaTexto("pops")) + ".");
     const p = await pop(id); if (!p.passos) throw new Error("POP sem passos não pode ser publicado."); if (!p.ownerUserId) throw new Error("Defina o dono do POP antes de publicar.");
     const novaVersao = p.publicadoEm ? p.versao + 1 : p.versao;
     const { id: _i, createdAt: _c, updatedAt: _u, ...conteudo } = p; void _i; void _c; void _u;
@@ -43,7 +45,7 @@ export async function publicarPop(fd: FormData) {
 }
 export async function mudarStatusPop(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const novo = str(fd, "status"); const b = `/governanca/pops/${id}`;
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops)); const p = await pop(id); if (!["EM_REVISAO", "OBSOLETO", "RASCUNHO"].includes(novo)) throw new Error("Situação inválida.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "pops")); const p = await pop(id); if (!["EM_REVISAO", "OBSOLETO", "RASCUNHO"].includes(novo)) throw new Error("Situação inválida.");
     await db.update(schema.procedures).set({ status: novo, updatedAt: new Date() }).where(eq(schema.procedures.id, id)); await audit(s, "mudar status", "procedures", id, { status: p.status }, { status: novo }); }
   catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Situação do POP atualizada."));
@@ -60,12 +62,12 @@ export async function darCiencia(fd: FormData) {
 export async function solicitarExcecao(fd: FormData) {
   const s = await requireSession(); const b = str(fd, "voltar") || "/governanca/excecoes"; let id = 0;
   try {
-    assert(EQUIPE.includes(s.role), "Seu perfil não solicita exceções."); const cfg = await getSettings();
+    assert(EQUIPE.includes(s.role), "Seu acesso não solicita exceções."); const cfg = await getSettings();
     const regra = str(fd, "regra"); const motivo = str(fd, "motivo"); if (!regra || !motivo) throw new Error("Informe a regra/POP e o motivo padronizado.");
     const unitId = int(fd, "unitId"); if (unitId) assertScope(s, unitId);
     const [r] = await db.insert(schema.exceptions).values({ procedureId: int(fd, "procedureId"), regra, motivo, descricao: strOrNull(fd, "descricao"), impacto: strOrNull(fd, "impacto"), referencia: strOrNull(fd, "referencia"), unitId, solicitanteUserId: s.id, validadeAte: strOrNull(fd, "validadeAte") ?? addDays(hoje(), cfg.governanca.excecaoValidadeDias) }).returning({ id: schema.exceptions.id });
     id = r.id; await audit(s, "solicitar exceção", "exceptions", id, null, { regra, motivo, unitId });
-    await notificar(await usuariosPorPerfil(cfg.alcadas.excecao), "Exceção aguardando decisão", regra, "/governanca/excecoes", "ACAO");
+    await notificar(await usuariosQueAprovam("excecao"), "Exceção aguardando decisão", regra, "/governanca/excecoes", "ACAO");
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go("/governanca/excecoes", "ok", `Exceção #${id} enviada para aprovação.`));
 }
@@ -75,7 +77,7 @@ export async function decidirExcecao(fd: FormData) {
     const cfg = await getSettings(); const [e] = await db.select().from(schema.exceptions).where(eq(schema.exceptions.id, id)); if (!e) throw new Error("Exceção não encontrada.");
     if (decisao === "REVISADA") { assert(GESTAO.includes(s.role)); assert(e.status === "EXPIRADA" || e.status === "APROVADA", "Só exceções vigentes ou expiradas são revisadas."); await db.update(schema.exceptions).set({ status: "REVISADA", revisaoNota: strOrNull(fd, "nota") }).where(eq(schema.exceptions.id, id)); }
     else {
-      assert(can.aprovar(s, cfg.alcadas.excecao), "Aprovar exceções exige: " + cfg.alcadas.excecao.join(", ") + "."); assert(e.status === "SOLICITADA", "Exceção já decidida."); assert(e.solicitanteUserId !== s.id, "Quem solicita não aprova a própria exceção.");
+      if (!can.aprovar(s, "excecao")) throw new Error("Aprovar exceções exige: " + (await quemAprovaTexto("excecao")) + "."); assert(e.status === "SOLICITADA", "Exceção já decidida."); assert(e.solicitanteUserId !== s.id, "Quem solicita não aprova a própria exceção.");
       if (e.unitId) assertScope(s, e.unitId); if (decisao !== "APROVADA" && decisao !== "REJEITADA") throw new Error("Decisão inválida.");
       await db.update(schema.exceptions).set({ status: decisao, aprovadorUserId: s.id, decididoEm: new Date(), motivoDecisao: strOrNull(fd, "nota"), validadeAte: strOrNull(fd, "validadeAte") ?? e.validadeAte }).where(eq(schema.exceptions.id, id));
     }
@@ -132,7 +134,7 @@ export async function salvarNc(fd: FormData) {
 // ---------- Decisões ----------
 export async function salvarDecisao(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const b = "/governanca/decisoes";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops), "Registrar decisões exige: " + cfg.alcadas.pops.join(", ") + ".");
+  try { const cfg = await getSettings(); if (!can.aprovar(s, "pops")) throw new Error("Registrar decisões exige: " + (await quemAprovaTexto("pops")) + ".");
     const d = { data: str(fd, "data") || hoje(), titulo: str(fd, "titulo"), area: str(fd, "area"), unitId: int(fd, "unitId"), contexto: strOrNull(fd, "contexto"), decisao: str(fd, "decisao"), alternativas: strOrNull(fd, "alternativas"), consequencias: strOrNull(fd, "consequencias"), responsavelUserId: int(fd, "responsavelUserId") ?? s.id, revisarEm: strOrNull(fd, "revisarEm"), link: strOrNull(fd, "link") };
     if (!d.titulo || !d.area || !d.decisao) throw new Error("Informe título, área e a decisão.");
     if (id) { await db.update(schema.decisions).set(d).where(eq(schema.decisions.id, id)); await audit(s, "editar decisão", "decisions", id, null, d); } else { const [r] = await db.insert(schema.decisions).values(d).returning({ id: schema.decisions.id }); await audit(s, "registrar decisão", "decisions", r.id, null, d); }
@@ -141,7 +143,7 @@ export async function salvarDecisao(fd: FormData) {
 }
 export async function encerrarDecisao(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const novo = str(fd, "status"); const b = "/governanca/decisoes";
-  try { const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops)); if (novo !== "REVOGADA" && novo !== "SUBSTITUIDA") throw new Error("Situação inválida.");
+  try { const cfg = await getSettings(); assert(can.aprovar(s, "pops")); if (novo !== "REVOGADA" && novo !== "SUBSTITUIDA") throw new Error("Situação inválida.");
     await db.update(schema.decisions).set({ status: novo, substituidaPor: int(fd, "substituidaPor") }).where(eq(schema.decisions.id, id)); await audit(s, novo === "REVOGADA" ? "revogar decisão" : "substituir decisão", "decisions", id, null, { substituidaPor: int(fd, "substituidaPor") }); }
   catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Decisão atualizada."));
@@ -161,7 +163,7 @@ export async function salvarParamGovernanca(fd: FormData) {
 export async function concluirRevisaoPop(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = caminhoSeguro(str(fd, "voltar"), "/governanca/excecoes#revisoes");
   try {
-    const cfg = await getSettings(); assert(can.aprovar(s, cfg.alcadas.pops) || GESTAO.includes(s.role), "Revisão de POP: quem aprova POPs ou a gestão.");
+    const cfg = await getSettings(); assert(can.aprovar(s, "pops") || GESTAO.includes(s.role), "Revisão de POP: quem aprova POPs ou a gestão.");
     const [r] = await sql<{ status: string; dono_user_id: number | null }[]>`SELECT status, dono_user_id FROM procedure_reviews WHERE id=${id}`; assert(!!r && r.status === "ABERTA", "Revisão não está aberta.");
     const desfecho = str(fd, "desfecho"); assert(["MANTIDO", "VIROU_REGRA", "NC_ABERTA"].includes(desfecho), "Escolha o desfecho."); const obs = str(fd, "obs"); assert(obs.length >= 15, "Justifique (mínimo 15 caracteres): por que o POP não muda.");
     await sql`UPDATE procedure_reviews SET status='CONCLUIDA', desfecho=${desfecho}, desfecho_obs=${obs}, concluida_por=${s.id}, concluida_em=now() WHERE id=${id}`;

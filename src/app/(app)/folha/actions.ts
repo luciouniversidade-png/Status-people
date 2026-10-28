@@ -6,8 +6,9 @@ import { audit, str, strOrNull, int, num, getSettings, caminhoSeguro, arquivoPar
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
 import { podeFolha, podePreparar, podeConferir, pendenciasFechamento, pendenciasPacote, montarPacote, cicloPorId, garantirCiclo, eventoFolha, esperadaDaEntidade, totalAnteriorAceito, resultadoDoCiclo, pessoasDaEntidade } from "@/lib/folha";
 import { lerResultadoTexto, custoLinha, variacaoPct, exigeExplicacao, resultadoConferencia, sortearAmostra, docsFaltando, competenciaAnterior, MOTIVOS_VARIACAO, TIPOS_DOC } from "@/lib/folha-calc";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const mesOk = (m: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const msgErro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 

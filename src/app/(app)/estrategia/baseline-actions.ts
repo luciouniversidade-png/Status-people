@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { sql } from "@/db";
 import { requireSession, assert, scopeUnit } from "@/lib/auth";
 import { audit, str, int, hoje } from "@/lib/utils";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}#cronograma`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m, "#cronograma");
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const GESTAO = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "FINANCEIRO", "OPERACOES", "COMERCIAL"];
 async function projetoEditavel(projectId: number) {

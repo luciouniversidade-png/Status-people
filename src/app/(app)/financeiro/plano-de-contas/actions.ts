@@ -5,9 +5,10 @@ import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
 import { audit, str, int, getSettings, hoje, addDays, caminhoSeguro } from "@/lib/utils";
 import { listarContas, editaPlano, classificarLancamentos, contextoSugestao, filaClassificacao, garantirCentrosPadrao } from "@/lib/plano-contas";
 import { ehAnalitica, proximoCodigo, normalizar, sugerir } from "@/lib/plano-contas-calc";
+import { comMensagem } from "@/lib/redirecionar";
 
 const BASE = "/financeiro/plano-de-contas";
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 const msg = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 const ECON = ["OPEX", "CAPEX", "DIVIDA", "TRANSFERENCIA", "ADIANTAMENTO", "RECEITA"], COMP = ["FIXO", "VARIAVEL"], REC = ["RECORRENTE", "EVENTUAL"], CUSTO = ["DIRETO", "INDIRETO"], IND = ["IPCA", "DISSIDIO", "MENSALIDADE", "NENHUM"], DRV = ["ALUNOS", "RECEITA", "NENHUM"], CTR = ["UNIDADE", "CORPORATIVO"];
 async function editor() { const s = await requireSession(); const cfg = await getSettings(); assert(editaPlano(cfg, s), "O plano de contas é mantido pela Direção e pelo Financeiro."); return { s, cfg }; }

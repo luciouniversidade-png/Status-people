@@ -24,7 +24,8 @@ export default async function Importar({ searchParams }: { searchParams: Promise
             <li>Unidade aceita nome (Carandá, TV Morena I…) ou código (CAR, TVM1, TVM2, CUL).</li>
             <li>Cargo e empresa são casados pelo nome cadastrado em Configurações; se não bater, ficam em branco para você completar depois.</li>
             <li>Data em DD/MM/AAAA ou AAAA-MM-DD. Cabeçalho pode ter acento e maiúsculas (Admissão, E-mail, Vínculo…).</li>
-            <li>Linhas com erro são puladas e listadas no resumo. Nada é sobrescrito.</li>
+            <li>v30 · opcionais da ficha: <b>sexo</b> (F ou M, como no eSocial — base da igualdade salarial), <b>ramal</b>, <b>email_institucional</b> e <b>quem_e_quem</b> (sim/não: mostrar ramal e e-mail no quem é quem). Quem já existe (mesmo nome e unidade) recebe só esses campos — o resto da ficha não muda.</li>
+            <li>Linhas com erro são puladas e listadas no resumo. Nada além desses quatro campos é sobrescrito.</li>
           </ul>
         </Card>
       </div>

@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireSession } from "@/lib/auth";
+import { requireSession, can } from "@/lib/auth";
 import { sql } from "@/db";
 import { Page, Card, Table, Td, Flash, Field, Textarea, Btn, Badge } from "@/components/ui";
 import { Modal } from "@/components/Modal";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function Campanha({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireSession(); const { id } = await params; const sp = await searchParams; const cfg = await getSettings();
-  const aprova = (cfg.comunicacao.aprovadoresMassa as string[]).includes(s.role); if (!AUTORES_MASSA_LISTA.includes(s.role) && !aprova) notFound();
+  const aprova = can.aprovar(s, "massa"); if (!AUTORES_MASSA_LISTA.includes(s.role) && !aprova) notFound();
   const [c] = await sql<{ id: number; titulo: string; canal: string; publico: string; filtro: Record<string, unknown>; total: number; status: string; autor_user_id: number; autor_nome: string | null; aprovador: string | null; aprovado_em: string | null; motivo_rejeicao: string | null; disparo_em: string | null; disparado_em: string | null; enviadas: number; registradas: number; falhas: number; created_at: string; modelo: string; texto: string }[]>`SELECT c.id, c.titulo, c.canal, c.publico, c.filtro, c.total, c.status, c.autor_user_id, c.autor_nome, u.nome AS aprovador, c.aprovado_em::text, c.motivo_rejeicao, to_char((c.disparo_em AT TIME ZONE 'UTC') AT TIME ZONE 'America/Campo_Grande', 'DD/MM HH24:MI') AS disparo_em, c.disparado_em::text, c.enviadas, c.registradas, c.falhas, c.created_at::text, t.titulo AS modelo, t.texto
     FROM message_campaigns c JOIN message_templates t ON t.id=c.template_id LEFT JOIN users u ON u.id=c.aprovado_por WHERE c.id=${Number(id)}`;
   if (!c) notFound();

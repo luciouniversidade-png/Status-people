@@ -1,6 +1,76 @@
 # STATUS ONE — Pessoas, Matrículas, Atendimento, Governança, Financeiro, Operações, Estratégia, Insights e Command Center
 
-Sistema do Colégio Status com os módulos e o painel executivo no mesmo login, mesmas unidades e mesma auditoria: **Pessoas** (DOM-05 completo), **Matrículas 2027** (DOM-03), **Atendimento e retenção da família** (DOM-12, com o **Radar da família**), **Governança e POPs** (DOM-07), **Financeiro** (DOM-04 — camada de gestão sobre o ActiveSoft, com **orçado × realizado**), **Operações** (com portaria e segurança, mapa de salas, contratos e licenças), **Estratégia** (DOM-08, com a **gestão estratégica** completa), **Solicitações e aprovações**, **Privacidade (LGPD)** e **Canal de ética**, **Comunicação**, **ONE Insights** (Painel Executivo, central de fluxos e SLA, minhas pendências, busca e mural) e **Command Center** (DOM-14 — visão única da Direção). No celular, o ONE instala como app e manda as notificações. Versão atual: **v28** (esquema do banco 28.0) — mesclada com a obra **“STATUS ONE · A Nova Arquitetura · Edição Integral Referenciada v3”**, com a rastreabilidade de cada tela, KPI e regra em `Governança → Nova Arquitetura`.
+Sistema do Colégio Status com os módulos e o painel executivo no mesmo login, mesmas unidades e mesma auditoria: **Pessoas** (DOM-05 completo), **Matrículas 2027** (DOM-03), **Atendimento e retenção da família** (DOM-12, com o **Radar da família**), **Governança e POPs** (DOM-07), **Financeiro** (DOM-04 — camada de gestão sobre o ActiveSoft, com **orçado × realizado**), **Operações** (com portaria e segurança, mapa de salas, contratos e licenças), **Estratégia** (DOM-08, com a **gestão estratégica** completa), **Solicitações e aprovações**, **Privacidade (LGPD)** e **Canal de ética**, **Comunicação**, **ONE Insights** (Painel Executivo, central de fluxos e SLA, minhas pendências, busca e mural) e **Command Center** (DOM-14 — visão única da Direção). No celular, o ONE instala como app e manda as notificações. Versão atual: **v29** (esquema do banco 29.0) — mesclada com a obra **“STATUS ONE · A Nova Arquitetura · Edição Integral Referenciada v3”**, com a rastreabilidade de cada tela, KPI e regra em `Governança → Nova Arquitetura`.
+## O que chegou na v30 — o que as plataformas de RH mostram e o ONE ainda não tinha
+
+Pedido: "veja o que não temos e inclua", a partir de ~50 telas de plataformas de RH (SAP SuccessFactors, Workday, Oracle, HiBob, BambooHR, Rippling, ADP, Deel, Lattice, 15Five, Leapsome, Greenhouse/Gem, Lever, Personio e outras). O que o ONE já tinha (funil por vaga, aderência e shortlist, retenção e motivos, clima comparado, Payroll Bridge, custo de folha por unidade, People Analytics, Nine Box em contagens, Meu espaço, contas a pagar) ficou; entrou o que faltava. Continuam **fora, de propósito**: busca automática em LinkedIn/redes, entrevista por voz com IA e triagem conversacional (LGPD), benchmark salarial de mercado (sem fonte confiável) e garantia de reposição (coisa de agência).
+
+### Ficha completa e quem é quem (`Pessoas → Organograma e quem é quem`, ficha, `Meu espaço`)
+- **Organograma de pessoas** pelo gestor direto da ficha (equipe direta · total abaixo, busca, unidade, amplitude, sem gestor) com o painel **Quem é quem** (cargo, unidade, a quem responde, equipe, tempo de casa, **ramal** e **e-mail institucional**) — aberto a todos os logins com ficha; a pessoa pode pedir para mostrar só nome, cargo e unidade. A aba **Cargos e ocupação** (o organograma antigo) fica com a gestão.
+- Ficha com **Sexo (eSocial)**, **Ramal**, **E-mail institucional**, **No quem é quem** e **Empresa (CNPJ)**; a **importação** aceita as colunas `sexo`, `ramal`, `email_institucional` e `quem_e_quem` e **completa** esses campos nas fichas que já existem (sem mexer no resto).
+- **Histórico funcional**: toda edição que muda cargo, nível, unidade, CNPJ, gestor, vínculo, jornada, turno ou regime vira um fato com **data de vigência**, motivo e "foi promoção" (promoção › transferência › cargo › nível › efetivação/vínculo › gestor › jornada); **Lançar fato passado** para o que é de antes do sistema; exclusão com motivo; admissão e desligamento automáticos; a admissão gravada pelo sistema não contradiz a promoção que veio depois.
+- **Formação e qualificações** (o colaborador informa no Meu espaço, o RH valida ou recusa com motivo; maior titulação validada) e **itens sob responsabilidade** (entrega pela ficha ou por `Operações → Itens com colaboradores`, ciência do termo pelo Meu espaço, devolução com condição; o **desligamento não conclui** com item pendente).
+- Abrir a ficha de outra pessoa ficou restrito a RH, Direção, Direção da unidade, Coordenação e Consulta (no escopo); líderes de outras áreas abrem só a equipe direta.
+
+### Composição e igualdade salarial (`Pessoas → Composição da equipe`, `Igualdade salarial e diversidade`)
+- **Composição**: indicadores com minigráfico (quadro, contingente, destaques, tempo de casa, idade, amplitude, mulheres no quadro e na liderança), quadro por vínculo em 12 meses, movimentações por tipo e taxa de promoção, **ponte do quadro** por unidade, **titulação do corpo docente** e o **quadro numa data** — tudo reconstruído pelo histórico funcional.
+- **Igualdade salarial** (Lei 14.611/2023 · CLT art. 461): mulheres no quadro e na liderança, remuneração **no mesmo cargo e nível** (grupo mínimo de 3 + 3; horistas pelo valor da hora; acima de 5% pede critério objetivo), diferença bruta, composição e liderança por unidade, e o **relatório semestral de transparência** por CNPJ com 100+ (pendência de março e setembro; registro de onde publicou; plano de ação obrigatório quando há diferença). Só RH e Direção.
+
+### Recrutamento (`Recrutamento → Quadro de candidatos`, vaga, `Indicadores`)
+- **Quadro de candidatos** de todas as vagas por etapa (parado há N d, notas 1/3, precisa de decisão, entrevista, documentos, proposta há N d, aderência · sugerido).
+- **Avaliadores com notas independentes** (critérios 1–5, Forte sim/Sim/Não/Forte não, pontos fortes e de atenção; o consolidado e a divergência ≥ 2 pontos só depois de enviar; pendência com prazo; o avaliador não vê contato do candidato).
+- **Vaga pausada** (sai da página, o prazo é estendido pelos dias de pausa), **proposta** com data, resposta e motivo de recusa, **experiência do candidato** (4 perguntas anônimas no portal; mínimo de 5), **contratação aos 90 dias** (o gestor dá a nota) e o **índice de qualidade da contratação** (retenção + gestor + 1ª avaliação).
+- Indicadores: **saúde de cada vaga** (0–100, explicável), **projeção** de candidaturas e contratações do próximo mês, **tempo para preencher** por unidade e por cargo, propostas, experiência e qualidade.
+- **Página pública de vagas** (`/vagas`, `/vagas/<vaga>`): vagas marcadas para publicar, candidatura sem login com o link pessoal do portal, limite por endereço e por hora, aviso LGPD. **Nasce desligada — só a Direção liga, depois do GO.**
+
+### Liderança, calibração e metas
+- **Pesquisa de liderança** (tipo Liderança em `Clima e eNPS`): sete dimensões sobre o gestor direto, anônima; índice de efetividade, pontos de atenção com ações sugeridas, comentários só para RH e Direção; resultado por gestor só com 5+ respostas. O gestor vê o próprio em **Minha equipe → Liderança na visão da equipe**.
+- **Minha equipe → Semana da equipe**: o dia a dia do ponto de cada pessoa (✓, F, J, Fé/Fo), trabalhado × previsto, horas extras aprovadas em 8 semanas, navegação entre semanas e a última semana importada.
+- **Calibração**: distribuição real × **referência** (15/70/15, sem cota), **consistência dos avaliadores** e **Nine Box com as pessoas**. **Painel de metas** (`Desempenho → Painel de metas`) com metas ligadas a objetivos e resultados-chave.
+
+### Academy, benefícios e relatório sob medida
+- **Academy**: custo por participante e da turma, instrutor, **inscrição aberta** (com ou sem aprovação do gestor, `Academy → Aprovar inscrições`), **avaliação de reação**, **certificado** com código de conferência (o RH confere na lista de participantes do curso) e o **painel de aprendizagem** (obrigatórios em dia, vencidos, horas, horas por colaborador, investimento, reação, mais concluídos e mais bem avaliados).
+- **Benefícios** (`Pessoas → Benefícios`): catálogo com elegibilidade (vínculo, unidade, jornada mínima) e carência, VT com desconto de no máximo 6% (Lei 7.418/1985), dependentes, **bolsa para filho(a) aluno(a)** (mensalidade da série × %), exceção à regra com justificativa, **elegíveis sem adesão**, **movimentações do mês** (vão no pacote da folha), custo por benefício e por unidade; o desligamento encerra as adesões. **Remuneração total** estimada no Meu espaço e na ficha.
+- **Relatório sob medida** (`Pessoas → Relatório sob medida`): fonte (colaboradores, férias e ausências, treinamentos, movimentações, benefícios, desempenho), colunas, filtros, agrupar/quebrar, contar/somar/média, gráfico, salvar e compartilhar, CSV — sempre com o acesso de quem monta (unidade, salário, dados pessoais; CPF nunca).
+- **Nove indicadores** de capital humano no catálogo (30.0): HCROI, receita por colaborador, amplitude de controle, mulheres na liderança, qualidade da contratação, horas de treinamento por colaborador, promoções (12 meses), aceite de propostas e índice de liderança.
+
+### Banco e testes
+- Migração automática **30.0**: tabelas `employee_moves`, `employee_qualifications`, `employee_items`, `pay_transparency_reports`, `interview_feedback`, `hire_feedback`, `candidate_experience`, `public_application_log`, `training_enrollments`, `training_feedback`, `benefit_plans`, `benefit_enrollments` e `custom_reports`; colunas novas em `employees` (sexo, ramal, email_institucional, no_diretorio), `requisitions` (pausa, publicação, slug, visualizações), `applications` (etapa_desde, proposta, experiência), `climate_responses.gestor_id`, `courses` (custo, instrutor, inscrição), `training_sessions.custo`, `training_progress.certificado` e `perf_goals` (objetivo e resultado-chave). Uma vez por banco: o histórico funcional começa com admissões, desligamentos e as promoções do histórico salarial (`settings.v30_historico`), e as telas novas entram nos cargos com lista personalizada (`settings.v30_telas`).
+- `scripts/e2e_v30_pessoas.py`, `e2e_v30_recrutamento.py`, `e2e_v30_desempenho_academy.py` e `e2e_v30_beneficios_relatorios.py` (28 blocos) e a regressão completa das 44 suítes. `scripts/demo_v30.py`: dados fictícios da demonstração.
+
+## O que chegou na v29 — acesso pelo cargo (o auxiliar não vê o que o gerente vê)
+
+Pedido da Direção e do RH: "os usuários devem ser cadastrados pelo cargo — as funcionalidades pelo cargo, não por perfil; senão eu clico pessoa por pessoa o que ela vê; o auxiliar financeiro não vê o que o gerente financeiro vê". Agora o acesso é configurado **uma vez por cargo**: quem tem o cargo entra com aquele acesso; promoveu ou mudou o cargo na ficha, o acesso muda na próxima tela; desligou, o login deixa de entrar. Nada do que cada pessoa via muda na atualização — o RH revisa com calma.
+
+### Cargo → atuação, telas e aprovações (`Configurações → Acesso por cargo`, `/configuracoes/acessos`)
+- **Atuação** (o antigo "perfil", agora do cargo): como a pessoa trabalha dentro das telas e o **alcance** (a unidade dela ou a rede). Nove atuações: Direção, RH, Direção da unidade, Coordenação, Financeiro, Comercial e atendimento, Operações e manutenção, Consulta (somente leitura) e Autoatendimento.
+- **Telas**: o catálogo é o próprio menu da atuação; o cargo desmarca o que não deve ver — some do menu e o endereço passa a mostrar **Tela fora do seu acesso** (com o cargo e a quem pedir). Cargo com todas as telas recebe sozinho as telas de versões futuras. As pessoais (Início, Minha conta, Notificações, Meu espaço, Minha ficha, Minhas pendências) ficam sempre.
+- **Aprovações**: as 14 aprovações (as 12 alçadas + baixa manual de contas a pagar + segundo aprovador da comunicação em massa) marcadas **cargo a cargo**, ou "seguir o padrão da atuação" (`Configurações → Aprovações — padrão de cada atuação`). **Alçada de desconto (%) por cargo** (vazio = padrão da atuação).
+- **Matriz de acesso**: cargos (atuação, alcance, telas, aprovações, logins/fichas), **quem vê cada tela** (por grupo do menu), **quem aprova o quê** (grade editável com o desconto) e **fora do padrão** (exceções, substituições, contas sem ficha, fichas sem cargo). Selo **sugerida** para o cargo cuja atuação veio só do nome, até alguém confirmar.
+- **Editor do cargo**: atuação (trocar mostra o catálogo antes de salvar), telas por grupo com todas/nenhuma e contador, aprovações, desconto, pessoas do cargo, **copiar de outro cargo** e **como fica o menu**. Cargo novo (`Configurações → Cargos e organograma`) já nasce com a **Atuação no sistema**.
+
+### Usuário pela ficha
+- **Novo acesso**: escolher a pessoa (ficha) e clicar em **Criar acesso** — não há perfil para escolher: atuação, telas, aprovações e unidade vêm do cargo; nome e e-mail em branco vêm da ficha; senha em branco gera uma **senha temporária** mostrada uma vez (troca obrigatória no primeiro acesso). Uma ficha, um acesso; ficha desligada não ganha acesso ativo; autoatendimento sempre com ficha.
+- **Acessos em lote (pelo cargo de cada ficha)**: cada pessoa já entra com o acesso do próprio cargo (professor: autoatendimento; coordenação: a da coordenação; auxiliar financeiro: o do auxiliar). No editor do cargo, **Criar os acessos das N ficha(s) deste cargo** faz o lote só daquele cargo.
+- **Ver acesso** (`/configuracoes/acessos/usuario/<id>`): o menu exato, a origem (cargo, exceção, ficha sem cargo, conta sem ficha), o que aprova, a alçada de desconto e os atalhos do celular. A ficha mostra a linha **Acesso ao sistema** (RH e Direção).
+- **Exceção individual** (motivo obrigatório, à vista na Matriz e na lista, "voltar ao acesso do cargo") e **substituição temporária** (soma o acesso de outro cargo até uma data — no máximo 1 ano — e termina sozinha; "encerrar agora").
+- **Conta sem ficha** para contabilidade externa, consultoria, TI e homologação: atuação, telas e aprovações na própria conta.
+- **Desligamento** concluído encerra o login na hora (auditoria; a tela de entrada avisa "acesso encerrado"). **Trava de segurança**: o sistema recusa a mudança que deixaria a rede sem ninguém de RH/Direção com Configurações e Acesso por cargo.
+
+### O que passa a respeitar o acesso do cargo
+- Menu, endereço (bloqueio no servidor → `/sem-acesso`), **Início** (blocos e atalhos), **Minhas pendências**, **busca** (Ctrl+K), Pergunte ao Status, **exportações e APIs** (403) e o **Painel financeiro** (números, alertas e atalhos só das telas do cargo; sem o botão Importar para quem não tem a aprovação de títulos e orçamento).
+- **Liderança fora da área de pessoas**: cargo de outra área com a aprovação de férias ou banco de horas aprova só a **própria equipe** (gestor direto na ficha) e ganha a **Minha equipe**; avisos e e-mails dos pedidos vão para a gestora direta.
+- **Quem aprova**: avisos e e-mails vão para quem tem a aprovação no cargo; os textos "Aprovam:" e a alçada de desconto mostram **cargos** ("em substituição" durante a substituição; contas sem ficha pela atuação).
+- **Importar títulos, preços e orçamento** exigem também a aprovação "financeiro" do cargo (o auxiliar opera, não importa nem orça).
+- **Solicitações**: etapa por cargo (`Gerente financeiro | cargo Gerente Financeiro`, ou o nome exato do cargo). **Comunicados**: público **Um cargo**.
+- Nomes: perfil → atuação; Diretor de unidade → Direção da unidade; Gestor → Coordenação; Somente leitura → Consulta; Colaborador → Autoatendimento; Comercial / Atendimento → Comercial e atendimento. O botão da barra de contexto virou **Padrão da atuação**.
+
+### Banco e testes
+- Migração automática **29.0**: `positions.acesso` (atuação, telas, aprovações, desconto, quem revisou), `users.acesso` (exceção ou conta sem ficha), `users.substituicao`, `users.aprova`, `users.origem_acesso`, `users.desconto_pct`, `announcements.position_id` e índices. Conversão única (`settings.acesso_v29`) **sem mudar o que cada pessoa vê**: o cargo recebe a atuação da maioria de quem já tinha login nele (ou a sugerida pelo nome, com o selo "sugerida"); quem tinha perfil diferente do cargo fica com exceção "Acesso mantido da versão anterior"; logins sem ficha viram contas sem ficha.
+- A sessão é recalculada do banco a cada tela (o token só identifica a pessoa); a rotina diária (`/api/tarefas`) recalcula todos os acessos (substituições vencidas, desligamentos).
+- `scripts/e2e_acesso_cargo_v29.py` (18 blocos: migração e selo "sugerida", editor do cargo, usuário pela ficha, menus e telas bloqueadas, API e exportação, painel financeiro, descontos, aprovações da equipe, troca de cargo, exceção, substituição e vencimento, desligamento, conta sem ficha e formulário antigo, trava de segurança, comunicado e etapa por cargo, matriz, rotina e auditoria). Regressão completa: **40 suítes** verdes.
+- `scripts/demo_v29.py`: dados fictícios da demonstração (cargo Auxiliar Financeiro, gerente, auxiliar, tesoureiro em substituição e analista com exceção, etapa e comunicado por cargo, desconto e férias pedidos pelo auxiliar).
+
 ## O que chegou na v28 — plano de contas gerencial, centros de custo, rateio e o orçamento do ano pelo histórico
 
 Do catálogo **“Plano de contas, centros de custo e orçamento”**: a despesa passa a ter **natureza** (a conta do plano), **centro de custo**, **comportamento** e **tipo econômico** em campos distintos; o corporativo é **rateado por critério aprovado** e cada unidade vê o seu resultado antes e depois do rateio; e o orçamento de 2027 nasce do **histórico higienizado** — volume × preço × calendário, matrículas e contratos —, com versões base, otimista e estresse aplicadas pela Direção. A categoria de sempre continua no caixa, na DRE e no orçado × realizado (cada conta aponta para a sua **categoria-ponte**): nada do que existia muda de lugar. Tudo com trilha na auditoria; alertas e pendências só com contagens; telas de exemplo com dados fictícios.
@@ -46,6 +116,16 @@ Os quatro passos do catálogo, com o andamento de cada um no topo da tela:
 - Migração automática 28.0: `chart_accounts` (com o plano padrão), `cost_centers`, `classification_rules`, `allocation_rules`, `budget_hygiene`, `budget_plans`; `cash_entries` e `payables` ganham conta e centro (o caixa também guarda quem classificou, quando e a origem — manual, regra, sugestão, contas a pagar); configurações `planoContas`, `orcamentoHistorico` e `dre.naoDespesa`.
 - `scripts/e2e_plano_contas_v28.py` (11 blocos: preparação, plano, classificação e regras, contas a pagar, DRE, rateio, parâmetros, higienização, projeção conferida conta a conta, aplicação e pendências/alertas/configurações/exportações) — a projeção é conferida em reais (mensalidade × reajuste × alunos, dissídio a partir do mês, tributo pela receita, conta que começou no meio da base, resíduo sem conta, piso de títulos e contratos, versões).
 - `scripts/demo_v28.py` abre o caixa de demonstração em contas do plano (contrapartes “(demo)”), cria regras, planta os casos da higienização, aprova o critério de rateio e aplica o orçamento de 2027; rode depois de `scripts/demo_insights.py` e `scripts/demo_v27.py`.
+
+### Ajustes da entrega do manual v28 (sem mudança de esquema)
+- **Tabelas que se ajustam à largura** (`components/AjusteTabela.tsx`): quando a tabela não cabe no cartão, os títulos das colunas quebram linha e a letra e o espaçamento diminuem (níveis 1 a 3, o 3 só no computador) antes de sobrar rolagem lateral; recalcula quando a largura muda.
+- **Telas densas reorganizadas**: descontos (unidade e ano sob o aluno, validade sob o tipo, Aprovar/Rejeitar na própria situação), chamados e casos (prioridade e situação na mesma coluna, prazo em duas linhas; filtro de casos com a busca em linha própria), pesquisas de clima, faixas salariais, resultados-chave do OKR (dono e prazo juntos, números com vírgula), CIPA, resultado do contador na folha (valores sem "R$" com a unidade no título), linha do tempo da folha, planilha do orçamento, talent reviews antes do bus factor, ações da grade empilhadas, cartões de rematrícula e de retenção em duas linhas.
+- **Painel do Financeiro**: atalhos para Contas a pagar e Plano de contas e alertas de parcelas vencidas sem baixa, vencendo sem programação, títulos aguardando aprovação e saídas sem conta (Direção, Financeiro e direção da unidade). Nota da Tesouraria no Cockpit atualizada.
+- **Configurações**: pesos e metas do People Health com rótulos legíveis; a alçada do financeiro passa a dizer "… e plano de contas".
+- **Formulários**: rótulo ou dica com "palavra" muito longa (lista de colunas de CSV, identificador) quebra depois do ponto e vírgula, sem alargar a página.
+- **Mensagens de confirmação** preservadas quando o retorno tem âncora (`lib/redirecionar.ts`, usado pelas ações dos módulos).
+- **Command Center**: valores grandes resumidos (R$ 1,7 mi) com o exato na dica. **Treemap**: o rótulo só aparece quando cabe no bloco.
+- **Correções**: Reservar candidato (aderência) grava a etiqueta "reserva vaga #N" (coberto no `e2e_recrutamento_v26.py`); na higienização do orçamento, "fora do padrão" sem conta nem contraparte agrupa pelo histórico (sem falso positivo em receitas).
 
 ## O que chegou na v27 — contas a pagar de ponta a ponta e um RH que decide antes do prazo
 
@@ -644,6 +724,20 @@ Você vai criar duas contas gratuitas: **Neon** (banco de dados) e **Vercel** (s
 5. Clique em **Deploy**. Em 2–3 minutos a Vercel mostra o endereço do sistema (algo como `https://status-people.vercel.app`).
 
 ### Atualizando uma instalação que já existe
+**v30:** basta publicar o código. Na primeira subida o servidor cria as tabelas e colunas da v30 (esquema **30.0**), começa o **histórico funcional** com a admissão de cada ficha, os desligamentos e as promoções do histórico salarial, e inclui as telas novas nos cargos que têm lista de telas personalizada (o quem é quem para todos; a composição para quem via o People Analytics; a igualdade salarial para quem via Cargos e salários; os benefícios para quem via Holerites e guias; o relatório sob medida para quem via Relatórios do RH; os itens com colaboradores para quem via Ativos e patrimônio). A base de indicadores é recalculada na primeira visita ao Painel Executivo. Depois:
+1. `Colaboradores → Importar planilha`: complete **sexo**, **ramal**, **e-mail institucional** e **quem é quem** das fichas existentes (só esses campos mudam) e confira o **CNPJ** de cada ficha.
+2. `Configurações → Pessoas (v30)`: revise prazos, mínimos e motivos. **A página pública de vagas fica desligada**: só a Direção liga, e só depois do GO da homologação.
+3. `Pessoas → Benefícios`: cadastre o catálogo e as adesões atuais; confira o custo com as faturas antes do próximo pacote da folha.
+4. `Academy`: marque nos cursos o custo, o instrutor e quais têm inscrição aberta (e se passam pelo gestor).
+Nenhuma variável nova.
+
+**v29:** basta publicar o código. Na primeira subida o servidor cria as colunas do acesso pelo cargo e converte os acessos **sem mudar o que cada pessoa vê** (cada cargo recebe a atuação de quem já tinha login nele ou a sugerida pelo nome; perfil diferente do cargo vira exceção "Acesso mantido da versão anterior"; login sem ficha vira conta sem ficha). Depois, com calma:
+1. `Configurações → Acesso por cargo → Cargos`: confirme a atuação dos cargos com o selo **sugerida** (abra, confira e salve) e ajuste as telas e aprovações dos cargos de gestão (ex.: auxiliar × gerente financeiro).
+2. `Acesso por cargo → Fora do padrão`: para cada exceção herdada, corrija o cargo na ficha ou clique em **Voltar ao acesso do cargo**.
+3. `Configurações → Usuários e acessos → Editar`: ligue à ficha os logins da equipe que ainda são "conta sem ficha" (Direção, RH, Financeiro, coordenações). Conta sem ficha fica só para quem não é da escola.
+4. Solicitações: nas etapas "Financeiro" (ou outra atuação) que devem passar só por um cargo, troque por `cargo Gerente Financeiro`.
+Nenhuma variável nova.
+
 **v25:** basta publicar o código. Na primeira subida o servidor cria as tabelas novas (conciliação, vigências da grade, auditoria do ponto, portal do candidato, envio em massa e revisões de POP), as colunas novas (forma de pagamento e conciliação nos títulos, origem no caixa, pagamento nas solicitações, contato de emergência, aprovação nos comunicados) e transforma a grade que já existe na vigência **“Grade em uso”**. Nada do que já existe é alterado ou apagado. Depois, uma vez:
 1. `Financeiro → Conciliação → Contas`: cadastre a conta de movimento de cada unidade; importe o extrato (OFX ou CSV) e o relatório de vendas da Cielo. Na importação de títulos do ActiveSoft, inclua a coluna **forma** (PIX, boleto, cartão, dinheiro) para o recebimento por forma.
 2. `Configurações → Conciliação, despesas e ponto (v25)`: **troque as taxas EXEMPLO pelas do contrato da adquirente**; confira a meta e o prazo do fechamento, a política de despesas e a tolerância do ponto.
@@ -704,10 +798,10 @@ A resposta deve ser um texto com `"ok": true`. Isso cria as tabelas, as 4 unidad
 ### Passo 4 — Primeiro acesso
 1. Entre em `https://SEU-ENDERECO.vercel.app/login`.
 2. Vá em **Minha conta** e troque a senha.
-3. Em **Configurações**, confira unidades, empresas (preencha os CNPJs) e cargos; crie os usuários da equipe (Direção, coordenadora de RH, diretores de unidade…).
+3. Em **Configurações**, confira unidades, empresas (preencha os CNPJs) e **cargos — cada um com a Atuação no sistema**; em **Acesso por cargo**, ajuste as telas e aprovações dos cargos de gestão.
 4. Em **Colaboradores → Importar planilha**, cole a planilha atual (veja o formato abaixo). Depois complete cargo, gestor e carga horária de quem ficou pendente.
 5. Saldos atuais do banco de horas: em **Banco de horas → Importar saldos da planilha**, cole duas colunas (`nome;saldo`) copiadas da planilha _RESUMO_BANCO_DE_HORAS (saldo em minutos, ex.: `-4215`, ou em `hh:mm`, ex.: `-70:15`) e informe a data do fechamento. Cada linha vira um ajuste aprovado; rodar de novo não duplica. A partir daí, só lançamentos do dia a dia.
-6. Para dar acesso a um colaborador (ver a própria ficha, pedir férias, lançar horas): **Configurações → Usuários → perfil "Colaborador (autoatendimento)"**, vinculando ao cadastro dele.
+6. Logins: **Configurações → Usuários e acessos → Novo acesso** (escolha a pessoa — o acesso vem do cargo da ficha) ou **Acessos em lote** (todas as fichas com e-mail). Professor e demais cargos de autoatendimento veem a própria ficha, pedem férias e lançam horas.
 
 Domínio próprio (ex.: `pessoas.colegiostatus.com.br`): na Vercel, **Settings → Domains**. Opcional.
 
@@ -734,16 +828,20 @@ João Souza;TVM1;01/02/2025;Inspetor de Alunos;;CLT;;;528;Integral
 
 ---
 
-## 3. Perfis e permissões
+## 3. Acesso pelo cargo: atuações e permissões
 
-| Perfil | Vê | Faz |
+Desde a v29, o acesso vem do **cargo da ficha**: cada cargo tem uma **atuação** (abaixo), as **telas** que vê (o cargo pode tirar telas da atuação) e as **aprovações** que faz — `Configurações → Acesso por cargo`. Nos parágrafos históricos deste README, "perfil" é o nome antigo da atuação.
+
+| Atuação | Vê | Faz |
 |---|---|---|
-| Direção / RH | tudo, todas as unidades, salário e CPF | cadastra, edita, aprova, configura, conclui admissão e desligamento |
-| Diretor de unidade | só a própria unidade, sem salário/CPF | solicita e aprova férias/afastamentos e banco de horas da unidade (conforme alçadas) |
-| Gestor | só a própria unidade, sem salário/CPF | solicita férias/afastamentos e lança horas (ficam pendentes de aprovação) |
-| Somente leitura | conforme unidade | consulta |
-| Colaborador (autoatendimento) | só a própria ficha, sem salário/CPF | pede férias e afastamentos, lança horas (ficam pendentes) |
-| Comercial / Atendimento | Matrículas e Atendimento (rede ou uma unidade) | cadastra alunos, reserva vagas, opera a fila, confirma matrícula (alçada padrão), registra e conduz casos |
+| Direção / RH | tudo, todas as unidades, salário e CPF | cadastra, edita, aprova, configura (inclusive o acesso dos cargos), conclui admissão e desligamento |
+| Direção da unidade (antes "Diretor de unidade") | só a própria unidade, sem salário/CPF | solicita e aprova férias/afastamentos e banco de horas da unidade (conforme as aprovações do cargo) |
+| Coordenação (antes "Gestor") | só a própria unidade, sem salário/CPF | solicita férias/afastamentos e lança horas (ficam pendentes de aprovação); Minha equipe |
+| Financeiro | o financeiro (cada cargo com as suas telas) | opera recebimentos, conciliação, contas a pagar; importa, orça e aprova conforme as aprovações do cargo |
+| Consulta (antes "Somente leitura") | conforme unidade | consulta |
+| Autoatendimento (antes "Colaborador") | só a própria ficha, sem salário/CPF | pede férias e afastamentos, lança horas (ficam pendentes) |
+| Comercial e atendimento | Matrículas e Atendimento (rede ou uma unidade) | cadastra alunos, reserva vagas, opera a fila, confirma matrícula (aprovação padrão), registra e conduz casos |
+| Operações e manutenção | Operações | chamados, ativos, vistorias, espaços, portaria e fornecedores |
 
 Estratégia (v21): todos os perfis de equipe leem; identidade, mapa, indicadores da rede e parâmetros são da Direção/RH (diretor: indicadores e objetivos da própria unidade); ações e rituais são criados por todos os perfis de gestão no seu escopo; medição de indicador é do responsável, do diretor da unidade e da Direção/RH (investimento em captação também do Comercial). Radar da família: atendem Direção, RH, diretor, gestor e Comercial; distribuem a carteira Direção, RH, diretor e gestor; configuram a jornada Direção/RH.
 
@@ -775,6 +873,10 @@ Testes de ponta a ponta (servidor em `next start -p 3100`, Python 3 + `requests`
 
 ```
 src/app/(app)/           páginas autenticadas (colaboradores, organograma, processos, ferias, banco-de-horas, documentos, auditoria, configuracoes, conta)
+src/lib/acesso.ts        v29 · acesso pelo cargo: atuações, aprovações, telas (catálogo = menu), cálculo do acesso efetivo (cargo, exceção, substituição, conta sem ficha), sessão recalculada do banco, sincronização e “quem aprova”
+src/lib/menu.ts          v29 · o menu de cada atuação (usado no layout, no catálogo de telas do cargo e em “o que a pessoa vê”)
+src/app/(app)/configuracoes/acessos/{,cargo/[id],usuario/[id]} · acesso-actions.ts   v29 · matriz de acesso, editor do cargo, o que a pessoa vê (exceção, substituição, conta sem ficha)
+src/app/(app)/sem-acesso  v29 · tela fora do acesso do cargo
 src/app/login            login
 src/app/api/setup        instalação única (tabelas + dados-base)
 src/app/api/export       exportações CSV (colaboradores, banco, férias, banco-mensal)

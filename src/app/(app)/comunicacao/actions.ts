@@ -7,8 +7,9 @@ import { audit, str, strOrNull, int, getSettings } from "@/lib/utils";
 import { foneWa, enviarWhatsApp, preencher, notificar } from "@/lib/comunicacao";
 import { enviarEmail } from "@/lib/notify";
 import { alvoComunicado, aprovadoresMassa, emHorarioComercial, proximaJanela, fmtJanela, dispararComunicado } from "@/lib/massa";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const GESTAO = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES"];
 
 // ---------- Comunicados internos ----------
@@ -16,9 +17,11 @@ export async function publicarComunicado(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const b = "/comunicacao/comunicados"; let msg = "Comunicado publicado.";
   try { assert(["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role), "Comunicados são publicados por Direção, RH e diretores."); const titulo = str(fd, "titulo"); const texto = str(fd, "texto"); if (!titulo || !texto) throw new Error("Informe título e texto.");
     const publico = str(fd, "publico") || "TODOS"; const unitId = publico === "UNIDADE" ? (int(fd, "unitId") ?? scopeUnit(s)) : null; if (s.role === "DIRETOR_UNIDADE" && (publico !== "UNIDADE" || unitId !== s.unitId)) throw new Error("Diretor publica só para a própria unidade.");
-    const d = { titulo, texto, publico, unitId, role: publico === "PERFIL" ? strOrNull(fd, "role") : null, requerCiencia: str(fd, "requerCiencia") === "1", prazoCiencia: strOrNull(fd, "prazoCiencia"), fixado: str(fd, "fixado") === "1", expiraEm: strOrNull(fd, "expiraEm"), autorUserId: s.id, autorNome: s.nome };
+    const positionId = publico === "CARGO" ? int(fd, "positionId") : null; if (publico === "CARGO" && !positionId) throw new Error("Escolha o cargo do público.");
+    if (publico === "PERFIL" && !str(fd, "role")) throw new Error("Escolha a atuação do público.");
+    const d = { titulo, texto, publico, unitId, positionId, role: publico === "PERFIL" ? strOrNull(fd, "role") : null, requerCiencia: str(fd, "requerCiencia") === "1", prazoCiencia: strOrNull(fd, "prazoCiencia"), fixado: str(fd, "fixado") === "1", expiraEm: strOrNull(fd, "expiraEm"), autorUserId: s.id, autorNome: s.nome };
     // v25 · CRQ-COM-V3-01: para muita gente, é comunicação em massa — só sai com um segundo aprovador e em horário comercial
-    const cfg = await getSettings(); const alvo = await alvoComunicado(publico, unitId, d.role); const massa = alvo.length >= Number(cfg.comunicacao.massaMinDestinatarios ?? 20);
+    const cfg = await getSettings(); const alvo = await alvoComunicado(publico, unitId, d.role, positionId); const massa = alvo.length >= Number(cfg.comunicacao.massaMinDestinatarios ?? 20);
     let cid = id ?? 0;
     if (id) { const [old] = await sql<{ status: string; autor_user_id: number | null }[]>`SELECT status, autor_user_id FROM announcements WHERE id=${id}`; if (!old) throw new Error("Comunicado não encontrado."); assert(old.autor_user_id === s.id || can.editar(s), "Só o autor, o RH ou a Direção editam.");
       await db.update(schema.announcements).set(d).where(eq(schema.announcements.id, id)); }
@@ -36,7 +39,7 @@ export async function publicarComunicado(fd: FormData) {
 export async function decidirComunicado(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id") ?? 0; const b = "/comunicacao/comunicados"; let msg = "";
   try {
-    const cfg = await getSettings(); assert((cfg.comunicacao.aprovadoresMassa as string[]).includes(s.role), "Aprovação de comunicação em massa: Direção ou RH.");
+    const cfg = await getSettings(); assert(can.aprovar(s, "massa"), "Aprovação de comunicação em massa: Direção ou RH.");
     const [a] = await sql<{ status: string; autor_user_id: number | null; titulo: string; destinatarios: number | null }[]>`SELECT status, autor_user_id, titulo, destinatarios FROM announcements WHERE id=${id}`; assert(!!a, "Comunicado não encontrado.");
     assert(a.status === "AGUARDANDO_APROVACAO", "Este comunicado não aguarda aprovação."); assert(a.autor_user_id !== s.id, "Quem escreveu não aprova o próprio comunicado em massa.");
     const decisao = str(fd, "decisao");
@@ -75,7 +78,7 @@ export async function salvarModelo(fd: FormData) {
 // ---------- Mensagens (registro + envio) ----------
 export async function registrarMensagem(fd: FormData) {
   const s = await requireSession(); const voltar = str(fd, "voltar") || "/comunicacao/mensagens"; let msg = "";
-  try { assert(GESTAO.includes(s.role), "Seu perfil não envia mensagens."); const canal = str(fd, "canal") || "WHATSAPP"; const nome = str(fd, "destinatarioNome"); const contato = strOrNull(fd, "destinatarioContato"); let texto = str(fd, "texto"); if (!nome || !texto) throw new Error("Informe destinatário e texto.");
+  try { assert(GESTAO.includes(s.role), "Seu acesso não envia mensagens."); const canal = str(fd, "canal") || "WHATSAPP"; const nome = str(fd, "destinatarioNome"); const contato = strOrNull(fd, "destinatarioContato"); let texto = str(fd, "texto"); if (!nome || !texto) throw new Error("Informe destinatário e texto.");
     const cfg = await getSettings(); let vars: Record<string, string | number | null> = {}; try { vars = JSON.parse(str(fd, "vars") || "{}"); } catch { vars = {}; } texto = preencher(texto, { unidade: "Colégio Status", ...vars, nome, responsavel: nome, assinatura: cfg.comunicacao.assinatura }); const unitId = int(fd, "unitId") ?? scopeUnit(s); if (unitId) assertScope(s, unitId);
     const [m] = await db.insert(schema.messages).values({ canal, destinatarioNome: nome, destinatarioContato: contato, studentId: int(fd, "studentId"), employeeId: int(fd, "employeeId"), entidade: strOrNull(fd, "entidade"), entidadeId: int(fd, "entidadeId"), templateId: int(fd, "templateId"), texto, status: "REGISTRADA", userId: s.id, userNome: s.nome, unitId }).returning({ id: schema.messages.id });
     const enviar = str(fd, "enviar") === "1";

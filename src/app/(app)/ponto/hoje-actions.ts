@@ -5,8 +5,9 @@ import { requireSession, assert, assertScope } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje, caminhoSeguro } from "@/lib/utils";
 import { DESFECHOS } from "@/lib/painel-dia";
 import { salvarDias } from "@/lib/ponto";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", m: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(m)}`;
+const go = (b: string, k: "ok" | "erro", m: string) => comMensagem(b, k, m);
 
 /** Contato do no-show (aceite T-048): o desfecho fica registrado e, quando é falta/atestado/folga/dispensa, alimenta o lançamento do dia. */
 export async function registrarContato(fd: FormData) {

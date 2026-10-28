@@ -1,6 +1,7 @@
 import Link from "@/components/Link";
 import { cloneElement, isValidElement, type ReactNode } from "react";
 import { fmtCompacto } from "@/lib/formato";
+import { AjusteTabela } from "@/components/AjusteTabela";
 
 export function Page({ title, sub, actions, children }: { title: string; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
   return (
@@ -53,12 +54,17 @@ export function Badge({ v, label }: { v: string; label?: string }) {
 
 export { Btn } from "./Btn";
 
+// Rótulo ou dica com “palavra” muito longa (cabeçalho de CSV, identificador) quebra em qualquer ponto para não alargar a página;
+// texto comum quebra só entre palavras.
+const quebraLonga = (t?: string) => (t && /\S{20,}/.test(t) ? "[overflow-wrap:anywhere]" : "");
+// listas de colunas de CSV (a;b;c) quebram depois do ponto e vírgula, não no meio do nome da coluna
+const pontosDeQuebra = (t?: string) => (t && /\S{20,}/.test(t) ? t.replace(/;(?=\S)/g, ";\u200b") : t);
 export function Field({ label, children, hint, className = "" }: { label: string; children: ReactNode; hint?: string; className?: string }) {
   return (
     <label className={`block text-sm ${className}`}>
-      <span className="mb-1 block font-medium text-slate-700">{label}</span>
+      <span className={`mb-1 block font-medium text-slate-700 ${quebraLonga(label)}`}>{pontosDeQuebra(label)}</span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className={`mt-1 block text-xs text-slate-500 ${quebraLonga(hint)}`}>{pontosDeQuebra(hint)}</span>}
     </label>
   );
 }
@@ -71,22 +77,22 @@ export function Textarea(p: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 
 // Cabeçalho: texto simples ou { label, className } — p.ex. "hidden sm:table-cell" para esconder a coluna no celular (a célula usa a mesma classe)
 export type Cabecalho = string | { label: string; className?: string };
-export function Table({ head, children, empty }: { head: Cabecalho[]; children: ReactNode; empty?: string }) {
+export function Table({ head, children, empty, denso }: { head: Cabecalho[]; children: ReactNode; empty?: string; denso?: boolean }) {
   const rows = Array.isArray(children) ? children.filter(Boolean) : children ? [children] : [];
   return (
-    <div className="overflow-x-auto rounded-md border border-line bg-white [-webkit-overflow-scrolling:touch]">
-      <table className="w-full text-left text-xs sm:text-sm">
+    <AjusteTabela className="overflow-x-auto rounded-md border border-line bg-white [-webkit-overflow-scrolling:touch]">
+      <table className={`w-full text-left text-xs ${denso ? "[&_td]:px-2 [&_th]:px-2" : "sm:text-sm"}`}>
         <thead className="bg-mist text-xs text-slate-600">
-          <tr>{head.map((h, i) => <th key={i} className={`whitespace-nowrap px-2 py-2 font-medium sm:px-3 ${i === 0 ? "sticky left-0 z-[1] bg-mist" : ""} ${typeof h === "string" ? "" : h.className ?? ""}`}>{typeof h === "string" ? h : h.label}</th>)}</tr>
+          <tr>{head.map((h, i) => <th key={i} className={`whitespace-nowrap px-2 py-2 font-medium 2xl:px-3 ${i === 0 ? "sticky left-0 z-[1] bg-mist" : ""} ${typeof h === "string" ? "" : h.className ?? ""}`}>{typeof h === "string" ? h : h.label}</th>)}</tr>
         </thead>
         <tbody className="divide-y divide-line">
           {rows.length === 0 ? <tr><td colSpan={head.length} className="px-3 py-6 text-center text-slate-500">{empty ?? "Nada por aqui ainda."}</td></tr> : rows}
         </tbody>
       </table>
-    </div>
+    </AjusteTabela>
   );
 }
-export const Td = ({ children, className = "", colSpan }: { children: ReactNode; className?: string; colSpan?: number }) => <td colSpan={colSpan} className={`px-2 py-2 align-top first:sticky first:left-0 first:z-[1] first:bg-white sm:px-3 ${className}`}>{children}</td>;
+export const Td = ({ children, className = "", colSpan }: { children: ReactNode; className?: string; colSpan?: number }) => <td colSpan={colSpan} className={`px-2 py-2 align-top first:sticky first:left-0 first:z-[1] first:bg-white 2xl:px-3 ${className}`}>{children}</td>;
 
 export function Stat({ label, value, hint, href }: { label: string; value: ReactNode; hint?: string; href?: string }) {
   // Valor em reais longo (R$ 10 mil ou mais) quebraria no meio do número num cartão estreito: mostra compacto e leva o valor exato para a dica
@@ -104,7 +110,7 @@ export function Stat({ label, value, hint, href }: { label: string; value: React
   const inner = (
     <div className="h-full min-w-0 rounded-md border border-line bg-white px-3 py-2.5 sm:px-4 sm:py-3">
       <div className="text-[11px] leading-tight text-slate-600 sm:text-xs">{label}</div>
-      <div className={`mt-1 min-w-0 text-lg font-semibold leading-tight tabular-nums text-navy [overflow-wrap:anywhere] ${longo ? "sm:text-lg xl:text-xl" : "sm:text-xl xl:text-2xl"}`}>{value}</div>
+      <div className={`mt-1 min-w-0 text-lg font-semibold leading-tight tabular-nums text-navy [overflow-wrap:anywhere] ${longo ? "sm:text-base xl:text-lg" : "sm:text-xl xl:text-2xl"}`}>{value}</div>
       {hint && <div className="mt-0.5 text-[11px] leading-tight text-slate-500 sm:text-xs">{hint}</div>}
     </div>
   );

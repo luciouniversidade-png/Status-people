@@ -6,8 +6,9 @@ import { requireSession, assert, scopeUnit, can, type Session } from "@/lib/auth
 import { audit, str, strOrNull, int, num, hoje, addDays, fmtData, caminhoSeguro } from "@/lib/utils";
 import { TIPO_ESPACO, choqueEspaco } from "@/lib/espacos";
 import { minutos } from "@/lib/cobertura";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const back = (fd: FormData, fb: string) => caminhoSeguro(str(fd, "voltar"), fb);
 /** Quem cuida dos espaços: operações e gestão (com escopo da unidade). */
 const cuida = (s: Session) => can.operacoes(s);
@@ -58,7 +59,7 @@ export async function atribuirSala(fd: FormData) {
 export async function reservarEspaco(fd: FormData) {
   const s = await requireSession(); const b = back(fd, "/operacoes/espacos/reservas"); let msg = "";
   try {
-    assert(s.role !== "LEITURA", "Perfil somente leitura não reserva.");
+    assert(s.role !== "LEITURA", "Acesso somente leitura não reserva.");
     const [sp] = await sql<{ id: number; unit_id: number; nome: string; ativo: boolean; reservavel: boolean }[]>`SELECT id, unit_id, nome, ativo, reservavel FROM spaces WHERE id=${int(fd, "spaceId") ?? 0}`;
     if (!sp) throw new Error("Escolha o espaço."); naUnidade(s, sp.unit_id); if (!sp.ativo || !sp.reservavel) throw new Error(`${sp.nome} não está disponível para reservas.`);
     const data = str(fd, "data"); const inicio = str(fd, "inicio"); const fim = str(fd, "fim"); const titulo = str(fd, "titulo");

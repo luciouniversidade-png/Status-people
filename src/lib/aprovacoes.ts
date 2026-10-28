@@ -1,6 +1,6 @@
 import { sql } from "@/db";
 import type { Session } from "./auth";
-import { scopeUnit, can } from "./auth";
+import { scopeUnit, can, aprovaSoEquipe } from "./auth";
 import { getSettings, hoje, periodosFerias, LEAVE_LABEL, HOUR_LABEL } from "./utils";
 
 /**
@@ -32,12 +32,12 @@ export function foraNoPeriodo(r: Ausencia, aprovadas: Ausencia[], doLote: Ausenc
 }
 
 export async function filaFerias(s: Session, selecionados?: Set<number>): Promise<ItemFila[]> {
-  const cfg = await getSettings(); if (!can.aprovar(s, cfg.alcadas.ferias)) return [];
+  const cfg = await getSettings(); if (!can.aprovar(s, "ferias")) return [];
   const u = scopeUnit(s); const min = Number(cfg.aprovacoes.feriasMinimoPresentesPct) || 70;
   const rows = await sql<{ id: number; employee_id: number; nome: string; unidade: string; unit_id: number; position_id: number | null; cargo: string | null; tipo: string; inicio: string; fim: string; dias: number; periodo_ref: string | null; solicitado_por: number | null; admissao: string; quitadas: string | null; vinculo: string }[]>`
     SELECT l.id, l.employee_id, e.nome, un.nome AS unidade, e.unit_id, e.position_id, p.nome AS cargo, l.tipo, l.inicio::text, l.fim::text, l.dias, l.periodo_ref::text, l.solicitado_por, e.admissao::text, e.ferias_quitadas_ate::text AS quitadas, e.vinculo
     FROM leave_requests l JOIN employees e ON e.id=l.employee_id JOIN units un ON un.id=e.unit_id LEFT JOIN positions p ON p.id=e.position_id
-    WHERE l.status='SOLICITADA' ${u === null ? sql`` : sql`AND e.unit_id=${u}`} ORDER BY l.inicio, l.id`;
+    WHERE l.status='SOLICITADA' ${u === null ? sql`` : sql`AND e.unit_id=${u}`} ${aprovaSoEquipe(s) ? sql`AND e.gestor_id=${s.employeeId ?? 0}` : sql``} ORDER BY l.inicio, l.id`;
   if (!rows.length) return [];
   const ids = [...new Set(rows.map(r => r.employee_id))];
   const [equipe, fora, usadas] = await Promise.all([
@@ -70,14 +70,14 @@ export async function filaFerias(s: Session, selecionados?: Set<number>): Promis
 }
 
 export async function filaBanco(s: Session): Promise<ItemFila[]> {
-  const cfg = await getSettings(); if (!can.aprovar(s, cfg.alcadas.banco)) return [];
+  const cfg = await getSettings(); if (!can.aprovar(s, "banco")) return [];
   const u = scopeUnit(s); const limite = Number(cfg.aprovacoes.limiteHeMensalMin) || 600; const maxL = Number(cfg.aprovacoes.maxLancamentoMin) || 240;
   const rows = await sql<{ id: number; employee_id: number; nome: string; unidade: string; data: string; minutos: number; tipo: string; descricao: string | null; lancado_por: number | null; jornada: number | null; esperado: number | null; fechado: boolean; he_mes: number }[]>`
     SELECT h.id, h.employee_id, e.nome, un.nome AS unidade, h.data::text, h.minutos, h.tipo, h.descricao, h.lancado_por, e.jornada_min_dia AS jornada,
       (SELECT t.esperado_min FROM timesheet_days t WHERE t.employee_id=h.employee_id AND t.data=h.data) AS esperado,
       EXISTS (SELECT 1 FROM timesheet_locks l WHERE l.unit_id=e.unit_id AND l.mes=to_char(h.data, 'YYYY-MM') AND l.status='FECHADO') AS fechado,
       coalesce((SELECT sum(x.minutos) FROM hour_entries x WHERE x.employee_id=h.employee_id AND x.tipo='EXTRA' AND x.status='APROVADO' AND date_trunc('month', x.data)=date_trunc('month', h.data)), 0)::int AS he_mes
-    FROM hour_entries h JOIN employees e ON e.id=h.employee_id JOIN units un ON un.id=e.unit_id WHERE h.status='PENDENTE' ${u === null ? sql`` : sql`AND e.unit_id=${u}`} ORDER BY h.data, h.id`;
+    FROM hour_entries h JOIN employees e ON e.id=h.employee_id JOIN units un ON un.id=e.unit_id WHERE h.status='PENDENTE' ${u === null ? sql`` : sql`AND e.unit_id=${u}`} ${aprovaSoEquipe(s) ? sql`AND e.gestor_id=${s.employeeId ?? 0}` : sql``} ORDER BY h.data, h.id`;
   // pedidos pendentes do mesmo mês somam entre si na ordem da fila (o lote nunca estoura o limite)
   const acumulado = new Map<string, number>();
   return rows.map(r => {

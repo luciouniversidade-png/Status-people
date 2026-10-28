@@ -46,7 +46,7 @@ export type KpiDef = {
 };
 
 /** Aumente sempre que um cálculo mudar: a base é reconstruída por inteiro na próxima leitura. */
-export const CATALOGO_VERSAO = "25.0";
+export const CATALOGO_VERSAO = "30.0";
 
 const pct = 100;
 export const CATALOGO: KpiDef[] = [
@@ -92,6 +92,26 @@ export const CATALOGO: KpiDef[] = [
     formula: "Etapas do ciclo encerradas até o fim da janela ÷ etapas com janela terminando no mês × 100.", fonte: "Pessoas → Desempenho (etapas do ciclo)", obs: "KPI-25.", href: "/desempenho" },
   { chave: "pessoas.sucessao", nome: "Posições críticas com sucessor", area: "pessoas", unidade: "%", sentido: "SUBIR", agregacao: "TAXA", fator: pct, historico: "RETRATO", restricao: "PRIVACIDADE",
     formula: "Posições críticas com ao menos um sucessor pronto agora ou em 1–2 anos ÷ posições críticas × 100.", fonte: "Pessoas → Sucessão e talentos", obs: "KPI-27. Restrito a Direção e RH.", href: "/sucessao" },
+  // v30 · capital humano (no estilo dos painéis de indicadores das plataformas de RH): retorno do custo de pessoal, receita por pessoa, amplitude de controle,
+  // mulheres na liderança, qualidade da contratação, horas de treinamento, promoções, aceite de propostas e o índice de liderança
+  { chave: "pessoas.hcroi", nome: "HCROI (retorno do custo de pessoal)", area: "pessoas", unidade: "x", sentido: "SUBIR", agregacao: "TAXA", fator: 1, historico: "RECONSTRUIDO", restricao: "SALARIAL",
+    formula: "(Receita − despesas operacionais sem pessoal) ÷ custo de pessoal REAL do mês. Ex.: 1,8 = cada R$ 1 investido em pessoas volta como R$ 1,80 de resultado antes do custo de pessoal.", fonte: "Financeiro → Fluxo de caixa (sem transferências internas, financeiras e não-despesas) e Pessoas → Ciclo da folha (resultado aceito)", obs: "Mês sem resultado aceito da folha fica sem valor.", href: "/folha/custo" },
+  { chave: "pessoas.receita_colaborador", nome: "Receita por colaborador", area: "pessoas", unidade: "R$", sentido: "SUBIR", agregacao: "TAXA", fator: 1, historico: "RECONSTRUIDO", restricao: "SALARIAL",
+    formula: "Receita de caixa do mês (sem transferências internas) ÷ colaboradores ativos no fim do mês.", fonte: "Financeiro → Fluxo de caixa e Pessoas → Colaboradores", href: "/analytics" },
+  { chave: "pessoas.amplitude", nome: "Amplitude de controle", area: "pessoas", unidade: "x", sentido: "NEUTRO", agregacao: "TAXA", fator: 1, historico: "RETRATO",
+    formula: "Colaboradores ativos com gestor direto ÷ gestores com ao menos um liderado ativo.", fonte: "Pessoas → Colaboradores (gestor direto) e Organograma", obs: "Foto do dia: o histórico começa quando a base é ligada. Muito alta = gestor sobrecarregado; muito baixa = camadas demais.", href: "/organograma" },
+  { chave: "pessoas.mulheres_lideranca", nome: "Mulheres na liderança", area: "pessoas", unidade: "%", sentido: "NEUTRO", agregacao: "TAXA", fator: pct, historico: "RETRATO", restricao: "PRIVACIDADE",
+    formula: "Mulheres em cargos de liderança (famílias de cargo de liderança, Configurações → Igualdade) ÷ pessoas nesses cargos com sexo informado × 100.", fonte: "Pessoas → Colaboradores (sexo eSocial) e Cargos", obs: "Grupo com menos pessoas que o mínimo não mostra resultado.", minimoDen: c => Number(c.igualdade?.grupoMinimo ?? 3), href: "/analytics/igualdade" },
+  { chave: "pessoas.qualidade_contratacao", nome: "Qualidade da contratação", area: "pessoas", unidade: "pts", sentido: "SUBIR", agregacao: "TAXA", fator: 1, historico: "RECONSTRUIDO",
+    formula: "Média do índice (0–100) das pessoas contratadas pela seleção, pelo mês de admissão: retenção no prazo configurado, nota do gestor aos 90 dias e 1ª avaliação de desempenho.", fonte: "Pessoas → Recrutamento (contratação aos 90 dias) e Desempenho", obs: "O índice sai com pelo menos dois componentes — meses recentes completam com o tempo.", href: "/recrutamento/indicadores" },
+  { chave: "pessoas.horas_treinamento", nome: "Horas de treinamento por colaborador", area: "pessoas", unidade: "h", sentido: "SUBIR", agregacao: "TAXA", fator: 1, historico: "RECONSTRUIDO",
+    formula: "Carga horária dos treinamentos concluídos no mês (sem ciência de POP) ÷ colaboradores ativos no fim do mês.", fonte: "Pessoas → Academy", href: "/academy/painel" },
+  { chave: "pessoas.promocoes", nome: "Promoções (12 meses)", area: "pessoas", unidade: "%", sentido: "NEUTRO", agregacao: "TAXA", fator: pct, historico: "RECONSTRUIDO",
+    formula: "Promoções registradas no histórico funcional nos 12 meses até o fim do mês ÷ colaboradores ativos no fim do mês × 100.", fonte: "Pessoas → Histórico funcional (ficha)", obs: "A unidade é a atual do colaborador.", href: "/analytics/composicao" },
+  { chave: "pessoas.aceite_propostas", nome: "Aceite de propostas", area: "pessoas", unidade: "%", sentido: "SUBIR", agregacao: "TAXA", fator: pct, historico: "RECONSTRUIDO",
+    formula: "Propostas aceitas ÷ propostas respondidas (aceitas + recusadas) no mês × 100.", fonte: "Pessoas → Recrutamento (etapa Proposta)", href: "/recrutamento/indicadores" },
+  { chave: "pessoas.lideranca", nome: "Índice de liderança", area: "pessoas", unidade: "%", sentido: "SUBIR", agregacao: "TAXA", fator: pct, historico: "EVENTO",
+    formula: "Média, por respondente, das respostas favoráveis (4–5) na pesquisa de liderança encerrada no mês × 100.", fonte: "Pessoas → Clima (pesquisa de liderança)", obs: "Unidade com menos respostas que o mínimo de anonimato não mostra resultado.", minimoDen: c => c.clima.minimoAnonimato, href: "/clima" },
 
   // ------------------------------------------------------------------ Matrículas e famílias
   { chave: "matriculas.ocupacao", nome: "Ocupação das vagas", area: "matriculas", unidade: "%", sentido: "SUBIR", agregacao: "TAXA", fator: pct, historico: "RECONSTRUIDO", destaque: 1, sufixoAno: true,

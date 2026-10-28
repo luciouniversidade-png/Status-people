@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession, scopeUnit, can } from "@/lib/auth";
 import { sql } from "@/db";
@@ -26,6 +27,19 @@ import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PA
 
 export const dynamic = "force-dynamic";
 
+/** v29: tela de onde cada exportação sai (para valer o acesso do cargo também no CSV). */
+const TELA_DO_EXPORT: Record<string, string> = {
+  colaboradores: "/colaboradores", banco: "/banco-de-horas", "banco-mensal": "/banco-de-horas", ferias: "/ferias", coberturas: "/cobertura", "auditoria-ponto": "/ponto/auditoria",
+  "tabela-salarial": "/cargos-salarios", vagas: "/recrutamento", avaliacoes: "/desempenho", desempenho: "/desempenho", treinamentos: "/academy", "risco-pessoas": "/analytics",
+  ocupacao: "/matriculas", matriculas: "/matriculas/alunos", rematricula: "/matriculas/rematricula",
+  casos: "/atendimento/casos", pesquisas: "/atendimento/pesquisas", risco: "/atendimento/risco", radar: "/atendimento/radar",
+  pops: "/governanca/pops", excecoes: "/governanca/excecoes", ncs: "/governanca/controles", decisoes: "/governanca/decisoes", consentimentos: "/governanca/privacidade/consentimentos",
+  inadimplencia: "/financeiro/inadimplencia", caixa: "/financeiro/caixa", descontos: "/financeiro/descontos", recebimentos: "/financeiro/recebimentos", extrato: "/financeiro/conciliacao", divergencias: "/financeiro/divergencias",
+  fpa: "/financeiro/orcamento", "contas-a-pagar-bordero": "/financeiro/contas-a-pagar", "lancamentos-classificados": "/financeiro/caixa", "plano-de-contas": "/financeiro/plano-de-contas", "resultado-rateio": "/financeiro/rateio",
+  chamados: "/operacoes/chamados", ativos: "/operacoes/ativos", vistorias: "/operacoes/vistorias", contratos: "/operacoes/contratos", licencas: "/operacoes/licencas",
+  acoes: "/estrategia/acoes", projetos: "/estrategia/projetos", indicadores: "/estrategia/indicadores", indicador: "/executivo", painel: "/executivo", fluxos: "/fluxos", solicitacoes: "/solicitacoes",
+};
+
 function csv(rows: (string | number | null | undefined)[][]) {
   const esc = (v: unknown) => { const t = v === null || v === undefined ? "" : String(v); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
   return "\uFEFF" + rows.map(r => r.map(esc).join(";")).join("\r\n");
@@ -35,6 +49,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
   const s = await getSession(); const { tipo } = await ctx.params;
   // v25 · o próprio espelho (portal do colaborador) é o único export do autoatendimento
   if (!s || (s.role === "COLABORADOR" && tipo !== "meu-espelho")) return NextResponse.json({ erro: "Não autorizado." }, { status: 401 });
+  // v29: o export segue a tela de onde ele sai — tela fora do acesso do cargo, export também fora
+  const tela = TELA_DO_EXPORT[tipo]; if (tela && !veTela(s, tela)) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 });
   const u = scopeUnit(s); const uf = u === null ? sql`` : sql`AND e.unit_id=${u}`;
   let rows: (string | number | null)[][] = [];
   if (tipo === "colaboradores") {

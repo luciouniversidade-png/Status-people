@@ -5,8 +5,9 @@ import { sql } from "@/db";
 import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
 import { audit, str, strOrNull, int, caminhoSeguro } from "@/lib/utils";
 import { gerarLinkPortal, registrar } from "@/lib/portal-candidato";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}#portal`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg, "#portal");
 const PERFIS = ["RH", "DIRECAO", "DIRETOR_UNIDADE"];
 /** Candidatura no escopo de quem conduz (RH/Direção; diretor(a) só da própria unidade). */
 async function candidatura(s: Session, applicationId: number) {

@@ -21,7 +21,7 @@ export default async function Academy({ searchParams }: { searchParams: Promise<
   ]);
   const gestao = ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role);
   return (
-    <Page title="STATUS Academy" sub="Treinamentos obrigatórios e trilhas por cargo, turmas presenciais, matriz de conformidade e necessidades levantadas." actions={<><Btn kind="ghost" href="/academy/matriz">Matriz de treinamento</Btn><Btn kind="ghost" href="/api/export/treinamentos">Exportar CSV</Btn></>}>
+    <Page title="STATUS Academy" sub="Treinamentos obrigatórios e trilhas por cargo, turmas presenciais, matriz de conformidade e necessidades levantadas." actions={<><Btn kind="ghost" href="/academy/painel">Painel de aprendizagem</Btn><Btn kind="ghost" href="/academy/matriz">Matriz de treinamento</Btn><Btn kind="ghost" href="/api/export/treinamentos">Exportar CSV</Btn></>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         <Stat label="Conformidade" value={m.conformidade === null ? "—" : <span className={m.conformidade >= 90 ? "text-ok" : m.conformidade >= 70 ? "text-aviso" : "text-erro"}>{m.conformidade}%</span>} hint="obrigatórios concluídos e válidos" href="/academy/matriz" />
@@ -46,6 +46,9 @@ export default async function Academy({ searchParams }: { searchParams: Promise<
           <div className="grid grid-cols-2 gap-2"><Field label="Formato"><Select name="formato" defaultValue="ONLINE">{Object.entries(COURSE_FORMATO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Carga (h)"><Input name="cargaHoras" type="number" step="0.5" /></Field></div>
           <Field label="POP vinculado (formato Ciência de POP)"><Select name="procedureId" defaultValue=""><option value="">—</option>{pops.map(p => <option key={p.id} value={p.id}>{p.codigo} {p.titulo}</option>)}</Select></Field>
           <Field label="Link do material"><Input name="link" /></Field><Field label="Validade (meses, se recertificação)"><Input name="validadeMeses" type="number" min={1} /></Field>
+          <div className="grid grid-cols-2 gap-2"><Field label="Custo por participante (R$)"><Input name="custo" inputMode="decimal" /></Field><Field label="Instrutor"><Input name="instrutor" /></Field></div>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" name="inscricaoAberta" value="1" /> Inscrição aberta (o colaborador se inscreve em Meus treinamentos)</label>
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" name="exigeAprovacao" value="1" defaultChecked /> A inscrição passa pela aprovação do gestor direto</label>
           <div className="text-xs font-medium text-slate-600">Obrigatório para</div><label className="flex items-center gap-2 text-xs"><input type="checkbox" name="paraTodos" value="1" /> Todos os colaboradores</label>
           <Field label="Regime"><Select name="paraRegime" defaultValue=""><option value="">—</option><option value="DOCENTE">Docentes</option><option value="ADMINISTRATIVO">Administrativos</option></Select></Field>
           <Field label="Cargos (segure Ctrl para vários)"><select name="paraCargos" multiple className="h-28 w-full rounded-md border border-line px-2 py-1 text-xs">{positions.map(p => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></Field>

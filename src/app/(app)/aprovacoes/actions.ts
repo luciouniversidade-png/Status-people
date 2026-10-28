@@ -5,8 +5,9 @@ import { requireSession, assert } from "@/lib/auth";
 import { audit, str, int, caminhoSeguro, LEAVE_LABEL } from "@/lib/utils";
 import { filaFerias, filaBanco } from "@/lib/aprovacoes";
 import { notificar } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const erro = (e: unknown) => e instanceof Error ? e.message : "Erro inesperado.";
 
 /** Aprova em lote só os itens normais da fila — o servidor recalcula as exceções e nenhuma entra (C10). Trilha individual de cada item. */
@@ -15,7 +16,7 @@ export async function aprovarLote(fd: FormData) {
   try {
     const marcados = new Set(fd.getAll("ids").map(Number).filter(n => n > 0)); assert(marcados.size > 0, "Nenhum item selecionado.");
     // a fila é recalculada com os itens marcados: pedido que só fura a cobertura somado a outro marcado sai do lote
-    const fila = aba === "banco" ? await filaBanco(s) : await filaFerias(s, marcados); assert(fila.length > 0, "Seu perfil não aprova esta fila ou ela está vazia.");
+    const fila = aba === "banco" ? await filaBanco(s) : await filaFerias(s, marcados); assert(fila.length > 0, "Seu acesso não aprova esta fila ou ela está vazia.");
     const normais = fila.filter(i => marcados.has(i.id) && i.excecoes.length === 0); const barrados = fila.filter(i => marcados.has(i.id) && i.excecoes.length > 0);
     assert(normais.length > 0, "Os itens selecionados são exceções: decida um a um, com justificativa.");
     const lote = `L${Date.now().toString(36)}`;

@@ -7,8 +7,9 @@ import { requireSession, can, assert, assertScope, scopeUnit } from "@/lib/auth"
 import { audit, str, strOrNull, int, hoje, getSettings, detectarSeparador, normalizarCabecalho } from "@/lib/utils";
 import { slaAte, CASE_TIPOS, CASE_STATUS } from "@/lib/atendimento";
 import { notificar, usuariosPorPerfil } from "@/lib/comunicacao";
+import { comMensagem } from "@/lib/redirecionar";
 
-const go = (b: string, k: "ok" | "erro", msg: string) => `${b}${b.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(msg)}`;
+const go = (b: string, k: "ok" | "erro", msg: string) => comMensagem(b, k, msg);
 const podeAtender = (r: string) => ["RH", "DIRECAO", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL"].includes(r);
 type Item = { titulo: string; feito: boolean };
 
@@ -18,7 +19,7 @@ async function evento(caseId: number, s: { id: number; nome: string }, tipo: str
 export async function abrirCaso(fd: FormData) {
   const s = await requireSession(); const voltar = str(fd, "voltar"); let id = 0;
   try {
-    assert(podeAtender(s.role), "Seu perfil não registra atendimentos.");
+    assert(podeAtender(s.role), "Seu acesso não registra atendimentos.");
     const cfg = await getSettings();
     const tipo = str(fd, "tipo"); const assunto = str(fd, "assunto"); if (!CASE_TIPOS.includes(tipo as typeof CASE_TIPOS[number]) || !assunto) throw new Error("Informe o tipo e o assunto.");
     const studentId = int(fd, "studentId"); let unitId = int(fd, "unitId");

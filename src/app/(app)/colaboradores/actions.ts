@@ -1,4 +1,5 @@
 "use server";
+import { sincronizarPorFichas, sincronizarAcessos } from "@/lib/acesso";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
@@ -7,6 +8,7 @@ import { requireSession, can, assert, assertScope } from "@/lib/auth";
 import { textoImportacao } from "@/lib/importacao";
 import { audit, str, strOrNull, num, int, erroMsg, getSettings, hoje, detectarSeparador, normalizarCabecalho, arquivoParaTexto, NIVEIS } from "@/lib/utils";
 import { abrirProcesso } from "@/lib/processos";
+import { registrarMovimentacao, estadoDe, garantirHistoricoBase } from "@/lib/pessoas-v30";
 
 function lerColaborador(fd: FormData) {
   const nome = str(fd, "nome"); const admissao = str(fd, "admissao"); const unitId = int(fd, "unitId");
@@ -21,6 +23,8 @@ function lerColaborador(fd: FormData) {
     vinculo: str(fd, "vinculo") || "CLT", jornadaMinDia: int(fd, "jornadaMinDia"), turno: strOrNull(fd, "turno"), obs: strOrNull(fd, "obs"),
     regime: str(fd, "regime") === "DOCENTE" ? "DOCENTE" : "ADMINISTRATIVO",
     feriasQuitadasAte: strOrNull(fd, "feriasQuitadasAte"),
+    // v30 · sexo (eSocial · igualdade salarial), ramal e e-mail institucional (quem é quem)
+    sexo: ["F", "M"].includes(str(fd, "sexo")) ? str(fd, "sexo") : null, ramal: strOrNull(fd, "ramal"), emailInstitucional: strOrNull(fd, "emailInstitucional"), noDiretorio: str(fd, "noDiretorio") !== "0",
   };
 }
 
@@ -34,6 +38,8 @@ export async function criarColaborador(fd: FormData) {
     const [row] = await db.insert(schema.employees).values({ ...d, salario: salario === null ? null : String(salario), situacao: comAdmissao ? "EM_ADMISSAO" : "ATIVO" }).returning({ id: schema.employees.id });
     id = row.id;
     await audit(s, "criar", "employees", id, null, { ...d, salario: salario === null ? null : "***" });
+    // v30 · histórico funcional começa na admissão
+    await sql`INSERT INTO employee_moves (employee_id, data, tipo, para, origem, user_id, user_nome) VALUES (${id}, ${d.admissao}, 'ADMISSAO', ${JSON.stringify({ unitId: d.unitId, positionId: d.positionId, nivel: d.nivel, vinculo: d.vinculo })}::jsonb, 'FICHA', ${s.id}, ${s.nome})`;
     const cfg = await getSettings();
     // Checklist de documentos padrão
     await db.insert(schema.documents).values(cfg.documentos.map(([tipo, obrigatorio]) => ({ employeeId: id, tipo: String(tipo), obrigatorio: Boolean(obrigatorio) })));
@@ -51,10 +57,14 @@ export async function atualizarColaborador(fd: FormData) {
     assertScope(s, antes.unitId);
     const d = lerColaborador(fd);
     const salario = can.verSalario(s) ? num(fd, "salario") : undefined;
+    const movData = str(fd, "movData") || hoje(); if (movData < d.admissao) throw new Error("A data da movimentação não pode ser anterior à admissão.");
     await db.update(schema.employees).set({ ...d, ...(salario === undefined ? {} : { salario: salario === null ? null : String(salario) }), updatedAt: new Date() }).where(eq(schema.employees.id, id));
+    // v30 · histórico funcional: cargo, nível, unidade, gestor, vínculo ou jornada mudaram → um evento com a data de vigência
+    await registrarMovimentacao(s, id, estadoDe(antes), estadoDe({ ...antes, ...d }), { data: movData, promocao: str(fd, "movPromocao") === "1", motivo: strOrNull(fd, "movMotivo") });
     if (salario !== undefined && salario !== null && Number(antes.salario ?? 0) !== salario) await sql`INSERT INTO salary_history (employee_id, data, salario_anterior, salario, motivo, obs, user_id) VALUES (${id}, ${hoje()}, ${antes.salario}, ${salario}, ${antes.salario ? "AJUSTE" : "ADMISSAO"}, 'Alterado na ficha', ${s.id})`;
     const { salario: _a, ...antesSemSalario } = antes; void _a;
     await audit(s, "editar", "employees", id, antesSemSalario, { ...d, salario: salario === undefined ? "(inalterado)" : salario === null ? null : "***" });
+    await sincronizarPorFichas([id]); // v29: cargo ou unidade novos → o acesso de quem tem login nesta ficha muda na hora
   } catch (e) { redirect(`/colaboradores/${id}/editar?erro=${erroMsg(e)}`); }
   redirect(`/colaboradores/${id}?ok=${encodeURIComponent("Dados atualizados.")}`);
 }
@@ -119,6 +129,18 @@ export async function excluirDocumento(fd: FormData) {
 }
 
 // ---- Importação em lote (CSV colado) ----
+/** v30 · colunas opcionais da ficha: sexo (F/M, eSocial), ramal, email_institucional e quem_e_quem (sim/não). Só devolve o que veio preenchido. */
+function camposV30(g: (k: string) => string) {
+  const o: { sexo?: string; ramal?: string; emailInstitucional?: string; noDiretorio?: boolean } = {};
+  const sx = g("sexo").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toUpperCase();
+  if (sx) { if (["F", "FEMININO", "MULHER"].includes(sx)) o.sexo = "F"; else if (["M", "MASCULINO", "HOMEM"].includes(sx)) o.sexo = "M"; else throw new Error(`sexo "${g("sexo")}" inválido (use F ou M, como no eSocial)`); }
+  if (g("ramal")) o.ramal = g("ramal").slice(0, 30);
+  const ei = g("email_institucional"); if (ei) { if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ei)) throw new Error(`e-mail institucional "${ei}" inválido`); o.emailInstitucional = ei.toLowerCase(); }
+  const q = g("quem_e_quem").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  if (q) { if (["nao", "n", "0", "false", "oculto", "ocultar"].includes(q)) o.noDiretorio = false; else if (["sim", "s", "1", "true", "mostrar"].includes(q)) o.noDiretorio = true; else throw new Error(`quem_e_quem "${g("quem_e_quem")}" inválido (use sim ou não)`); }
+  return o;
+}
+
 // Colunas (cabeçalho obrigatório, separador ; ou ,): nome;unidade;cargo;empresa;vinculo;admissao;email;telefone;jornada_min_dia;turno
 export async function importarCSV(fd: FormData) {
   const s = await requireSession(); let resumo = "";
@@ -136,25 +158,28 @@ export async function importarCSV(fd: FormData) {
     const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
     const findBy = <T extends { nome: string }>(arr: T[], v: string) => arr.find(a => norm(a.nome) === norm(v)) ?? arr.find(a => norm(a.nome).startsWith(norm(v)));
     const cfg = await getSettings();
-    let ok = 0; const erros: string[] = []; const gestoresPend: { id: number; gestor: string; linha: number }[] = [];
+    let ok = 0, completados = 0; const erros: string[] = []; const gestoresPend: { id: number; gestor: string; linha: number }[] = [];
     for (const [i, l] of linhas.slice(1).entries()) {
       const c = l.split(sep).map(x => x.trim().replace(/^"(.*)"$/, "$1").trim());
       const g = (k: string) => (idx(k) >= 0 ? c[idx(k)] ?? "" : "");
       try {
         const unit = findBy(units, g("unidade")) ?? units.find(u => norm(u.codigo) === norm(g("unidade")));
         if (!unit) throw new Error(`unidade "${g("unidade")}" não encontrada`);
+        if (!g("nome")) throw new Error("nome vazio");
+        // v30 · sexo (eSocial), ramal, e-mail institucional e quem é quem: entram na criação e completam a ficha de quem já existe
+        const v30 = camposV30(g);
+        const [dup] = await sql<{ id: number }[]>`SELECT id FROM employees WHERE lower(nome)=lower(${g("nome")}) AND unit_id=${unit.id} AND situacao <> 'DESLIGADO'`;
+        if (dup && Object.keys(v30).length) { await db.update(schema.employees).set(v30).where(eq(schema.employees.id, dup.id)); completados++; continue; }
+        if (dup) throw new Error(`"${g("nome")}" já existe nesta unidade (pulado)`);
         const adm = g("admissao").includes("/") ? g("admissao").split("/").reverse().join("-") : g("admissao");
         if (!/^\d{4}-\d{2}-\d{2}$/.test(adm)) throw new Error(`admissão "${g("admissao")}" inválida (use AAAA-MM-DD ou DD/MM/AAAA)`);
         const pos = g("cargo") ? findBy(positions, g("cargo")) : undefined;
         const comp = g("empresa") ? findBy(companies, g("empresa")) : undefined;
         const vinc = (g("vinculo") || "CLT").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        if (!g("nome")) throw new Error("nome vazio");
-        const [dup] = await sql<{ id: number }[]>`SELECT id FROM employees WHERE lower(nome)=lower(${g("nome")}) AND unit_id=${unit.id} AND situacao <> 'DESLIGADO'`;
-        if (dup) throw new Error(`"${g("nome")}" já existe nesta unidade (pulado)`);
         const regime = /professor|pedagog|docente/i.test(pos?.nome ?? g("cargo")) || /^(docente|sim|s|1)$/i.test(g("regime")) ? "DOCENTE" : "ADMINISTRATIVO";
         const fq = g("ferias_quitadas_ate"); const feriasQuitadasAte = fq ? (fq.includes("/") ? fq.split("/").reverse().join("-") : fq) : null;
         if (feriasQuitadasAte && !/^\d{4}-\d{2}-\d{2}$/.test(feriasQuitadasAte)) throw new Error(`ferias_quitadas_ate "${fq}" inválida (use AAAA-MM-DD ou DD/MM/AAAA)`);
-        const [novo] = await db.insert(schema.employees).values({ nome: g("nome"), unitId: unit.id, positionId: pos?.id ?? null, companyId: comp?.id ?? null, vinculo: vinc, admissao: adm, email: g("email") || null, telefone: g("telefone") || null, jornadaMinDia: g("jornada_min_dia") ? Number(g("jornada_min_dia")) : null, turno: g("turno") || null, regime, feriasQuitadasAte, nivel: NIVEIS.find(nv => norm(nv) === norm(g("nivel"))) ?? null }).returning({ id: schema.employees.id });
+        const [novo] = await db.insert(schema.employees).values({ nome: g("nome"), unitId: unit.id, positionId: pos?.id ?? null, companyId: comp?.id ?? null, vinculo: vinc, admissao: adm, email: g("email") || null, telefone: g("telefone") || null, jornadaMinDia: g("jornada_min_dia") ? Number(g("jornada_min_dia")) : null, turno: g("turno") || null, regime, feriasQuitadasAte, nivel: NIVEIS.find(nv => norm(nv) === norm(g("nivel"))) ?? null, ...v30 }).returning({ id: schema.employees.id });
         if (g("gestor")) gestoresPend.push({ id: novo.id, gestor: g("gestor"), linha: i + 2 });
         await db.insert(schema.documents).values(cfg.documentos.map(([tipo, obrigatorio]) => ({ employeeId: novo.id, tipo: String(tipo), obrigatorio: Boolean(obrigatorio) })));
         ok++;
@@ -165,8 +190,10 @@ export async function importarCSV(fd: FormData) {
       const todos = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM employees WHERE situacao <> 'DESLIGADO'`;
       for (const p of gestoresPend) { const gs = todos.filter(t => norm(t.nome) === norm(p.gestor) && t.id !== p.id); if (gs.length === 1) await sql`UPDATE employees SET gestor_id=${gs[0].id} WHERE id=${p.id}`; else erros.push(`Linha ${p.linha}: gestor "${p.gestor}" ${gs.length ? "ambíguo" : "não encontrado"} (pessoa importada sem gestor)`); }
     }
-    await audit(s, "importar CSV", "employees", null, null, { importados: ok, erros: erros.length });
-    resumo = `${ok} colaborador(es) importado(s).` + (erros.length ? ` ${erros.length} linha(s) com erro: ${erros.slice(0, 5).join(" · ")}${erros.length > 5 ? " …" : ""}` : "");
+    await garantirHistoricoBase(); // v30: admissões no histórico funcional
+    await audit(s, "importar CSV", "employees", null, null, { importados: ok, completados, erros: erros.length });
+    await sincronizarAcessos(); // v29: fichas importadas com cargo novo
+    resumo = `${ok} colaborador(es) importado(s).` + (completados ? ` ${completados} ficha(s) existente(s) completada(s) com sexo, ramal, e-mail institucional ou quem é quem.` : "") + (erros.length ? ` ${erros.length} linha(s) com erro: ${erros.slice(0, 5).join(" · ")}${erros.length > 5 ? " …" : ""}` : "");
   } catch (e) { redirect(`/colaboradores/importar?erro=${erroMsg(e)}`); }
   redirect(`/colaboradores?ok=${encodeURIComponent(resumo)}`);
 }

@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession, scopeUnit } from "@/lib/auth";
 import { quadroParaRecortes, recorte, DIMENSOES, GRUPO_MINIMO, type PessoaRecorte } from "@/lib/recortes";
@@ -6,6 +7,7 @@ import { audit } from "@/lib/utils";
 /** Export agregado dos recortes do quadro (grupo mínimo aplicado: nenhum grupo com menos de 5 sai no arquivo). */
 export async function GET(req: Request) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/analytics")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (!["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const sp = new URL(req.url).searchParams; const dim = (Object.keys(DIMENSOES).includes(sp.get("dim") ?? "") ? sp.get("dim") : "unidade") as keyof PessoaRecorte;
   const fdim = Object.keys(DIMENSOES).includes(sp.get("fdim") ?? "") ? sp.get("fdim") as keyof PessoaRecorte : null; const fval = sp.get("fval");

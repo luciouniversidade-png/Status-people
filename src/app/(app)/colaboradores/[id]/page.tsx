@@ -1,9 +1,10 @@
+import { rotuloAtuacao } from "@/lib/acesso";
 import { Modal } from "@/components/Modal";
 import Link from "@/components/Link";
 import { notFound } from "next/navigation";
 import { eq, desc, asc, and } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
-import { requireSession, can, canSeeEmployee, ROLE_LABEL } from "@/lib/auth";
+import { requireSession, can, canSeeEmployee, ROLE_LABEL, podeAbrirFicha } from "@/lib/auth";
 import { Page, Card, Badge, Btn, Flash, Table, Td, Field, Input, Select, Textarea } from "@/components/ui";
 import { fmtData, fmtDataHora, fmtMin, fmtMoeda, idade, hoje, addDays, periodosFerias, situacaoDerivada, SITUACAO_LABEL, VINCULO_LABEL, LEAVE_TIPOS, LEAVE_LABEL, LEAVE_STATUS, HOUR_TIPOS, HOUR_LABEL, HOUR_STATUS, PROC_LABEL, PROC_STATUS, getSettings } from "@/lib/utils";
 import { iniciarDesligamento, salvarDocumento, marcarRecebido, excluirDocumento, excluirColaborador } from "../actions";
@@ -13,14 +14,17 @@ import { registrarCheckin, reajustarSalario } from "../../talento/actions";
 import { MOTIVO_SAL, fmtBRL } from "@/lib/talento";
 import { matrizTreinamento, PROG_STATUS } from "@/lib/clima-academy";
 import { Anexos } from "@/components/Anexos";
+import { FichaV30 } from "./_v30";
+import { RemuneracaoTotal } from "@/components/RemuneracaoTotal";
 
 export const dynamic = "force-dynamic";
 
 export default async function Ficha({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireSession(); const { id: idStr } = await params; const sp = await searchParams; const id = Number(idStr);
   const [emp] = await db.select().from(schema.employees).where(eq(schema.employees.id, id));
+  const [loginFicha] = await sql<{ id: number; email: string; role: string; ativo: boolean; origem_acesso: string | null }[]>`SELECT id, email, role, ativo, origem_acesso FROM users WHERE employee_id=${id} LIMIT 1`.catch(() => []); // v29: login ligado a esta ficha
   if (!emp) notFound();
-  if (!canSeeEmployee(s, emp)) notFound();
+  if (!podeAbrirFicha(s, emp)) notFound(); // v30: comercial, financeiro e operações abrem só a própria ficha e a de quem responde a elas
   const cfg = await getSettings();
   const h = hoje(); const back = `/colaboradores/${id}`;
 
@@ -44,7 +48,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
   const vigentes = leaves.filter(l => l.status === "APROVADA" && l.inicio <= h && l.fim >= h);
   const situacao = situacaoDerivada(emp.situacao, vigentes);
   const periodos = periodosFerias(emp.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodoRef).map(l => ({ periodoRef: l.periodoRef, dias: l.dias })), undefined, emp.feriasQuitadasAte);
-  const podeAprovarFerias = can.aprovar(s, cfg.alcadas.ferias); const podeAprovarBanco = can.aprovar(s, cfg.alcadas.banco);
+  const podeAprovarFerias = can.aprovar(s, "ferias"); const podeAprovarBanco = can.aprovar(s, "banco");
   const sensivel = can.verSensivel(s);
   const docStatus = (d: typeof docs[number]) => d.validade && d.validade < h ? "VENCIDO" : d.validade && d.validade <= addDays(h, 30) ? "VENCE_EM_BREVE" : d.recebidoEm ? "RECEBIDO" : d.obrigatorio ? "PENDENTE" : "OPCIONAL";
 
@@ -62,11 +66,13 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
               ["Empresa", company?.nome ?? "—"], ["Gestor direto", gestor ? <Link className="text-acao" href={`/colaboradores/${gestor.id}`}>{gestor.nome}</Link> : "—"],
               ["Carga diária", emp.jornadaMinDia ? `${fmtMin(emp.jornadaMinDia).slice(1)} (${emp.jornadaMinDia} min)` : "—"], ["Turno", emp.turno ?? "—"],
               ["E-mail", emp.email ?? "—"], ["Telefone", emp.telefone ?? "—"],
+              ["E-mail institucional", emp.emailInstitucional ?? "—"], ["Ramal", emp.ramal ?? "—"], ["Sexo (eSocial)", emp.sexo === "F" ? "Feminino" : emp.sexo === "M" ? "Masculino" : "não informado"],
               ["Nascimento", emp.dataNascimento ? `${fmtData(emp.dataNascimento)} (${idade(emp.dataNascimento)} anos)` : "—"],
               ...(sensivel ? [["CPF", emp.cpf ?? "—"], ["Salário base", fmtMoeda(emp.salario)]] : []),
               ["Endereço", emp.endereco ?? "—"],
+              ...(can.configurar(s) ? [["Acesso ao sistema", loginFicha ? <>{rotuloAtuacao(loginFicha.role)}<span className="font-normal text-slate-500"> · {loginFicha.origem_acesso === "EXCECAO" ? "exceção individual" : "do cargo"}{loginFicha.ativo ? "" : " · inativo"} · </span><Link className="text-acao" href={`/configuracoes/acessos/usuario/${loginFicha.id}`}>ver acesso</Link></> : <span className="font-normal text-slate-500">sem login</span>]] : []),
               ...(emp.desligamento ? [["Desligamento", `${fmtData(emp.desligamento)}${emp.motivoDesligamento ? ` · ${emp.motivoDesligamento}` : ""}`]] : []),
-            ].map(([k, v], i) => <div key={i}><dt className="text-xs text-slate-500">{k}</dt><dd className="font-medium text-ink">{v}</dd></div>)}
+            ].map(([k, v], i) => <div key={i} className="min-w-0"><dt className="text-xs text-slate-500">{k}</dt><dd className="font-medium text-ink [overflow-wrap:anywhere]">{v}</dd></div>)}
           </dl>
           {emp.obs && <p className="mt-3 rounded bg-mist px-3 py-2 text-sm text-slate-700">{emp.obs}</p>}
         </Card>
@@ -200,7 +206,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
         {can.verSalario(s) && <Card title="Remuneração">
           <Table head={["Data", "De", "Para", "Motivo", "Justificativa"]} empty="Sem histórico salarial registrado.">{salHist.map((x, i) => <tr key={i}><Td>{fmtData(x.data)}</Td><Td className="tabular-nums">{fmtBRL(x.salario_anterior)}</Td><Td className="tabular-nums">{fmtBRL(x.salario)}</Td><Td className="text-xs">{MOTIVO_SAL[x.motivo] ?? x.motivo}</Td><Td className="text-xs text-slate-600">{x.obs ?? "—"}</Td></tr>)}</Table>
-          {can.aprovar(s, cfg.alcadas.remuneracao) && emp.situacao !== "DESLIGADO" && <form action={reajustarSalario} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Novo salário (R$)"><Input name="salario" type="number" step="0.01" min={0} required defaultValue={emp.salario ?? ""} /></Field><Field label="Motivo"><Select name="motivo" defaultValue="MERITO">{Object.entries(MOTIVO_SAL).filter(([k]) => k !== "ADMISSAO").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Justificativa"><Input name="obs" /></Field><div className="flex items-end"><Btn small>Reajustar</Btn></div></form>}
+          {can.aprovar(s, "remuneracao") && emp.situacao !== "DESLIGADO" && <form action={reajustarSalario} className="mt-3 grid grid-cols-1 gap-2 border-t border-line pt-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"><input type="hidden" name="employeeId" value={id} /><Field label="Novo salário (R$)"><Input name="salario" type="number" step="0.01" min={0} required defaultValue={emp.salario ?? ""} /></Field><Field label="Motivo"><Select name="motivo" defaultValue="MERITO">{Object.entries(MOTIVO_SAL).filter(([k]) => k !== "ADMISSAO").map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Field label="Justificativa"><Input name="obs" /></Field><div className="flex items-end"><Btn small>Reajustar</Btn></div></form>}
           {position && <p className="mt-2 text-xs text-slate-500"><Link className="text-acao" href={`/cargos-salarios/${position.id}`}>Ver faixa e ocupantes do cargo</Link></p>}
         </Card>}
         <Card title="Conversas 1:1">
@@ -214,6 +220,9 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
         <Table head={["Treinamento", "Situação", "Concluído em", "Válido até"]} empty="Nenhum treinamento obrigatório para este cargo/regime.">{(treinos?.itens ?? []).map(i => <tr key={i.curso.id}><Td>{i.curso.codigo} {i.curso.titulo}</Td><Td><Badge v={i.status === "CONCLUIDO" ? (i.vencendo ? "VENCE_EM_BREVE" : "APROVADA") : i.status === "VENCIDO" ? "VENCIDO" : "PENDENTE"} label={PROG_STATUS[i.status]} /></Td><Td className="text-xs">{fmtData(i.concluidoEm)}</Td><Td className="text-xs">{fmtData(i.validoAte)}</Td></tr>)}</Table>
         <p className="mt-2 text-xs text-slate-500"><Link className="text-acao" href="/academy/matriz">Matriz de treinamento</Link></p>
       </Card>
+
+      <FichaV30 s={s} emp={{ id, unitId: emp.unitId, admissao: emp.admissao, situacao: emp.situacao }} />
+      {can.verSalario(s) && <RemuneracaoTotal employeeId={id} />}
 
       <Anexos entidade="employee" id={id} voltar={`/colaboradores/${id}`} podeEnviar={can.editar(s) || s.employeeId === id} titulo="Arquivos do colaborador (contratos, certificados, laudos no Drive → aqui só o que precisa ficar no sistema)" />
 
@@ -235,7 +244,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
             <div className="flex items-end"><Btn danger>Iniciar desligamento</Btn></div>
           </form>
           <div className="mt-2 text-xs text-slate-500">Abre o checklist de desligamento. O vínculo só é encerrado quando o checklist for concluído. Quem não tem histórico pode ser excluído: <form action={excluirColaborador} className="inline"><input type="hidden" name="id" value={id} /><button className="text-erro underline">excluir cadastro</button></form>.</div>
-          <p className="mt-1 text-xs text-slate-500">Perfil atual: {ROLE_LABEL[s.role]}.</p>
+          {can.configurar(s) && <p className="mt-1 text-xs text-slate-500">{loginFicha ? `Acesso ao sistema (${loginFicha.email}): o desligamento concluído encerra o login sozinho, na mesma hora.` : "Sem login no sistema."}</p>}
         </Card>
       )}
     </Page>
@@ -247,5 +256,5 @@ function tempoDeCasa(adm: string, ate: string) {
   let meses = (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth()); if (b.getUTCDate() < a.getUTCDate()) meses--;
   if (meses < 0) return "ainda não iniciou";
   const anos = Math.floor(meses / 12), m = meses % 12;
-  return `${anos ? `${anos} ano${anos > 1 ? "s" : ""}` : ""}${anos && m ? " e " : ""}${m || !anos ? `${m} mês${m !== 1 ? "es" : ""}` : ""}`;
+  return `${anos ? `${anos} ano${anos > 1 ? "s" : ""}` : ""}${anos && m ? " e " : ""}${m || !anos ? `${m} ${m !== 1 ? "meses" : "mês"}` : ""}`;
 }

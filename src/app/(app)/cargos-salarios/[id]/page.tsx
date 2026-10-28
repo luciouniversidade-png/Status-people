@@ -20,7 +20,7 @@ export default async function Cargo({ params, searchParams }: { params: Promise<
     sql<{ nome: string; data: string; salario_anterior: number | null; salario: number; motivo: string; obs: string | null }[]>`SELECT e.nome, h.data::text, h.salario_anterior::float, h.salario::float, h.motivo, h.obs FROM salary_history h JOIN employees e ON e.id=h.employee_id WHERE e.position_id=${pid} ORDER BY h.data DESC, h.id DESC LIMIT 20`,
   ]);
   const grade = grades.find(g => g.id === p.gradeId); const sug = gradeSugerida(p.pontos, grades); const aval = (p.avaliacao as Record<string, number> | null) ?? {};
-  const podeRem = can.aprovar(s, cfg.alcadas.remuneracao);
+  const podeRem = can.aprovar(s, "remuneracao");
   const posicao = (sal: number | null) => !grade || sal === null ? null : sal < Number(grade.minimo) ? "abaixo" : sal > Number(grade.maximo) ? "acima" : Math.round(100 * sal / Number(grade.medio));
   return (
     <Page title={p.nome} sub={<span>{p.area}{p.regulamentado ? " · regulamentado" : ""} · {grade ? `faixa ${grade.codigo} (${fmtBRL(grade.minimo)} – ${fmtBRL(grade.maximo)})` : "sem faixa"}{p.pontos ? ` · ${p.pontos} pontos` : ""} · <Link className="text-acao" href="/cargos-salarios">tabela</Link></span>}>

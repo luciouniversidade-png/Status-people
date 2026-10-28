@@ -68,7 +68,7 @@ export function tipoLancamento(d: { status: string }, diff: number) {
 
 /** Salva os dias (upsert) e regenera os lançamentos do banco de horas ligados a cada dia. */
 export async function salvarDias(s: Session, employeeId: number, dias: { data: string; esperado: number; trabalhado: number; status: string; obs?: string | null; marcacoes?: string | null; origem?: string }[]) {
-  const cfg = await getSettings(); const aprova = can.aprovar(s, cfg.alcadas.banco);
+  const cfg = await getSettings(); const aprova = can.aprovar(s, "banco");
   const { assertMesAberto } = await import("./folha"); await assertMesAberto(employeeId, dias.map(d => d.data)); // v24: espelho congelado após o fechamento
   let gerados = 0, saldo = 0;
   await sql.begin(async tx => {

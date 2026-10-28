@@ -1,3 +1,4 @@
+import { veTela } from "@/lib/acesso";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { lerContexto } from "@/lib/contexto";
@@ -7,6 +8,7 @@ import { audit } from "@/lib/utils";
 /** Export do Cockpit do CFO: série de 13 meses, os indicadores do mês e a execução por área, com o contexto no cabeçalho. Sem dados nominais. */
 export async function GET(req: Request) {
   const s = await getSession(); if (!s) return NextResponse.json({ erro: "Não autenticado." }, { status: 401 });
+  if (!veTela(s, "/financeiro/cockpit")) return NextResponse.json({ erro: "Tela fora do acesso do seu cargo." }, { status: 403 }); // v29: tela fora do acesso do cargo
   if (!["DIRECAO", "FINANCEIRO", "DIRETOR_UNIDADE"].includes(s.role)) return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
   const sp = Object.fromEntries(new URL(req.url).searchParams.entries()); const ctx = await lerContexto(s, sp);
   const pf = await painelFinanceiro(ctx); const [exec, tes] = await Promise.all([execucaoPorCategoria(ctx), tesouraria(ctx, pf.caixa.saldo)]);
