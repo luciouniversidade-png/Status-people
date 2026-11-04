@@ -52,7 +52,7 @@ def d(n): return (HOJE + timedelta(days=n)).isoformat()
 
 print("Preparação")
 RH = login("rh@colegiostatus", "Status2026!"); r = RH.get(B + f"/api/setup?token={TOKEN}"); assert r.json()["ok"], r.text
-assert psql("SELECT value->>'versao' FROM settings WHERE key='banco'") == "30.0"
+assert float(psql("SELECT value->>'versao' FROM settings WHERE key='banco'")) >= 30.0  # v30 ou posterior
 for t in ["employee_moves", "employee_qualifications", "employee_items", "pay_transparency_reports", "benefit_plans", "custom_reports", "interview_feedback", "training_enrollments"]: assert psql(f"SELECT to_regclass('{t}') IS NOT NULL") == "t", t
 U = {c: int(psql(f"SELECT id FROM units WHERE codigo='{c}'")) for c in ["CAR", "CUL", "TVM1"]}; CAR, CUL, TVM1 = U["CAR"], U["CUL"], U["TVM1"]
 P = {n: int(psql(f"SELECT id FROM positions WHERE nome='{n}'")) for n in ["Professor", "Coordenador Pedagógico", "Auxiliar Administrativo", "Gerente Financeiro", "Analista de Atendimento", "Técnico de Manutenção", "Diretor Geral (Sócio)", "Tesoureiro"]}

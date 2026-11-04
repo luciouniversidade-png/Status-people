@@ -10,6 +10,7 @@ import { minhaLideranca, ACOES_LIDERANCA } from "@/lib/lideranca";
 import { quemEstaFora, rotuloVisivel } from "@/lib/quem-fora";
 import { feriasAVencer } from "@/lib/ferias";
 import { prazosContratuais } from "@/lib/contratos-prazo";
+import { cadencia, diasDesde } from "@/lib/conversas";
 
 export const dynamic = "force-dynamic";
 const anos = (d: string, h: string) => Math.floor((Date.parse(h) - Date.parse(d)) / (365.25 * 86400000));
@@ -24,7 +25,7 @@ export default async function MinhaEquipe({ searchParams }: { searchParams: Prom
   const pedido = sp.gestor ? Number(sp.gestor) : null;
   const gid = amplo && pedido && gestores.some(g => g.id === pedido) ? pedido : s.employeeId && gestores.some(g => g.id === s.employeeId) ? s.employeeId : amplo ? gestores[0]?.id ?? null : null;
   // sem equipe direta: em vez de voltar ao Início sem explicação, a tela diz o que falta (o gestor direto nas fichas ou o colaborador vinculado ao acesso)
-  const eq = gid ? await sql<{ id: number; nome: string; cargo: string | null; unidade: string; admissao: string; nasc: string | null; situacao: string; turno: string | null }[]>`SELECT e.id, e.nome, p.nome AS cargo, un.nome AS unidade, e.admissao::text, e.data_nascimento::text AS nasc, e.situacao, e.turno FROM employees e JOIN units un ON un.id=e.unit_id LEFT JOIN positions p ON p.id=e.position_id WHERE e.gestor_id=${gid} AND e.situacao IN ('ATIVO','FERIAS','AFASTADO') ORDER BY e.nome` : [];
+  const eq = gid ? await sql<{ id: number; nome: string; cargo: string | null; unidade: string; admissao: string; nasc: string | null; situacao: string; turno: string | null; familia: string | null }[]>`SELECT e.id, e.nome, p.nome AS cargo, un.nome AS unidade, e.admissao::text, e.data_nascimento::text AS nasc, e.situacao, e.turno, p.familia FROM employees e JOIN units un ON un.id=e.unit_id LEFT JOIN positions p ON p.id=e.position_id WHERE e.gestor_id=${gid} AND e.situacao IN ('ATIVO','FERIAS','AFASTADO') ORDER BY e.nome` : [];
   const ids = eq.map(e => e.id);
   const [banco, fora, ferias, avals, pdi, saidas, prazos] = await Promise.all([
     saldosBanco(ids), quemEstaFora(h.slice(0, 7), null), feriasAVencer(null, 90),
@@ -39,6 +40,10 @@ export default async function MinhaEquipe({ searchParams }: { searchParams: Prom
   const debito = eq.filter(e => (banco.get(e.id) ?? 0) < -600);
   const mes = h.slice(5, 7); const niver = eq.filter(e => e.nasc?.slice(5, 7) === mes); const casa = eq.filter(e => e.admissao.slice(5, 7) === mes && anos(e.admissao, h) >= 1);
   const semPdi = eq.filter(e => !pdi.some(p => p.employee_id === e.id));
+  // v31 · 1:1: última conversa (1:1 realizada ou acompanhamento) e a próxima marcada; “em dia” pelo alvo da família do cargo
+  const cfgD = (await getSettings()).desempenho.checkinDias as Record<string, number>; const cad = await cadencia(ids);
+  const alvo1a1 = (f: string | null) => cfgD[f ?? "PADRAO"] ?? cfgD.PADRAO ?? 45;
+  const semConversa = eq.filter(e => { const c = cad.get(e.id); const d = diasDesde(c?.ultima ?? null, h); return e.situacao === "ATIVO" && !c?.proxima && (d === null || d > alvo1a1(e.familia)); });
   const gNome = gestores.find(g => g.id === gid)?.nome;
   // v30 · a liderança na visão da equipe (última pesquisa de liderança encerrada): o próprio gestor, RH/Direção e a direção da unidade
   const cfgL = (await getSettings()).clima.lideranca; const verLid = !!gid && (gid === s.employeeId || amplo);
@@ -49,7 +54,8 @@ export default async function MinhaEquipe({ searchParams }: { searchParams: Prom
     { n: feriasEq.length, t: "período(s) de férias vencendo em 90 dias", href: "/ferias" },
     { n: debito.length, t: "pessoa(s) com mais de 10 h de débito no banco de horas", href: "/banco-de-horas" },
     { n: prazos.filter(p => ["VENCIDO", "VENCENDO"].includes(p.situacao) && !p.recomendacao).length, t: "contrato(s) de experiência/estágio vencendo — recomende prorrogar, efetivar ou encerrar", href: `/contratos-prazo${amplo ? `?gestor=${gid}` : ""}` },
-    { n: semPdi.length, t: "pessoa(s) sem PDI ativo", href: "/desempenho/lideranca" },
+    { n: semPdi.length, t: "pessoa(s) sem PDI ativo", href: "/desempenho/pdi" },
+    { n: semConversa.length, t: "pessoa(s) sem conversa (1:1) em dia e sem 1:1 marcada", href: "/um-a-um?aba=colegas" },
   ].filter(x => x.n > 0);
   return (
     <Page title="Minha equipe" sub={gNome ? `Equipe direta de ${gNome} · ${eq.length} pessoa(s)` : "Painel do gestor"} actions={amplo && gestores.length > 0 ? <form className="flex items-end gap-1"><Field label="Gestor"><Select name="gestor" defaultValue={String(gid ?? "")}>{gestores.map(g => <option key={g.id} value={g.id}>{g.nome} ({g.n})</option>)}</Select></Field><Btn small kind="ghost">Ver</Btn></form> : undefined}>
@@ -64,12 +70,13 @@ export default async function MinhaEquipe({ searchParams }: { searchParams: Prom
         <Card title="Datas do mês">{niver.length + casa.length === 0 ? <p className="text-sm text-slate-500">Nenhuma data neste mês.</p> : <ul className="space-y-1 text-sm">{niver.map(e => <li key={`n${e.id}`}>🎂 {e.nome} <span className="text-xs text-slate-500">· aniversário {fmtData(e.nasc).slice(0, 5)}</span></li>)}{casa.map(e => <li key={`c${e.id}`}>🏅 {e.nome} <span className="text-xs text-slate-500">· {anos(e.admissao, h)} ano(s) de casa em {fmtData(e.admissao).slice(0, 5)}</span></li>)}</ul>}</Card>
       </div>
       <Card className="mt-4" title="Equipe direta">
-        <Table head={["Pessoa", "Cargo", "Tempo de casa", "Banco de horas", "Última avaliação", "PDI", "Situação"]} empty="Ninguém na equipe.">{eq.map(e => { const b = banco.get(e.id) ?? 0; const a = avals.find(x => x.employee_id === e.id); const p = pdi.find(x => x.employee_id === e.id); return <tr key={e.id}>
+        <Table head={["Pessoa", "Cargo", "Tempo de casa", "Banco de horas", "Última avaliação", "PDI", "1:1", "Situação"]} empty="Ninguém na equipe.">{eq.map(e => { const b = banco.get(e.id) ?? 0; const a = avals.find(x => x.employee_id === e.id); const p = pdi.find(x => x.employee_id === e.id); const c = cad.get(e.id); const dd = diasDesde(c?.ultima ?? null, h); return <tr key={e.id}>
           <Td><Link className="font-medium text-acao" href={`/colaboradores/${e.id}`}>{e.nome}</Link><div className="text-xs text-slate-500">{e.unidade}{e.turno ? ` · ${e.turno}` : ""}</div></Td><Td className="text-xs">{e.cargo ?? "—"}</Td>
           <Td className="text-xs">{anos(e.admissao, h) >= 1 ? `${anos(e.admissao, h)} ano(s)` : `${Math.max(0, Math.floor((Date.parse(h) - Date.parse(e.admissao)) / (30.4 * 86400000)))} mês(es)`}</Td>
           <Td className={b < -600 ? "font-medium text-erro" : b > 1200 ? "text-aviso" : ""}>{fmtMin(b)}</Td>
           <Td className="text-xs">{a ? <>{a.ciclo} · {["PENDENTE", "AUTOAVALIADA"].includes(a.status) ? <span className="text-aviso">em aberto</span> : a.nota != null ? a.nota.toFixed(1).replace(".", ",") : a.status.toLowerCase()}</> : "—"}</Td>
           <Td className="text-xs">{p ? <>{p.concluidas}/{p.acoes} ações{p.atrasadas ? <span className="text-erro"> · {p.atrasadas} atrasada(s)</span> : ""}</> : <span className="text-slate-400">sem PDI</span>}</Td>
+          <Td className="whitespace-nowrap text-xs">{c?.proxima ? <Link className="text-acao" href={`/um-a-um/${c.proximaId}`}>próxima {fmtData(c.proxima).slice(0, 5)} {c.proximaHora}</Link> : <Link className={dd === null || dd > alvo1a1(e.familia) ? "text-erro" : "text-acao"} href={`/um-a-um?marcar=${e.id}`}>{dd === null ? "nunca · marcar" : `${dd === 0 ? "hoje" : dd === 1 ? "ontem" : `há ${dd} dias`} · marcar`}</Link>}</Td>
           <Td><Badge v={e.situacao === "ATIVO" ? "APROVADA" : "PENDENTE"} label={e.situacao === "ATIVO" ? "Ativo" : e.situacao === "FERIAS" ? "Férias" : "Afastado"} /></Td></tr>; })}</Table>
         <p className="mt-1 text-[11px] text-slate-500">Banco de horas: vermelho = mais de 10 h devendo; amarelo = mais de 20 h a compensar.</p>
       </Card>

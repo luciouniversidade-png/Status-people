@@ -19,6 +19,7 @@ import { ParametrosV25 } from "./_v25";
 import { ParametrosV27 } from "./_v27";
 import { ParametrosV28 } from "./_v28";
 import { ParametrosV30 } from "./_v30";
+import { ParametrosV31 } from "./_v31";
 
 export const dynamic = "force-dynamic";
 const ROLES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES", "LEITURA", "COLABORADOR"];
@@ -225,6 +226,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       <ParametrosV27 />
       <ParametrosV28 />
       <ParametrosV30 />
+      <ParametrosV31 />
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
         <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div><div className="mb-1 text-sm font-semibold text-navy">Pesos (somam até 100)</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.pesos).map(([k, v]) => <Field key={k} label={ROTULO_PESO[k] ?? k}><Input name={`peso_${k}`} type="number" min={0} max={40} defaultValue={v as number} /></Field>)}</div></div>

@@ -12,6 +12,7 @@ import { minhasPendencias } from "@/lib/pendencias";
 import { solicitarAfastamento } from "../ferias/actions";
 import { atualizarContato } from "./actions";
 import { MeuEspacoV30 } from "./_v30";
+import { MeuEspacoV31 } from "./_v31";
 import { RemuneracaoTotal } from "@/components/RemuneracaoTotal";
 
 export const dynamic = "force-dynamic";
@@ -116,6 +117,7 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
           <Card title="Acesso rápido"><ul className="space-y-1 text-sm"><li><Link className="text-acao" href={`/colaboradores/${eid}/painel`}>Meu painel de desenvolvimento</Link></li><li><Link className="text-acao" href="/desempenho/minha">Minha avaliação</Link></li><li><Link className="text-acao" href="/academy/minha">Meus treinamentos</Link></li>{e.regime === "DOCENTE" && <li><Link className="text-acao" href="/cobertura/minha">Minhas substituições e minha grade</Link></li>}<li><Link className="text-acao" href={`/colaboradores/${eid}`}>Minha ficha completa</Link></li></ul></Card>
         </div>
       </div>
+      <MeuEspacoV31 s={s} eid={eid} />
       <MeuEspacoV30 s={s} eid={eid} />
       <RemuneracaoTotal employeeId={eid} proprio />
     </Page>

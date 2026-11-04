@@ -22,6 +22,7 @@ const AREAS: [RegExp, string][] = [
   [/^(strategy_|objective_links|indicator|action_plans|ritual)/, "Gestão estratégica (identidade, mapa, indicadores, plano de ação, rituais, assistente)"],
   [/^family_/, "Radar da família"], [/^(objectives|key_results|kr_checkins|projects|milestones|project_)/, "Estratégia (OKRs e projetos)"],
   [/^(students|enrollments|classes|grades|waitlist)$/, "Matrículas"],
+  [/^(one_on_ones|feedback_requests)$/, "1:1 e feedback contínuo (v31)"],
   [/^(perf_|eval_|pdi_|role_profile|dev_needs|teaching_|rater_|career_|review_raters|ai_drafts|feedbacks|behavior_profiles)/, "Desempenho e Painel do Colaborador"],
   [/^(announcement|message|notifications|attachments)/, "Comunicados, mensagens, anexos e notificações"],
   [/^ai_agents/, "Agentes de IA"], [/^(requisition|candidate|interview)/, "Recrutamento"], [/^(course|training|enroll|lesson)/, "Academy"],

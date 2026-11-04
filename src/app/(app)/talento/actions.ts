@@ -118,7 +118,9 @@ export async function avaliarGestor(fd: FormData) {
 export async function calibrar(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const b = str(fd, "voltar") || `/desempenho/avaliacoes/${id}`;
   try { const cfg = await getSettings(); if (!can.aprovar(s, "calibracao")) throw new Error("Calibrar exige: " + (await quemAprovaTexto("calibracao"))); const { r } = await review(id); assert(["AVALIADA", "CALIBRADA"].includes(r.status), "Só avaliações com nota do gestor são calibradas.");
-    const d = { desempenhoNivel: int(fd, "desempenhoNivel") ?? r.desempenhoNivel, potencial: int(fd, "potencial") ?? r.potencial, calibracaoNota: strOrNull(fd, "nota"), status: "CALIBRADA", updatedAt: new Date() };
+    const d = { desempenhoNivel: int(fd, "desempenhoNivel") ?? r.desempenhoNivel, potencial: int(fd, "potencial") ?? r.potencial, calibracaoNota: strOrNull(fd, "nota"), status: "CALIBRADA", updatedAt: new Date(),
+      // v31 · retrato de antes da primeira calibração (Nine Box pré × pós)
+      ...(r.preCalibracao ? {} : { preCalibracao: { nivel: r.desempenhoNivel, potencial: r.potencial, nota: r.notaFinal === null ? null : Number(r.notaFinal), em: new Date().toISOString(), por: s.nome } }) };
     await db.update(schema.perfReviews).set(d).where(eq(schema.perfReviews.id, id)); await audit(s, "calibrar", "perf_reviews", id, { desempenhoNivel: r.desempenhoNivel, potencial: r.potencial }, d);
   } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(b, "ok", "Calibração registrada."));

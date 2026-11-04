@@ -594,6 +594,7 @@ export const perfReviews = pgTable("perf_reviews", {
   iniciadaEm: timestamp("iniciada_em"),
   versao: integer("versao").notNull().default(1),          // controle de concorrência otimista
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  preCalibracao: jsonb("pre_calibracao"),                  // v31 · retrato de antes da calibração: { nivel, potencial, nota } ou { N, R, A }
 });
 
 export const perfGoals = pgTable("perf_goals", {
@@ -632,6 +633,7 @@ export const perfGoals = pgTable("perf_goals", {
   alteracoes: jsonb("alteracoes"),                        // [{ em, por, de, para, justificativa }]
   createdAt: timestamp("created_at").notNull().defaultNow(),
   objectiveId: integer("objective_id"), keyResultId: integer("key_result_id"), atualizadaEm: timestamp("atualizada_em"), // v30 · meta ligada à estratégia · última atualização do andamento
+  aprovacao: text("aprovacao").notNull().default("APROVADA"), aprovacaoPor: integer("aprovacao_por"), aprovacaoEm: timestamp("aprovacao_em"), aprovacaoMotivo: text("aprovacao_motivo"), propostaPor: integer("proposta_por"), // v31 · PROPOSTA · APROVADA · DEVOLVIDA
 });
 
 export const perfCheckins = pgTable("perf_checkins", {
@@ -1173,6 +1175,7 @@ export const objectives = pgTable("objectives", {
   status: text("status").notNull().default("ATIVO"), // ATIVO · CONCLUIDO · CANCELADO
   ordem: integer("ordem").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  parentId: integer("parent_id"),               // v31 · desdobramento: o objetivo (da rede, da unidade…) que este desdobra
 });
 
 export const keyResults = pgTable("key_results", {
@@ -1419,8 +1422,8 @@ export const feedbacks = pgTable("feedbacks", {
   reviewId: integer("review_id"),
   tipo: text("tipo").notNull().default("DESENVOLVIMENTO"), // RECONHECIMENTO · DESENVOLVIMENTO · DEVOLUTIVA
   data: date("data").notNull(),
-  situacao: text("situacao").notNull(),
-  comportamento: text("comportamento").notNull(),
+  situacao: text("situacao"),                              // v31: opcional no formato livre (SCI = situação, comportamento, impacto)
+  comportamento: text("comportamento"),
   impacto: text("impacto"),
   evidencia: text("evidencia"),
   acordo: text("acordo"),
@@ -1429,6 +1432,36 @@ export const feedbacks = pgTable("feedbacks", {
   cienciaEm: timestamp("ciencia_em"),
   comentarioColaborador: text("comentario_colaborador"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // v31 · feedback contínuo: qualquer colega manda (ou pede) feedback, com formato, assunto, valores e conteúdo da Academy
+  formato: text("formato").notNull().default("SCI"),       // LIVRE · SCI · ELOGIO · SUGESTAO
+  assunto: text("assunto"), texto: text("texto"), valores: jsonb("valores"), courseId: integer("course_id"),
+  status: text("status").notNull().default("ENVIADO"),     // RASCUNHO · ENVIADO
+  visibilidade: text("visibilidade").notNull().default("GESTAO"), // PRIVADO (só a pessoa) · GESTOR (a pessoa e o gestor direto) · GESTAO (painel do colaborador)
+  autorEmployeeId: integer("autor_employee_id"), requestId: integer("request_id"), enviadoEm: timestamp("enviado_em"), agradecidoEm: timestamp("agradecido_em"), recognitionId: integer("recognition_id"),
+});
+
+/** v31 · pedido de feedback: a pessoa pede a um colega um feedback sobre si mesma (assunto, mensagem e prazo). */
+export const feedbackRequests = pgTable("feedback_requests", {
+  id: serial("id").primaryKey(),
+  solicitanteUserId: integer("solicitante_user_id").notNull(), solicitanteEmployeeId: integer("solicitante_employee_id"), solicitanteNome: text("solicitante_nome"),
+  paraUserId: integer("para_user_id").notNull(), paraEmployeeId: integer("para_employee_id"),
+  assunto: text("assunto").notNull(), mensagem: text("mensagem"), prazo: date("prazo"),
+  status: text("status").notNull().default("PENDENTE"),   // PENDENTE · RESPONDIDO · RECUSADO · CANCELADO
+  feedbackId: integer("feedback_id"), motivoRecusa: text("motivo_recusa"), respondidoEm: timestamp("respondido_em"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+/** v31 · 1:1 marcada: convidado, data e horário, título, temas, pauta compartilhada e recorrência. Realizada → vira acompanhamento (perf_checkins). */
+export const oneOnOnes = pgTable("one_on_ones", {
+  id: serial("id").primaryKey(),
+  organizadorUserId: integer("organizador_user_id").notNull(), organizadorNome: text("organizador_nome"), organizadorEmployeeId: integer("organizador_employee_id"),
+  employeeId: integer("employee_id").notNull(),
+  data: date("data").notNull(), inicio: text("inicio").notNull(), fim: text("fim").notNull(), titulo: text("titulo").notNull(),
+  temas: jsonb("temas").notNull().default([]), recorrencia: text("recorrencia").notNull().default("NENHUMA"), // NENHUMA · SEMANAL · QUINZENAL · MENSAL
+  status: text("status").notNull().default("MARCADA"),     // MARCADA · REALIZADA · CANCELADA
+  pauta: jsonb("pauta").notNull().default([]),               // [{ id, texto, autor, em, feito }]
+  checkinId: integer("checkin_id"), motivoCancelamento: text("motivo_cancelamento"), realizadaEm: timestamp("realizada_em"), anteriorId: integer("anterior_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(), updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const pdiPlans = pgTable("pdi_plans", {

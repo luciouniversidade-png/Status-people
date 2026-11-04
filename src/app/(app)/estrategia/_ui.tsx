@@ -6,7 +6,7 @@ import { fmtNum, fmtValor } from "@/lib/gestao-estrategica";
 /** Navegação interna da Estratégia (rolagem horizontal no celular). */
 const SECOES: [string, string, string][] = [
   ["painel", "/estrategia", "Painel"], ["identidade", "/estrategia/identidade", "Identidade"], ["mapa", "/estrategia/mapa", "Mapa estratégico"], ["indicadores", "/estrategia/indicadores", "Indicadores"],
-  ["okrs", "/estrategia/okrs", "OKRs"], ["projetos", "/estrategia/projetos", "Projetos"], ["cronograma", "/estrategia/cronograma", "Cronograma"], ["acoes", "/estrategia/acoes", "Plano de ação"], ["quadro", "/estrategia/acoes/quadro", "Quadro de ações"], ["alinhamento", "/estrategia/alinhamento", "Alinhamento"], ["rituais", "/estrategia/rituais", "Rituais"],
+  ["okrs", "/estrategia/okrs", "OKRs"], ["desdobramento", "/estrategia/okrs/desdobramento", "Desdobramento"], ["projetos", "/estrategia/projetos", "Projetos"], ["cronograma", "/estrategia/cronograma", "Cronograma"], ["acoes", "/estrategia/acoes", "Plano de ação"], ["quadro", "/estrategia/acoes/quadro", "Quadro de ações"], ["alinhamento", "/estrategia/alinhamento", "Alinhamento"], ["rituais", "/estrategia/rituais", "Rituais"],
   ["marketing", "/estrategia/marketing", "Marketing"], ["relatorio", "/estrategia/relatorio", "Relatório executivo"], ["assistente", "/estrategia/assistente", "Assistente IA"],
 ];
 export function SubNav({ atual }: { atual: string }) {

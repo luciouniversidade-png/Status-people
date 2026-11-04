@@ -1,9 +1,10 @@
 "use client";
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 /** Botão que abre uma janela (dialog nativo) com o conteúdo — formulários de ação saem de dentro das tabelas e ficam legíveis no PC e no celular. */
-export function Modal({ label, title, children, kind = "ghost", small = true, className = "" }: { label: ReactNode; title?: string; children: ReactNode; kind?: "ghost" | "primary" | "link" | "danger"; small?: boolean; className?: string }) {
+export function Modal({ label, title, children, kind = "ghost", small = true, className = "", aberto = false }: { label: ReactNode; title?: string; children: ReactNode; kind?: "ghost" | "primary" | "link" | "danger"; small?: boolean; className?: string; /** v31 · abre ao carregar (ex.: “Marcar 1:1” vindo de Minha equipe) */ aberto?: boolean }) {
   const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => { if (aberto && ref.current && !ref.current.open) ref.current.showModal(); }, [aberto]);
   const btn = kind === "link" ? "text-acao hover:underline text-xs" : `inline-flex items-center justify-center rounded-md font-medium ${small ? "px-2.5 py-1 text-xs" : "px-3.5 py-2 text-sm"} ${kind === "primary" ? "bg-acao text-white hover:bg-navy-700" : kind === "danger" ? "border border-red-200 bg-white text-erro hover:bg-red-50" : "border border-line bg-white text-navy hover:bg-mist"}`;
   return (
     <>

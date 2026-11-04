@@ -638,6 +638,41 @@ CREATE TABLE IF NOT EXISTS benefit_enrollments (id serial PRIMARY KEY, plan_id i
 CREATE INDEX IF NOT EXISTS benefit_enrollments_emp_idx ON benefit_enrollments(employee_id, status);
 -- v30 · relatório sob medida (colunas, filtros e agrupamento escolhidos pela pessoa; salvo e compartilhável com a equipe de RH)
 CREATE TABLE IF NOT EXISTS custom_reports (id serial PRIMARY KEY, nome text NOT NULL, definicao jsonb NOT NULL, dono_user_id integer NOT NULL, compartilhado boolean NOT NULL DEFAULT false, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+-- v31 · 1:1 marcadas (convidado, horário, temas, pauta compartilhada e recorrência); realizada, vira um acompanhamento do painel
+CREATE TABLE IF NOT EXISTS one_on_ones (id serial PRIMARY KEY, organizador_user_id integer NOT NULL, organizador_nome text, organizador_employee_id integer, employee_id integer NOT NULL, data date NOT NULL, inicio text NOT NULL, fim text NOT NULL, titulo text NOT NULL, temas jsonb NOT NULL DEFAULT '[]'::jsonb, recorrencia text NOT NULL DEFAULT 'NENHUMA', status text NOT NULL DEFAULT 'MARCADA', pauta jsonb NOT NULL DEFAULT '[]'::jsonb, checkin_id integer, motivo_cancelamento text, realizada_em timestamp, anterior_id integer, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS one_on_ones_emp_idx ON one_on_ones(employee_id, data);
+CREATE INDEX IF NOT EXISTS one_on_ones_org_idx ON one_on_ones(organizador_user_id, data);
+-- v31 · feedback contínuo: qualquer colega manda ou pede feedback (formato, assunto, texto livre, valores, conteúdo da Academy, rascunho e visibilidade)
+ALTER TABLE feedbacks ALTER COLUMN situacao DROP NOT NULL;
+ALTER TABLE feedbacks ALTER COLUMN comportamento DROP NOT NULL;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS formato text NOT NULL DEFAULT 'SCI';
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS assunto text;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS texto text;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS valores jsonb;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS course_id integer;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ENVIADO';
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS visibilidade text NOT NULL DEFAULT 'GESTAO';
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS autor_employee_id integer;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS request_id integer;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS enviado_em timestamp;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS agradecido_em timestamp;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS recognition_id integer;
+CREATE INDEX IF NOT EXISTS feedbacks_emp_status_idx ON feedbacks(employee_id, status);
+CREATE INDEX IF NOT EXISTS feedbacks_autor_idx ON feedbacks(autor_user_id, status);
+CREATE TABLE IF NOT EXISTS feedback_requests (id serial PRIMARY KEY, solicitante_user_id integer NOT NULL, solicitante_employee_id integer, solicitante_nome text, para_user_id integer NOT NULL, para_employee_id integer, assunto text NOT NULL, mensagem text, prazo date, status text NOT NULL DEFAULT 'PENDENTE', feedback_id integer, motivo_recusa text, respondido_em timestamp, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS feedback_requests_para_idx ON feedback_requests(para_user_id, status);
+CREATE INDEX IF NOT EXISTS feedback_requests_sol_idx ON feedback_requests(solicitante_user_id, status);
+-- v31 · metas com aprovação: a proposta do colaborador espera o gestor (aprovar ou devolver com motivo)
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS aprovacao text NOT NULL DEFAULT 'APROVADA';
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS aprovacao_por integer;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS aprovacao_em timestamp;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS aprovacao_motivo text;
+ALTER TABLE perf_goals ADD COLUMN IF NOT EXISTS proposta_por integer;
+-- v31 · OKRs em desdobramento (o objetivo da rede desce para as unidades e áreas)
+ALTER TABLE objectives ADD COLUMN IF NOT EXISTS parent_id integer;
+CREATE INDEX IF NOT EXISTS objectives_parent_idx ON objectives(parent_id);
+-- v31 · calibração: o retrato de antes (nível, potencial e nota; ou atitudes, resultados e nota) para comparar pré × pós
+ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS pre_calibracao jsonb;
 `;
 
 // Estrutura vigente ditada em 16/07/2026 (22 cargos) + Professor e Pedagoga (corpo docente).
@@ -830,6 +865,18 @@ export const DEFAULT_SETTINGS = {
     consistenciaDelta: 0.5,                  // média do avaliador a mais de N pontos da média do ciclo = “olhar na calibração”
     metaSemAtualizacaoDias: 30,              // meta sem atualização há mais de N dias = “precisa de atualização”
     boxes: { "3-3": "Talento estratégico", "3-2": "Alto desempenho consistente", "3-1": "Especialista sólido", "2-3": "Alto potencial em desenvolvimento", "2-2": "Mantenedor confiável", "2-1": "Contribuidor estável", "1-3": "Enigma — investigar", "1-2": "Em desenvolvimento", "1-1": "Atenção — plano de melhoria" },
+    // v31 · 360°: sugestão automática de pares (colegas do mesmo gestor e da mesma unidade) com teto de convites por avaliador
+    paresSugeridos: 4,                       // pares sugeridos por avaliado (nunca menos que o mínimo de anonimato do ciclo)
+    maxConvitesPorAvaliador: 6,              // ninguém recebe mais que N convites no mesmo ciclo (evita sobrecarga e respostas no automático)
+    pdiAdesaoAlvo: 80,                       // v31 · % de liderados com PDI ativo esperado por líder (engajamento por liderança)
+  },
+  // v31 · conversas: 1:1 marcadas e feedback contínuo (qualquer colega manda ou pede feedback)
+  conversas: {
+    temas: ["Alinhamento de expectativas", "Avaliação de desempenho", "Carreira", "Checkpoint de PDI", "Construção do PDI", "Desenvolvimento de competências", "Devolutiva", "Feedback", "Líder para liderado", "Mentoria", "Planejamento de trabalho", "Resultados"] as string[],
+    duracaoMin: 60,                          // duração padrão da 1:1 (minutos)
+    feedbackLimiteDia: 20,                   // feedbacks enviados por pessoa por dia (contra excesso)
+    pedidoPrazoDias: 7,                      // prazo padrão para responder a um pedido de feedback
+    pedidoMaxPessoas: 5,                     // a quem a pessoa pode pedir feedback de uma vez
   },
   clima: {
     dimensoes: [
@@ -1439,6 +1486,9 @@ export async function seedMatriculas() {
 
 // Chaves estrangeiras (integridade referencial). Aplicadas de forma idempotente; RESTRICT protege contra apagar o que ainda é referenciado.
 const FKS: [string, string, string, string][] = [
+  // v31 · 1:1, feedback contínuo e desdobramento de OKRs
+  ["one_on_ones", "employee_id", "employees", "CASCADE"], ["one_on_ones", "organizador_user_id", "users", "CASCADE"], ["one_on_ones", "checkin_id", "perf_checkins", "SET NULL"],
+  ["feedback_requests", "para_user_id", "users", "CASCADE"], ["feedback_requests", "solicitante_user_id", "users", "CASCADE"], ["feedbacks", "course_id", "courses", "SET NULL"], ["objectives", "parent_id", "objectives", "SET NULL"],
   // v30 · ficha completa, recrutamento, Academy e benefícios (o histórico acompanha a ficha; o que é da vaga acompanha a vaga)
   ["employee_moves", "employee_id", "employees", "CASCADE"], ["employee_qualifications", "employee_id", "employees", "CASCADE"], ["employee_items", "employee_id", "employees", "CASCADE"], ["employee_items", "asset_id", "assets", "SET NULL"],
   ["pay_transparency_reports", "company_id", "companies", "CASCADE"], ["interview_feedback", "application_id", "applications", "CASCADE"], ["interview_feedback", "avaliador_user_id", "users", "CASCADE"],
@@ -1565,6 +1615,36 @@ export async function seedBase(adminPassword: string) {
   }
   log.push(...(await seedAcessoV29()));
   log.push(...(await seedV30()));
+  log.push(...(await seedV31()));
+  return log;
+}
+
+/**
+ * v31 · uma vez por banco: o retrato de antes da calibração das avaliações já calibradas vem da trilha de auditoria
+ * (nível e potencial no modelo antigo; nota, atitudes e resultados no modelo por critérios) — base do Nine Box pré × pós.
+ */
+export async function seedV31(): Promise<string[]> {
+  const log: string[] = [];
+  // a tela nova do PDI por liderança entra nos acessos com lista personalizada que já viam Liderança e encaminhamentos (feedback e 1:1 são de todos)
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v31_telas'`;
+    if (!feito) {
+      let n = 0; const ajustar = (telas: string[]) => (telas.includes("/desempenho/lideranca") && !telas.includes("/desempenho/pdi") ? [...telas, "/desempenho/pdi"] : telas);
+      for (const c of await sql<{ id: number; acesso: { telas?: string[] | null } | null }[]>`SELECT id, acesso FROM positions WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(c.acesso!.telas!); if (novo.length !== c.acesso!.telas!.length) { await sql`UPDATE positions SET acesso=jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${c.id}`; n++; } }
+      for (const u of await sql<{ id: number; acesso: { telas?: string[] | null } | null }[]>`SELECT id, acesso FROM users WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(u.acesso!.telas!); if (novo.length !== u.acesso!.telas!.length) { await sql`UPDATE users SET acesso=jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${u.id}`; n++; } }
+      await sql`INSERT INTO settings (key, value) VALUES ('v31_telas', ${JSON.stringify({ em: new Date().toISOString(), ajustados: n })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+      if (n) log.push(`Tela nova da v31 (PDI por liderança) incluída em ${n} acesso(s) com lista personalizada.`);
+    }
+  } catch (e) { log.push(`Telas da v31 pendentes: ${e instanceof Error ? e.message : String(e)}`); }
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v31_pre_calibracao'`; if (feito) return log;
+    const a = await sql`UPDATE perf_reviews r SET pre_calibracao = jsonb_build_object('nivel', (x.antes->>'desempenhoNivel')::int, 'potencial', (x.antes->>'potencial')::int, 'origem', 'auditoria')
+      FROM (SELECT DISTINCT ON (entidade_id) entidade_id, antes FROM audit_log WHERE entidade='perf_reviews' AND acao='calibrar' AND antes IS NOT NULL ORDER BY entidade_id, at, id) x WHERE r.id=x.entidade_id AND r.pre_calibracao IS NULL`;
+    const b = await sql`UPDATE perf_reviews r SET pre_calibracao = jsonb_build_object('N', (x.antes->>'N')::numeric, 'R', (x.antes->>'R')::numeric, 'A', (x.antes->>'A')::numeric, 'origem', 'auditoria')
+      FROM (SELECT DISTINCT ON (entidade_id) entidade_id, antes FROM audit_log WHERE entidade='perf_reviews' AND acao='calibrar avaliação' AND antes IS NOT NULL ORDER BY entidade_id, at, id) x WHERE r.id=x.entidade_id AND r.pre_calibracao IS NULL`;
+    await sql`INSERT INTO settings (key, value) VALUES ('v31_pre_calibracao', ${JSON.stringify({ em: new Date().toISOString(), antigo: a.count, criterios: b.count })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+    if (a.count + b.count) log.push(`Calibração (v31): retrato de antes recuperado da auditoria em ${a.count + b.count} avaliação(ões).`);
+  } catch (e) { log.push(`Calibração pré × pós (v31) pendente: ${e instanceof Error ? e.message : String(e)}`); }
   return log;
 }
 

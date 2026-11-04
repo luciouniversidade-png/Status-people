@@ -10,6 +10,7 @@ import { etapasDoCiclo, progressoEtapas, quebraEtapa, estadoEtapa, ETAPAS_CICLO,
 import { fmtPct } from "@/lib/formato";
 import { hoje, fmtData, fmtDataHora } from "@/lib/utils";
 import { criarEtapas, moverJanela, fecharEtapa, lembrarPendentes } from "../../../etapas-actions";
+import { NavCiclo } from "../_nav";
 
 export const dynamic = "force-dynamic";
 const dm = (iso: string) => iso.split("-").reverse().slice(0, 2).join("/");
@@ -31,6 +32,7 @@ export default async function EtapasCiclo({ params, searchParams }: { params: Pr
   return (
     <Page title={`Etapas do ciclo · ${c.nome}`} sub={`Janelas, progresso e pendências nominais por etapa. Fase atual do ciclo: ${c.fase.toLowerCase()} · ${fmtData(c.inicio)} a ${fmtData(c.fim)}. Encerrar o ciclo (somente leitura dali em diante) é a fase Conclusão, na página do ciclo.`}
       actions={<Btn kind="ghost" href={`/desempenho/ciclos/${cid}`}>Página do ciclo</Btn>}>
+      <NavCiclo cid={cid} atual="/etapas" />
       <Flash ok={sp.ok} erro={sp.erro} />
       {etapas.length === 0 ? <Card title="Etapas ainda não configuradas"><p className="text-sm text-slate-600">As seis etapas (nominação, autoavaliação, pares, gestor, calibração e publicação) nascem com janelas-padrão calculadas pelas datas do ciclo; depois, cada mudança de janela exige motivo e avisa os participantes.</p>{conduz && <form action={criarEtapas} className="mt-2"><input type="hidden" name="cycleId" value={cid} /><Btn small>Criar etapas</Btn></form>}</Card> : <>
         <Card title="Linha do tempo do ciclo" className="mb-4"><EtapasC13 etapas={c13} rotulo="Etapas do ciclo de avaliação" /></Card>

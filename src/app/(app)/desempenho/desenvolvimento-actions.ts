@@ -75,17 +75,44 @@ function lerMeta(fd: FormData) {
 const textoLegado = (d: ReturnType<typeof lerMeta>["d"], nMarcos: number) => d.direcao === "FAIXA" ? `${d.faixaMin} a ${d.faixaMax}` : d.direcao === "BINARIO" ? "sim/não" : d.direcao === "MARCOS" ? `${nMarcos} marco(s)` : `${d.esperado}${d.unidadeMedida ? " " + d.unidadeMedida : ""}`;
 export async function salvarMeta(fd: FormData) {
   const s = await requireSession(); const id = int(fd, "id"); const employeeId = Number(fd.get("employeeId")); const cycleId = Number(fd.get("cycleId")); const voltar = str(fd, "voltar") || `/colaboradores/${employeeId}/painel?aba=metas`;
-  try { await acessoColaborador(s, employeeId); const { d, marcos } = lerMeta(fd); const f = await faseCiclo(cycleId); if (!f) throw new Error("Ciclo não encontrado."); if (["CONCLUSAO", "ARQUIVADO"].includes(f)) throw new Error("Ciclo encerrado: metas não mudam.");
+  let proposta = false;
+  try { const { proprio } = await acessoColaborador(s, employeeId, true); proposta = proprio; const { d, marcos } = lerMeta(fd); const f = await faseCiclo(cycleId); if (!f) throw new Error("Ciclo não encontrado."); if (["CONCLUSAO", "ARQUIVADO"].includes(f)) throw new Error("Ciclo encerrado: metas não mudam.");
+    // v31 · a meta que o próprio colaborador cadastra (ou ajusta) é uma PROPOSTA: espera o gestor aprovar ou devolver com motivo
+    const aprov = proprio ? { aprovacao: "PROPOSTA", aprovacaoMotivo: null, propostaPor: s.id, aprovacaoPor: null, aprovacaoEm: null } : { aprovacao: "APROVADA", aprovacaoPor: s.id, aprovacaoEm: new Date(), aprovacaoMotivo: null };
     if (id) { const [g] = await db.select().from(schema.perfGoals).where(eq(schema.perfGoals.id, id)); if (!g || g.employeeId !== employeeId) throw new Error("Meta não encontrada.");
-      const andamento = f !== "PLANEJAMENTO"; const just = strOrNull(fd, "justificativa"); if (andamento && !just) throw new Error("Alterar meta com o ciclo em andamento exige justificativa (a meta original fica preservada).");
+      if (proprio && g.aprovacao === "APROVADA") throw new Error("Meta aprovada só muda com o gestor — peça a alteração na sua 1:1.");
+      const andamento = f !== "PLANEJAMENTO" && g.aprovacao === "APROVADA"; const just = strOrNull(fd, "justificativa"); if (andamento && !just) throw new Error("Alterar meta com o ciclo em andamento exige justificativa (a meta original fica preservada).");
       const de = { tipo: g.tipo, direcao: g.direcao, linhaBase: g.linhaBase, esperado: g.esperado, faixaMin: g.faixaMin, faixaMax: g.faixaMax, prazo: g.prazo, regra: g.regraInterpretacao };
       const para = { tipo: d.tipo, direcao: d.direcao, linhaBase: d.linhaBase, esperado: d.esperado, faixaMin: d.faixaMin, faixaMax: d.faixaMax, prazo: d.prazo, regra: d.regraInterpretacao };
       const regraMudou = JSON.stringify(de) !== JSON.stringify(para); const antigos = (g.marcos as { titulo: string; feito: boolean }[] | null) ?? [];
-      await db.update(schema.perfGoals).set({ ...d, meta: textoLegado(d, marcos.length), marcos: d.direcao === "MARCOS" ? marcos.map(t => ({ titulo: t, feito: antigos.find(a => a.titulo === t)?.feito ?? false })) : null, original: g.original ?? (andamento ? de : null), alteracoes: andamento && regraMudou ? [...((g.alteracoes as unknown[] | null) ?? []), { em: new Date().toISOString(), por: s.nome, de, para, justificativa: just }] : g.alteracoes, ...(regraMudou && g.conversaoAprovadaEm ? { conversaoAprovadaEm: null, conversaoAprovadaPor: null } : {}) }).where(eq(schema.perfGoals.id, id));
-      await audit(s, "alterar meta", "perf_goals", id, de, { ...para, justificativa: just });
-    } else { const [g] = await db.insert(schema.perfGoals).values({ cycleId, employeeId, ...d, meta: textoLegado(d, marcos.length), marcos: d.direcao === "MARCOS" ? marcos.map(t => ({ titulo: t, feito: false })) : null }).returning({ id: schema.perfGoals.id }); await audit(s, "criar meta", "perf_goals", g.id, null, { titulo: d.titulo, tipo: d.tipo, direcao: d.direcao }); }
+      await db.update(schema.perfGoals).set({ ...d, meta: textoLegado(d, marcos.length), marcos: d.direcao === "MARCOS" ? marcos.map(t => ({ titulo: t, feito: antigos.find(a => a.titulo === t)?.feito ?? false })) : null, original: g.original ?? (andamento ? de : null), alteracoes: andamento && regraMudou ? [...((g.alteracoes as unknown[] | null) ?? []), { em: new Date().toISOString(), por: s.nome, de, para, justificativa: just }] : g.alteracoes, ...(regraMudou && g.conversaoAprovadaEm ? { conversaoAprovadaEm: null, conversaoAprovadaPor: null } : {}), ...(proprio || g.aprovacao !== "APROVADA" ? aprov : {}) }).where(eq(schema.perfGoals.id, id));
+      await audit(s, "alterar meta", "perf_goals", id, de, { ...para, justificativa: just, aprovacao: proprio ? "PROPOSTA" : undefined });
+    } else { const [g] = await db.insert(schema.perfGoals).values({ cycleId, employeeId, ...d, meta: textoLegado(d, marcos.length), marcos: d.direcao === "MARCOS" ? marcos.map(t => ({ titulo: t, feito: false })) : null, ...aprov }).returning({ id: schema.perfGoals.id }); await audit(s, proprio ? "propor meta" : "criar meta", "perf_goals", g.id, null, { titulo: d.titulo, tipo: d.tipo, direcao: d.direcao }); }
+    if (proprio) { const gu = await userDoGestor(employeeId); if (gu) await notificar([gu], "Meta proposta aguardando a sua aprovação", null, "/desempenho/metas#aprovacao", "ACAO", `meta-prop:${employeeId}:${hoje()}`); }
   } catch (e) { redirect(go(voltar, "erro", erro(e))); }
-  redirect(go(voltar, "ok", "Meta salva."));
+  redirect(go(voltar, "ok", proposta ? "Meta proposta — o seu gestor aprova ou devolve com comentário." : "Meta salva."));
+}
+/** v31 · gestão aprova a meta proposta pelo colaborador ou devolve com motivo (o colaborador ajusta e propõe de novo). */
+export async function decidirMeta(fd: FormData) {
+  const s = await requireSession(); const id = Number(fd.get("id")); const voltar = str(fd, "voltar") || "/desempenho/metas#aprovacao"; const aprovar = str(fd, "decisao") !== "DEVOLVER";
+  try { const [g] = await db.select().from(schema.perfGoals).where(eq(schema.perfGoals.id, id)); if (!g) throw new Error("Meta não encontrada."); await acessoColaborador(s, g.employeeId);
+    if (["CONCLUSAO", "ARQUIVADO"].includes((await faseCiclo(g.cycleId)) ?? "")) throw new Error("Ciclo encerrado.");
+    if (g.aprovacao === "APROVADA" && aprovar) throw new Error("Esta meta já está aprovada.");
+    const motivo = strOrNull(fd, "motivo"); if (!aprovar && (!motivo || motivo.length < 10)) throw new Error("Ao devolver, diga o que ajustar (pelo menos 10 caracteres).");
+    await db.update(schema.perfGoals).set(aprovar ? { aprovacao: "APROVADA", aprovacaoPor: s.id, aprovacaoEm: new Date(), aprovacaoMotivo: motivo } : { aprovacao: "DEVOLVIDA", aprovacaoPor: s.id, aprovacaoEm: new Date(), aprovacaoMotivo: motivo }).where(eq(schema.perfGoals.id, id));
+    await audit(s, aprovar ? "aprovar meta" : "devolver meta", "perf_goals", id, { aprovacao: g.aprovacao }, { aprovacao: aprovar ? "APROVADA" : "DEVOLVIDA", motivo });
+    const u = await userDoColaborador(g.employeeId); if (u && u !== s.id) await notificar([u], aprovar ? "Sua meta foi aprovada" : "Sua meta voltou para ajuste", null, `/colaboradores/${g.employeeId}/painel?aba=metas`, aprovar ? "INFO" : "ACAO", `meta-dec:${id}:${aprovar ? "a" : "d"}:${Date.now()}`);
+  } catch (e) { redirect(go(voltar, "erro", erro(e))); }
+  redirect(go(voltar, "ok", aprovar ? "Meta aprovada." : "Meta devolvida com o comentário."));
+}
+export async function aprovarMetasLote(fd: FormData) {
+  const s = await requireSession(); const voltar = str(fd, "voltar") || "/desempenho/metas#aprovacao"; const ids = fd.getAll("ids").map(Number).filter(x => x > 0); let n = 0;
+  try { if (!ids.length) throw new Error("Marque as metas a aprovar.");
+    for (const id of ids) { const [g] = await db.select().from(schema.perfGoals).where(eq(schema.perfGoals.id, id)); if (!g || g.aprovacao === "APROVADA") continue; await acessoColaborador(s, g.employeeId);
+      await db.update(schema.perfGoals).set({ aprovacao: "APROVADA", aprovacaoPor: s.id, aprovacaoEm: new Date(), aprovacaoMotivo: null }).where(eq(schema.perfGoals.id, id)); await audit(s, "aprovar meta", "perf_goals", id, { aprovacao: g.aprovacao }, { aprovacao: "APROVADA", lote: true }); n++;
+      const u = await userDoColaborador(g.employeeId); if (u && u !== s.id) await notificar([u], "Sua meta foi aprovada", null, `/colaboradores/${g.employeeId}/painel?aba=metas`, "INFO", `meta-dec:${id}:a`); }
+  } catch (e) { redirect(go(voltar, "erro", erro(e))); }
+  redirect(go(voltar, "ok", `${n} meta(s) aprovada(s).`));
 }
 export async function aprovarConversaoMeta(fd: FormData) {
   const s = await requireSession(); const id = Number(fd.get("id")); const voltar = str(fd, "voltar") || "/desempenho";
@@ -337,7 +364,7 @@ export async function gerarRascunhoIA(fd: FormData) {
   const s = await requireSession(); const employeeId = Number(fd.get("employeeId")); const voltar = str(fd, "voltar") || `/colaboradores/${employeeId}/painel`;
   try { const { e } = await acessoColaborador(s, employeeId); const tarefa = str(fd, "tarefa"); if (!TAREFAS_IA[tarefa]) throw new Error("Tarefa de IA inválida.");
     const ev = await sql<{ id: number; natureza: string; data: string | null; titulo: string; texto: string | null; validacao: string; contestacao: string | null }[]>`SELECT e.id, e.natureza, e.data_fato::text AS data, e.titulo, e.texto, e.validacao, e.contestacao FROM eval_evidences e LEFT JOIN perf_reviews r ON r.id=e.review_id WHERE (e.employee_id=${employeeId} OR r.employee_id=${employeeId}) ORDER BY e.created_at DESC LIMIT 40`;
-    const fb = await sql<{ id: number; data: string; situacao: string; comportamento: string; impacto: string | null }[]>`SELECT id, data::text AS data, situacao, comportamento, impacto FROM feedbacks WHERE employee_id=${employeeId} ORDER BY data DESC LIMIT 15`;
+    const fb = await sql<{ id: number; data: string; situacao: string; comportamento: string; impacto: string | null }[]>`SELECT id, data::text AS data, coalesce(situacao, assunto, '') AS situacao, coalesce(comportamento, texto, '') AS comportamento, impacto FROM feedbacks WHERE employee_id=${employeeId} AND status='ENVIADO' AND visibilidade='GESTAO' ORDER BY data DESC LIMIT 15`; // v31: feedback privado entre colegas nunca entra no rascunho da IA
     const ck = await sql<{ id: number; data: string; avancou: string | null; bloqueio: string | null }[]>`SELECT id, data::text AS data, avancou, bloqueio FROM perf_checkins WHERE employee_id=${employeeId} ORDER BY data DESC LIMIT 15`;
     const fontes: FonteIA[] = [...ev.map(x => ({ id: `v${x.id}`, natureza: x.natureza, data: x.data, texto: `${x.titulo}: ${x.texto ?? ""}${x.validacao === "CONTESTADA" ? ` [contestada pelo colaborador: ${x.contestacao ?? ""}]` : ""}` })), ...fb.map(x => ({ id: `f${x.id}`, natureza: "FEEDBACK", data: x.data, texto: `Situação: ${x.situacao}. Comportamento/entrega: ${x.comportamento}.${x.impacto ? ` Impacto: ${x.impacto}.` : ""}` })), ...ck.map(x => ({ id: `c${x.id}`, natureza: "ACOMPANHAMENTO", data: x.data, texto: `${x.avancou ?? ""}${x.bloqueio ? ` Bloqueio: ${x.bloqueio}` : ""}` }))];
     const p = montarPromptIA(tarefa, { nome: e.nome, cargo: null }, fontes); if (p.semDados) throw new Error("Sem evidências, feedbacks ou acompanhamentos registrados: a IA não foi acionada (dados insuficientes).");

@@ -120,11 +120,11 @@ export const naoRevisado = (acesso: unknown) => { const a = (acesso ?? null) as 
 // ------------------------------------------------------------------ telas (o catálogo é o próprio menu de cada atuação)
 export type Tela = { grupo: string; chave: string; rotulo: string; fixa: boolean };
 /** Telas que sempre ficam (pessoais): não dá para tirar de ninguém. */
-export const TELAS_FIXAS = new Set(["/", "/conta", "/notificacoes", "/eu", "/colaboradores/:eu", "/pendencias"]);
+export const TELAS_FIXAS = new Set(["/", "/conta", "/notificacoes", "/eu", "/colaboradores/:eu", "/pendencias", "/feedback", "/um-a-um"]); // v31: feedback e 1:1 são de todos
 /** Telas fora do menu que pertencem a outra tela (o prefixo do endereço não diria). */
 const DONO_DA_ROTA: [string, string][] = [["/financeiro/lancamentos", "/financeiro/caixa"], ["/estrategia/cronograma", "/estrategia/projetos"], ["/estrategia/reunioes", "/estrategia/rituais"], ["/estrategia/alinhamento", "/estrategia/okrs"], ["/matriculas/importar", "/matriculas/alunos"]];
 /** Endereços pessoais: valem para todos, independentemente do cargo. */
-const PESSOAIS = ["/conta", "/notificacoes", "/eu", "/meu-painel", "/pendencias", "/desempenho/minha", "/academy/minha", "/cobertura/minha", "/sem-acesso", "/inicio/personalizar",
+const PESSOAIS = ["/conta", "/notificacoes", "/eu", "/meu-painel", "/pendencias", "/desempenho/minha", "/academy/minha", "/cobertura/minha", "/sem-acesso", "/inicio/personalizar", "/feedback", "/um-a-um",
   // v30 · convites pessoais (a página confere se o convite é da pessoa): notas de avaliador de candidato, a contratação aos 90 dias e o certificado de um treinamento
   "/recrutamento/avaliar", "/recrutamento/contratacao", "/academy/certificado", "/academy/aprovar"];
 const EU = -424242; // ficha fictícia para montar o catálogo (os itens “meus” entram como /colaboradores/:eu)

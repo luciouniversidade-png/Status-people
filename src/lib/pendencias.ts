@@ -212,8 +212,8 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
           if (r.estado === "RASCUNHO" && r.fase === "AVALIACAO" && r.auto_vazia) out.push({ chave: `auto${r.id}`, grupo: "CIENCIA", modulo: "Desempenho", acao: "Fazer a autoavaliação", titulo: r.ciclo, href: `/colaboradores/${emp}/painel?aba=avaliacoes`, prazo: r.prazo });
           if (["PUBLICADA", "CONTESTADA"].includes(r.estado) && !r.ciencia) out.push({ chave: `res${r.id}`, grupo: "CIENCIA", modulo: "Desempenho", acao: "Ver o resultado e dar ciência", titulo: r.ciclo, href: `/colaboradores/${emp}/painel?aba=avaliacoes`, prazo: null });
         }
-        const [fb] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM feedbacks WHERE employee_id=${emp} AND ciencia_em IS NULL`;
-        if (fb.n) out.push({ chave: "fb", grupo: "CIENCIA", modulo: "Desempenho", acao: "Dar ciência", titulo: `${fb.n} ${fb.n === 1 ? "feedback recebido" : "feedbacks recebidos"}`, href: `/colaboradores/${emp}/painel?aba=feedbacks`, prazo: null, quantidade: fb.n });
+        const [fb] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM feedbacks WHERE employee_id=${emp} AND ciencia_em IS NULL AND status='ENVIADO'`;
+        if (fb.n) out.push({ chave: "fb", grupo: "CIENCIA", modulo: "Feedback", acao: "Ler e dar ciência", titulo: `${fb.n} ${fb.n === 1 ? "feedback recebido" : "feedbacks recebidos"}`, href: "/feedback?aba=recebidos", prazo: null, quantidade: fb.n });
         const pdi = await sql<{ id: number; descricao: string; prazo: string | null }[]>`SELECT a.id, a.descricao, a.prazo::text FROM pdi_actions a JOIN pdi_plans p ON p.id=a.plan_id WHERE p.employee_id=${emp} AND a.status IN ('NAO_INICIADA','EM_ANDAMENTO') AND a.prazo IS NOT NULL AND a.prazo <= ${addDays(h, 7)}::date ORDER BY a.prazo LIMIT 20`;
         out.push(...pdi.map(x => ({ chave: `pdi${x.id}`, grupo: "CIENCIA" as const, modulo: "PDI", acao: "Avançar a ação", titulo: x.descricao, href: `/colaboradores/${emp}/painel?aba=pdi`, prazo: x.prazo })));
       }
@@ -226,6 +226,7 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
   try { const { pendenciasV24 } = await import("./pendencias-v24"); const v = await pendenciasV24(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v24: ${e instanceof Error ? e.message : String(e)}`); }
   // v30 · ciência de itens, formação a validar, avaliações de candidatos, satisfação com a contratação, inscrições, reação e transparência salarial
   try { const { pendenciasV30 } = await import("./pendencias-v30"); const v = await pendenciasV30(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v30: ${e instanceof Error ? e.message : String(e)}`); }
+  try { const { pendenciasV31 } = await import("./pendencias-v31"); const v = await pendenciasV31(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v31: ${e instanceof Error ? e.message : String(e)}`); }
   // sem duplicatas (o mesmo registro pode surgir por dois caminhos)
   // v29: pendência de uma tela fora do acesso do cargo não entra (a pessoa não teria onde resolvê-la)
   const vistos = new Set<string>(); const unicos = itens.filter(i => vistos.has(i.chave) ? false : (vistos.add(i.chave), true)).filter(i => veTela(s, i.href));

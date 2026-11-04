@@ -43,7 +43,7 @@ export default async function Lideranca({ searchParams }: { searchParams: Promis
   const users = await db.select({ id: schema.users.id, nome: schema.users.nome }).from(schema.users).where(eq(schema.users.ativo, true));
   const podeEncaminhar = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR"].includes(s.role);
   return (
-    <Page title="Liderança: obrigações de gestão e encaminhamentos" sub="Mostra se o sistema de desempenho está funcionando em cada equipe — expectativas, acompanhamento, devolutivas, desenvolvimento e evidências. Não avalia o gestor pela média das notas da equipe." actions={<Btn kind="ghost" href="/desempenho">Desempenho</Btn>}>
+    <Page title="Liderança: obrigações de gestão e encaminhamentos" sub="Mostra se o sistema de desempenho está funcionando em cada equipe — expectativas, acompanhamento, devolutivas, desenvolvimento e evidências. Não avalia o gestor pela média das notas da equipe." actions={<div className="flex flex-wrap gap-2"><Btn kind="ghost" href="/desempenho/pdi">PDI por liderança</Btn><Btn kind="ghost" href="/um-a-um?aba=indicadores">1:1 por líder</Btn><Btn kind="ghost" href="/desempenho">Desempenho</Btn></div>}>
       <Flash ok={sp.ok} erro={sp.erro} />
       {linhas.length === 0 ? <Card><p className="text-sm text-slate-500">Sem colaboradores no seu escopo.</p></Card> : <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">{[...grupos.entries()].map(([g, xs]) => { const v = indicadores(xs); return (
         <Card key={g} title={<span>{g} <span className="text-xs font-normal text-slate-500">· {xs.length} pessoa(s)</span></span>}><Radar eixos={EIXOS} valores={v} rotulo={`Obrigações de gestão da equipe de ${g}`} />

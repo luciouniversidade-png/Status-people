@@ -116,8 +116,8 @@ CY = int(psql(f"INSERT INTO perf_cycles (nome, inicio, fim, status, competencias
 UGB = int(psql("SELECT id FROM users WHERE email='beta@cul'"))
 for i, e in enumerate(TA[:6]): psql(f"INSERT INTO perf_reviews (cycle_id, employee_id, avaliador_user_id, status, nota_final, desempenho_nivel, potencial) VALUES ({CY}, {e}, {UGA}, 'CONCLUIDA', {4.6 - i * 0.05}, 3, {1 + i % 3})")
 for i, e in enumerate([TA[6]] + TB + [SEMG, CA]): psql(f"INSERT INTO perf_reviews (cycle_id, employee_id, avaliador_user_id, status, nota_final, desempenho_nivel, potencial) VALUES ({CY}, {e}, {UGB}, 'CONCLUIDA', {2.6 + i * 0.05}, 1, 2)")
-h = page(f"/desempenho/ciclos/{CY}", RH); assert "Calibração — distribuição real × referência" in h and "nenhuma cota é aplicada" in h and "avalia acima da média — conversar" in h and "avalia abaixo da média — conversar" in h and "Nine Box com as pessoas — 12" in h
-assert h.count(f'href="/desempenho/avaliacoes/') >= 12 and 'title="Professora Alfa 0 (fictícia)"' in h
+h = page(f"/desempenho/ciclos/{CY}", RH); assert "Calibração — distribuição real × referência" in h and "nenhuma cota é aplicada" in h and "avalia acima da média — conversar" in h and "avalia abaixo da média — conversar" in h and "Nine Box — desempenho × potencial" in h and "12 pessoa(s) no quadro" in re.sub(r"<[^>]+>", "", h)  # v31: quadro pré × pós
+assert h.count(f'href="/desempenho/avaliacoes/') >= 12 and 'title="Professora Alfa 0 (fictícia)' in h  # v31: o título traz também a nota
 assert "Calibração — distribuição real" not in page(f"/desempenho/ciclos/{CY}", GA)
 hc = page("/configuracoes", RH); aid_cal = aid_of(hc, 'name="refDestaque"')
 erro(post("/configuracoes", aid_cal, {"secao": "calibracao", "refDestaque": "20", "refConsistente": "70", "refPrioritario": "20", "consMin": "5", "consDelta": "0.5", "metaDias": "30"}, RH), "soma 100%")

@@ -17,9 +17,9 @@ export function perguntasLideranca(dims: [string, string][]): Pergunta[] {
 /** Práticas sugeridas por dimensão — conversa do RH com o gestor, não punição. */
 export const ACOES_LIDERANCA: Record<string, { texto: string; href: string }[]> = {
   "Clareza de expectativas": [{ texto: "Revisar com a equipe as expectativas do cargo e registrar a ciência", href: "/desempenho/expectativas" }, { texto: "Combinar metas com regra de leitura explícita", href: "/desempenho/metas" }],
-  "Feedback": [{ texto: "Agendar 1:1 a cada 30 dias e registrar os combinados", href: "/equipe" }, { texto: "Registrar devolutivas no painel do colaborador", href: "/desempenho/lideranca" }],
-  "Reconhecimento": [{ texto: "Reconhecer entregas no mural, ligadas aos valores da escola", href: "/reconhecimento" }],
-  "Apoio ao desenvolvimento": [{ texto: "Abrir ou revisar o PDI de cada pessoa da equipe", href: "/desempenho/lideranca" }, { texto: "Indicar treinamentos da Academy", href: "/academy" }],
+  "Feedback": [{ texto: "Agendar 1:1 a cada 30 dias e registrar os combinados", href: "/um-a-um" }, { texto: "Registrar devolutivas no painel do colaborador", href: "/desempenho/lideranca" }],
+  "Reconhecimento": [{ texto: "Reconhecer entregas no mural, ligadas aos valores da escola", href: "/reconhecimento" }, { texto: "Mandar elogios específicos no dia a dia (Feedback)", href: "/feedback/novo?formato=ELOGIO" }],
+  "Apoio ao desenvolvimento": [{ texto: "Abrir ou revisar o PDI de cada pessoa da equipe", href: "/desempenho/pdi" }, { texto: "Indicar treinamentos da Academy", href: "/academy" }],
   "Condições para trabalhar": [{ texto: "Levantar bloqueios na 1:1 e abrir chamados de infraestrutura", href: "/operacoes/chamados" }],
   "Comunicação e escuta": [{ texto: "Reunião curta semanal com a equipe e retorno das sugestões", href: "/estrategia/rituais" }],
   "Confiança e respeito": [{ texto: "Conversa com o RH sobre o clima da equipe (o canal de ética continua aberto)", href: "/clima" }],
