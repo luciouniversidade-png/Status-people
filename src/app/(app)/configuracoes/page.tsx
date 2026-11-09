@@ -4,7 +4,7 @@ import { asc } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
 import { requireSession, can, ROLE_LABEL, type Role } from "@/lib/auth";
 import Link from "@/components/Link";
-import { ATUACAO, ATUACOES, defDoCargo, telasDaAtuacao, rotuloAtuacao, type AcessoUsuario, type Substituicao } from "@/lib/acesso";
+import { ATUACAO, ATUACOES, defDoCargo, telasDaAtuacao, rotuloAtuacao, lerAjuste, type AcessoUsuario, type Substituicao } from "@/lib/acesso";
 import { Page, Card, Flash, Table, Td, Field, Input, Select, Btn, Textarea, Badge } from "@/components/ui";
 import { getSettings } from "@/lib/utils";
 import { salvarUnidade, salvarEmpresa, salvarCargo, excluirCargo, salvarUsuario, salvarAlcadas, salvarChecklist, salvarDocsPadrao, salvarParamInsights } from "./actions";
@@ -20,6 +20,8 @@ import { ParametrosV27 } from "./_v27";
 import { ParametrosV28 } from "./_v28";
 import { ParametrosV30 } from "./_v30";
 import { ParametrosV31 } from "./_v31";
+import { ParametrosV33 } from "./_v33";
+import { BlocoIA } from "./_ia";
 
 export const dynamic = "force-dynamic";
 const ROLES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "COMERCIAL", "FINANCEIRO", "OPERACOES", "LEITURA", "COLABORADOR"];
@@ -45,7 +47,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
   const fichaDe = (id: number | null) => emps.find(e => e.id === id);
   const comLogin = new Set(users.map(u => u.employeeId).filter(Boolean));
   const nomePos = (id: number | null) => positions.find(p => p.id === id)?.nome ?? "—";
-  const nav = [["unidades", "Unidades"], ["empresas", "Empresas"], ["cargos", "Cargos"], ["usuarios", "Usuários e acessos"], ["alcadas", "Aprovações (padrão)"], ["checklists", "Checklists e documentos"], ["matriculas", "Matrículas: séries e prazos"], ["atendimento", "Atendimento: SLA e protocolos"], ["governanca", "Governança: áreas e prazos"], ["v24", "Nova Arquitetura: alertas, folha, SST, orçamento"], ["analytics", "People Health: pesos e metas"]];
+  const nav = [["unidades", "Unidades"], ["empresas", "Empresas"], ["cargos", "Cargos"], ["usuarios", "Usuários e acessos"], ["alcadas", "Aprovações (padrão)"], ["checklists", "Checklists e documentos"], ["matriculas", "Matrículas: séries e prazos"], ["atendimento", "Atendimento: SLA e protocolos"], ["governanca", "Governança: áreas e prazos"], ["v24", "Nova Arquitetura: alertas, folha, SST, orçamento"], ["analytics", "People Health: pesos e metas"], ["v33", "Fornecedores: política"], ["ia", "IA (opcional)"]];
 
   return (
     <Page title="Configurações" sub="Estrutura da rede, acessos e regras de aprovação. Toda alteração fica na auditoria.">
@@ -88,10 +90,10 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Table head={["Nome", "E-mail", "Cargo e acesso", "Alcance", "Situação", ""]}>{users.map(u => { const f = fichaDe(u.employeeId); const ua = (u.acesso ?? null) as AcessoUsuario | null; const sub = (u.substituicao ?? null) as Substituicao | null; const origem = u.origemAcesso ?? (u.employeeId ? "CARGO" : "DIRETO"); const r = (u.role in ATUACAO ? u.role : "LEITURA") as Role; return <tr key={u.id}><Td>{u.nome}</Td><Td>{u.email}</Td>
             <Td>{f ? <><span className="text-navy">{f.cargo ?? "ficha sem cargo"}</span><div className="text-[11px] text-slate-500">{rotuloAtuacao(r)}</div></> : <><span className="text-navy">Conta sem ficha</span><div className="text-[11px] text-slate-500">{rotuloAtuacao(r)}</div></>}
-              {origem === "EXCECAO" && <div className="mt-0.5"><Badge v="PENDENTE" label="exceção" /></div>}{sub && sub.ate >= new Date().toISOString().slice(0, 10) && <div className="mt-0.5"><Badge v="ABERTO" label="substituindo" /></div>}</Td>
+              {origem === "EXCECAO" && <div className="mt-0.5"><Badge v="PENDENTE" label="exceção" /></div>}{u.employeeId && (() => { const aj = lerAjuste(u.ajusteTelas); return aj && (!aj.ate || aj.ate >= new Date().toISOString().slice(0, 10)) ? <div className="mt-0.5"><Link href={`/configuracoes/acessos/usuario/${u.id}#telas`} title="Telas diferentes do cargo, só para esta pessoa"><Badge v="EM_ADMISSAO" label={`telas +${aj.mais.length} −${aj.menos.length}`} /></Link></div> : null; })()}{sub && sub.ate >= new Date().toISOString().slice(0, 10) && <div className="mt-0.5"><Badge v="ABERTO" label="substituindo" /></div>}</Td>
             <Td className="whitespace-nowrap">{ATUACAO[r].alcance === "UNIDADE" ? (units.find(x => x.id === u.unitId)?.nome ?? "unidade") : "rede"}</Td>
             <Td><Badge v={u.ativo ? "ATIVO" : "DESLIGADO"} label={u.ativo ? "Ativo" : f?.situacao === "DESLIGADO" ? "Encerrado (desligado)" : "Inativo"} />{u.totpAtivo && <Badge v="APROVADA" label="2FA" />}{pediu.has(u.id) && <div className="mt-1"><Badge v="PENDENTE" label="pediu nova senha" /><form action={gerarSenhaTemp} className="mt-1"><input type="hidden" name="id" value={u.id} /><Btn small>Gerar senha temporária</Btn></form></div>}{u.trocarSenha && <div className="text-xs text-aviso">senha temporária ativa</div>}</Td>
-            <Td className="whitespace-nowrap"><div className="flex flex-col items-start gap-1"><Link href={`/configuracoes/acessos/usuario/${u.id}`} className="text-xs text-acao hover:underline">Ver acesso</Link><Modal label={"Editar"} kind="link"><form action={salvarUsuario} className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={u.id} /><input type="hidden" name="modo" value={origem === "EXCECAO" ? "excecao" : "auto"} />
+            <Td className="whitespace-nowrap"><div className="flex flex-col items-start gap-1"><Link href={`/configuracoes/acessos/usuario/${u.id}`} className="text-xs text-acao hover:underline">Ver acesso</Link>{u.employeeId ? <Link href={`/configuracoes/acessos/usuario/${u.id}#telas`} className="text-xs text-acao hover:underline" title="Telas a mais ou a menos que o cargo, só para esta pessoa">Ajustar telas</Link> : null}<Modal label={"Editar"} kind="link"><form action={salvarUsuario} className="grid grid-cols-1 gap-2 sm:grid-cols-2"><input type="hidden" name="id" value={u.id} /><input type="hidden" name="modo" value={origem === "EXCECAO" ? "excecao" : "auto"} />
               <Field label="Nome"><Input name="nome" defaultValue={u.nome} /></Field><Field label="E-mail (login)"><Input name="email" defaultValue={u.email} /></Field>
               <Field label="Ficha vinculada" hint="Com ficha, o acesso vem do cargo dela." className="sm:col-span-2"><Select name="employeeId" defaultValue={u.employeeId ?? ""}><option value="">— conta sem ficha —</option>{emps.filter(e => e.id === u.employeeId || !comLogin.has(e.id)).map(e => <option key={e.id} value={e.id}>{`${e.nome}${e.cargo ? ` · ${e.cargo}` : ""}${e.situacao === "DESLIGADO" ? " (desligado)" : ""}`}</option>)}</Select></Field>
               {origem === "EXCECAO" ? <><Field label="Atuação (exceção individual)"><Select name="atuacao" defaultValue={ua?.atuacao ?? r}>{ATUACOES.map(x => <option key={x} value={x}>{ATUACAO[x].rotulo}</option>)}</Select></Field><Field label="Motivo da exceção"><Input name="motivo" defaultValue={ua?.motivo ?? ""} /></Field></>
@@ -99,7 +101,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
               <Field label="Unidade (conta sem ficha)" hint="Obrigatória para Direção da unidade e Coordenação"><Select name="unitId" defaultValue={u.unitId ?? ""}><option value="">Rede</option>{units.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)}</Select></Field>
               <Field label="Nova senha (opcional)"><Input name="senha" type="password" autoComplete="new-password" /></Field>
               <Field label="Situação"><Select name="ativo" defaultValue={u.ativo ? "1" : "0"}><option value="1">Ativo</option><option value="0">Inativo</option></Select></Field><div className="flex items-end"><Btn small>Salvar</Btn></div></form>
-              <p className="mt-2 text-xs text-slate-500">Exceção individual (com motivo), substituição temporária e as telas de conta sem ficha: <Link href={`/configuracoes/acessos/usuario/${u.id}`} className="text-acao underline">Ver acesso</Link>.</p>
+              <p className="mt-2 text-xs text-slate-500">Telas desta pessoa (a mais ou a menos que o cargo), exceção individual (com motivo), substituição temporária e as telas de conta sem ficha: <Link href={`/configuracoes/acessos/usuario/${u.id}`} className="text-acao underline">Ver acesso</Link>.</p>
               <form action={gerarSenhaTemp} className="mt-2 border-t border-line pt-2"><input type="hidden" name="id" value={u.id} /><Btn small kind="ghost">Gerar senha temporária</Btn><p className="mt-1 text-xs text-slate-500">Mostrada uma vez; o usuário é obrigado a trocar no primeiro acesso. Use na entrega do acesso ou quando a pessoa esquecer a senha.</p></form>{u.totpAtivo && <form action={redefinir2FA} className="mt-2"><input type="hidden" name="id" value={u.id} /><button className="text-xs text-erro underline">Redefinir verificação em duas etapas (perdeu o celular)</button></form>}</Modal></div></Td></tr>; })}</Table>
           <form action={salvarUsuario} className="space-y-2 rounded-md bg-mist p-3"><div className="text-sm font-semibold text-navy">Novo acesso</div><input type="hidden" name="modo" value="auto" />
             <Field label="Pessoa (ficha)" hint="O acesso vem do cargo da ficha — não precisa escolher mais nada."><Select name="employeeId" defaultValue="">{[<option key="" value="">— escolha a pessoa —</option>, ...emps.filter(e => e.situacao !== "DESLIGADO" && !comLogin.has(e.id)).map(e => <option key={e.id} value={e.id}>{`${e.nome}${e.cargo ? ` · ${e.cargo}` : " · sem cargo"}${e.unidade ? ` · ${e.unidade}` : ""}`}</option>), <option key="0" value="0">Conta sem ficha (contabilidade, consultoria, TI)</option>]}</Select></Field>
@@ -227,6 +229,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       <ParametrosV28 />
       <ParametrosV30 />
       <ParametrosV31 />
+      <ParametrosV33 />
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
         <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div><div className="mb-1 text-sm font-semibold text-navy">Pesos (somam até 100)</div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(cfg.analytics.pesos).map(([k, v]) => <Field key={k} label={ROTULO_PESO[k] ?? k}><Input name={`peso_${k}`} type="number" min={0} max={40} defaultValue={v as number} /></Field>)}</div></div>
@@ -234,6 +237,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
           <div className="lg:col-span-2"><Btn>Salvar pesos e metas</Btn></div>
         </form>
       </Card>
+      <BlocoIA />
     </Page>
   );
 }

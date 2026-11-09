@@ -64,8 +64,8 @@ export function situacaoParcela(p: { status: string; vencimento: string; payable
   return { codigo: "A_VENCER", rotulo: "A vencer", tom: "ABERTO" };
 }
 
-export type MotivoCP = { codigo: "ALCADA" | "ORCAMENTO" | "SEM_ORCAMENTO" | "NATUREZA"; texto: string };
-export const MOTIVO_ROTULO: Record<MotivoCP["codigo"], string> = { ALCADA: "Acima da alçada", ORCAMENTO: "Estoura o orçado", SEM_ORCAMENTO: "Sem orçamento", NATUREZA: "Natureza da despesa" };
+export type MotivoCP = { codigo: "ALCADA" | "ORCAMENTO" | "SEM_ORCAMENTO" | "NATUREZA" | "FORNECEDOR"; texto: string };
+export const MOTIVO_ROTULO: Record<MotivoCP["codigo"], string> = { ALCADA: "Acima da alçada", ORCAMENTO: "Estoura o orçado", SEM_ORCAMENTO: "Sem orçamento", NATUREZA: "Natureza da despesa", FORNECEDOR: "Fornecedor fora da homologação" };
 
 /** v27 · natureza da despesa (controladoria): separa o dia a dia recorrente dos investimentos e dos gastos extraordinários. */
 export const NATUREZAS = {

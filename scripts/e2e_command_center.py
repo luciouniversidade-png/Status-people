@@ -1,4 +1,8 @@
 import re, subprocess, requests
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+# títulos de teste vencidos há 30 dias (dentro da janela de 90 dias da inadimplência), em qualquer data em que a suíte rode
+VENC = datetime.now(ZoneInfo("America/Campo_Grande")).date() - timedelta(days=30); COMP = VENC.strftime("%Y-%m")
 B = "http://localhost:3100"
 def psql(q): return subprocess.run(["su", "postgres", "-c", f"/usr/lib/postgresql/16/bin/psql -h /tmp/pg -U status -d status_people -q -t -c \"{q}\""], capture_output=True, text=True).stdout.strip()
 def mk(): s = requests.Session(); s.headers.update({"Origin": B}); return s
@@ -37,7 +41,7 @@ html = page("/atendimento/casos"); aid = find_form_aid(html, "Novo atendimento")
 loc = post("/atendimento/casos", aid, {"voltar": "/atendimento/casos", "tipo": "RECLAMACAO", "canal": "WHATSAPP", "assunto": "Teste SLA", "contatoNome": "Fam", "unitId": car, "gravidade": 3}); cid = re.search(r"/atendimento/casos/(\d+)\?", loc).group(1)
 psql(f"UPDATE cases SET sla_ate = now() - interval '3 hours' WHERE id={cid}")
 html = page("/configuracoes"); aid = find_form_aid(html, "Criar acesso"); post("/configuracoes", aid, {"nome": "Fin", "email": "fin@s", "role": "FINANCEIRO", "senha": "senha12345"}); F = mk(); login(F, "fin@s", "senha12345") if False else None
-psql(f"INSERT INTO receivables (aluno_nome, unit_id, tipo, competencia, vencimento, valor, status) VALUES ('Devedor Teste', {car}, 'MENSALIDADE', '2026-08', '2026-08-10', 1850, 'ABERTO'), ('Pagador Teste', {car}, 'MENSALIDADE', '2026-08', '2026-08-10', 1850, 'PAGO')")
+psql(f"INSERT INTO receivables (aluno_nome, unit_id, tipo, competencia, vencimento, valor, status) VALUES ('Devedor Teste', {car}, 'MENSALIDADE', '{COMP}', '{VENC.isoformat()}', 1850, 'ABERTO'), ('Pagador Teste', {car}, 'MENSALIDADE', '{COMP}', '{VENC.isoformat()}', 1850, 'PAGO')")
 html = page("/command-center"); g2 = int(re.search(r'Health Geral</div><div class="text-5xl font-semibold [^"]*">(\d+)</div>', html).group(1))
 assert "SLA vencido" in html and "inadimplência" in html and g2 < geral, (geral, g2); print(f"alertas consolidados + health caiu ({geral} → {g2}) ok")
 assert "alto" in html

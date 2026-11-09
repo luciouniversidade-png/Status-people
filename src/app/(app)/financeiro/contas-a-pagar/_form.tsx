@@ -12,7 +12,8 @@ import { lerBoleto, lerChaveNFe } from "@/lib/documentos-fiscais";
 export type OpcoesCP = {
   units: { id: number; nome: string; company_id: number | null }[]; podeRede: boolean;
   entidades: { id: number; nome: string; cnpj: string | null }[]; responsaveis: { id: number; nome: string }[];
-  fornecedores: { id: number; nome: string }[];
+  // v33 · situação de cada fornecedor e a elegibilidade por unidade ("" = rede): [nível, texto]; conta e centro padrão do cadastro
+  fornecedores: { id: number; nome: string; status?: string; eleg?: Record<string, [string, string]>; contaId?: number | null; centroId?: number | null }[];
   contratos: { id: number; supplier_id: number; fornecedor: string; objeto: string; valor_mensal: number | null; unit_id: number | null }[];
   categorias: string[]; tipos: string[]; alcada: number; aprova: boolean; feriados: OpcoesFeriado; hoje: string;
   naturezas: { codigo: string; rotulo: string; dica: string }[]; naturezasAprovam: string[];
@@ -23,7 +24,7 @@ export type OpcoesCP = {
 export type InicialCP = {
   unitId: string; supplierId: string; fornecedorNovo: string; contractId: string; categoria: string; tipoDocumento: string; numeroDocumento: string; emissao: string; descricao: string;
   recorrente: boolean; valor: string; parcelas: string; intervalo: Intervalo; dias: string; primeiroVencimento: string; ajustarDiaUtil: boolean; obs: string;
-  companyId: string; responsavelId: string; boleto: string; chaveNfe: string; natureza: string; contaId: string; centroId: string;
+  companyId: string; responsavelId: string; boleto: string; chaveNfe: string; natureza: string; contaId: string; centroId: string; excecaoMotivo?: string;
 };
 type Linha = { parcela: number; emissao: string; vencimento: string; competencia: string; valorTxt: string; orig: string; ajustada: boolean };
 const fmtNum = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -83,6 +84,15 @@ export function FormContaPagar({ o, ini, action, erro }: { o: OpcoesCP; ini: Ini
   const p1 = linhas[0]; const bolValorDif = bol?.ok && bol.valor !== null && p1 && Math.abs(bol.valor - lerValorBr(p1.valorTxt)) >= 0.005;
   const bolVencDif = bol?.ok && bol.vencimento && p1 && bol.vencimento !== p1.vencimento && proximoDiaUtil(bol.vencimento, o.feriados) !== p1.vencimento;
   const unidadeSel = o.units.find(u => String(u.id) === f.unitId); const entidadeDaUnidade = unidadeSel ? o.entidades.find(x => x.id === unidadeSel.company_id) : null;
+  // v33 · fornecedor: homologado para a unidade? fora disso, exceção com motivo (e aprovação de outra pessoa)
+  const supSel = o.fornecedores.find(x => String(x.id) === f.supplierId); const eleg = supSel?.eleg?.[f.unitId] ?? null;
+  const precisaExcecao = eleg?.[0] === "EXCECAO"; const motivoExc = (f.excecaoMotivo ?? "").trim();
+  const escolherFornecedor = (v: string) => {
+    setF(x => ({ ...x, supplierId: v, contractId: x.contractId && o.contratos.find(c => String(c.id) === x.contractId)?.supplier_id !== Number(v) ? "" : x.contractId }));
+    const sp = o.fornecedores.find(x => String(x.id) === v); if (!sp) return;
+    if (sp.contaId && !f.contaId && todasContas.some(c => c.id === sp.contaId)) escolherConta(String(sp.contaId));
+    if (sp.centroId && o.centros.some(c => c.id === sp.centroId)) { setCentroAuto(false); setF(x => ({ ...x, centroId: String(sp.centroId) })); }
+  };
   const escolherContrato = (id: string) => {
     set("contractId", id); const c = o.contratos.find(x => String(x.id) === id); if (!c) return;
     setF(x => ({ ...x, contractId: id, supplierId: String(c.supplier_id), descricao: x.descricao || c.objeto.slice(0, 300), valor: x.valor || (c.valor_mensal ? fmtNum(c.valor_mensal) : ""), recorrente: c.valor_mensal ? true : x.recorrente, intervalo: c.valor_mensal ? "MENSAL" : x.intervalo, unitId: c.unit_id ? String(c.unit_id) : x.unitId }));
@@ -91,6 +101,7 @@ export function FormContaPagar({ o, ini, action, erro }: { o: OpcoesCP; ini: Ini
   const enviar = (e: FormEvent<HTMLFormElement>) => {
     setMsg(null);
     const falha = !f.unitId && o.entidades.length && !f.companyId ? "Conta da rede: escolha a entidade (CNPJ) que paga." : bol && !bol.ok ? `Boleto: ${bol.erro}` : bolValorDif ? "O valor do boleto é diferente da 1ª parcela — confira." : bolVencDif ? "O vencimento do boleto é diferente do da 1ª parcela — use “aplicar do boleto”." : nfe && !nfe.ok ? `Chave da NF-e: ${nfe.erro}` : !f.supplierId ? "Escolha o fornecedor (ou cadastre um novo)." : f.supplierId === "novo" && f.fornecedorNovo.trim().length < 2 ? "Informe o nome do novo fornecedor."
+      : precisaExcecao && motivoExc.length < 10 ? `${eleg?.[1] ?? "Fornecedor fora da homologação."} Escreva o motivo da exceção (mínimo 10 caracteres).`
       : !linhas.length ? "Preencha o valor, a quantidade e o 1º vencimento para gerar as parcelas." : invalidas ? `${invalidas} parcela(s) com valor inválido.`
       : linhas.some(l => !/^\d{4}-\d{2}-\d{2}$/.test(l.vencimento)) ? "Há parcela sem vencimento." : !f.recorrente && Math.abs(dif) >= 0.005 ? `A soma das parcelas (${fmtBr(soma)}) não bate com o valor total (${fmtBr(valor)}) — use “jogar a diferença na última”.` : null;
     if (falha) { e.preventDefault(); setMsg(falha); return; }
@@ -107,12 +118,15 @@ export function FormContaPagar({ o, ini, action, erro }: { o: OpcoesCP; ini: Ini
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Unidade" hint={entidadeDaUnidade ? `${entidadeDaUnidade.nome}${entidadeDaUnidade.cnpj ? ` · CNPJ ${entidadeDaUnidade.cnpj}` : ""}` : undefined}><Select name="unitId" value={f.unitId} onChange={e => { const v = e.target.value; setF(x => ({ ...x, unitId: v, centroId: centroAuto ? centroPadrao(x.contaId, v) : x.centroId })); }}>{o.podeRede && <option value="">Rede (corporativo)</option>}{o.units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select></Field>
           {!f.unitId && o.entidades.length > 0 && <Field label="Entidade (CNPJ) que paga" hint="Conta da rede: os registros fiscais de cada CNPJ não se misturam."><Select name="companyId" value={f.companyId} onChange={e => set("companyId", e.target.value)} required><option value="">— escolha —</option>{o.entidades.map(x => <option key={x.id} value={x.id}>{x.nome}{x.cnpj ? ` · ${x.cnpj}` : ""}</option>)}</Select></Field>}
-          <Field label="Fornecedor" className="lg:col-span-2"><Select name="supplierId" value={f.supplierId} onChange={e => setF(x => ({ ...x, supplierId: e.target.value, contractId: x.contractId && o.contratos.find(c => String(c.id) === x.contractId)?.supplier_id !== Number(e.target.value) ? "" : x.contractId }))} required>
-            <option value="">— escolha —</option>{o.fornecedores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}<option value="novo">+ Novo fornecedor…</option></Select></Field>
+          <div className="lg:col-span-2"><Field label="Fornecedor"><Select name="supplierId" value={f.supplierId} onChange={e => escolherFornecedor(e.target.value)} required>
+            <option value="">— escolha —</option>{o.fornecedores.map(s => <option key={s.id} value={s.id}>{s.nome}{s.status && s.status !== "Homologado" ? ` · ${s.status.toLowerCase()}` : ""}</option>)}<option value="novo">+ Novo fornecedor…</option></Select></Field>
+            {eleg && <p className={`mt-1 text-xs ${eleg[0] === "OK" ? "text-ok" : eleg[0] === "BLOQUEADO" ? "text-erro" : "text-aviso"}`}>{eleg[0] === "OK" ? "✓" : eleg[0] === "BLOQUEADO" ? "✕" : "!"} {eleg[1]}</p>}
+            {f.supplierId === "novo" && <p className="mt-1 text-xs text-aviso">! Fornecedor sem homologação: o título registra a exceção e vai para a aprovação de outra pessoa. Depois, complete o cadastro em Fornecedores.</p>}</div>
           <Field label="Contrato (opcional)" hint={contratos.length ? "Preenche descrição, valor mensal e recorrência." : "Nenhum contrato vigente deste fornecedor."}><Select name="contractId" value={f.contractId} onChange={e => escolherContrato(e.target.value)}><option value="">— sem contrato —</option>{contratos.map(c => <option key={c.id} value={c.id}>{c.objeto.slice(0, 60)}{c.valor_mensal ? ` · ${fmtBr(c.valor_mensal)}/mês` : ""}</option>)}</Select></Field>
           {f.supplierId === "novo" && <div className="grid grid-cols-1 gap-2 sm:col-span-2 lg:col-span-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <Field label="Nome do novo fornecedor"><Input name="fornecedorNovo" value={f.fornecedorNovo} onChange={e => set("fornecedorNovo", e.target.value)} maxLength={160} placeholder="Razão social ou nome" /></Field>
             <label className="flex items-center gap-1.5 pb-2 text-xs"><input type="checkbox" checked={cadastrar} onChange={e => setCadastrar(e.target.checked)} /> Cadastrar em Fornecedores</label></div>}
+          {(precisaExcecao || f.supplierId === "novo") && <Field label={precisaExcecao ? "Motivo da exceção de fornecedor (obrigatório)" : "Motivo da exceção (opcional)"} className="sm:col-span-2 lg:col-span-4" hint="Fica no título e na ficha do fornecedor; quem registra a exceção não aprova sozinho o pagamento."><Input name="excecaoMotivo" value={f.excecaoMotivo ?? ""} onChange={e => set("excecaoMotivo", e.target.value)} maxLength={300} placeholder="Ex.: conserto emergencial do portão; único fornecedor disponível hoje" /></Field>}
           <Field label="Conta do plano de contas" className="sm:col-span-2" hint={contaSel ? `${contaSel.grupo} · categoria ${contaSel.categoria}${contaSel.economico === "CAPEX" ? " · investimento (CAPEX)" : contaSel.economico === "DIVIDA" ? " · serviço da dívida" : contaSel.economico === "ADIANTAMENTO" ? " · adiantamento (fora da DRE)" : ""}${contaSel.generica ? " · conta genérica: prefira a específica" : ""}` : "A categoria do caixa, da DRE e do orçamento vem da conta."}>
             <Select name="contaId" value={f.contaId} onChange={e => escolherConta(e.target.value)} required={o.exigirConta}><option value="">— escolha a conta —</option>{o.contas.map(g => <optgroup key={g.grupo} label={g.grupo}>{g.contas.map(c => <option key={c.id} value={c.id}>{c.codigo} {c.nome}</option>)}</optgroup>)}</Select></Field>
           {!o.exigirConta && !f.contaId && <Field label="Categoria (sem conta)"><Select name="categoria" value={f.categoria} onChange={e => set("categoria", e.target.value)} required><option value="">— escolha —</option>{o.categorias.map(c => <option key={c} value={c}>{c}</option>)}</Select></Field>}

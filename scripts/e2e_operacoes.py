@@ -37,7 +37,9 @@ post("/configuracoes", aid, {"nome": "Prof. Chamado", "email": "prof@car", "role
 html = page("/operacoes/ativos", sess=O); aid = find_form_aid(html, "Novo ativo")
 loc = post("/operacoes/ativos", aid, {"nome": "Ar-condicionado Sala 5", "categoria": "Ar-condicionado", "unitId": car, "ambiente": "Sala 5", "aquisicao": "2024-03-01", "valor": 3200, "garantiaAte": (__import__("datetime").date.today() + __import__("datetime").timedelta(days=20)).isoformat(), "preventivaDias": 90, "ultimaPreventiva": "2026-05-01", "codigo": "PAT-0101"}, sess=O); assert "Ativo salvo" in unq(loc), unq(loc)
 html = page("/operacoes/ativos", sess=O); aid = find_form_aid(html, "Importar inventário"); loc = post("/operacoes/ativos", aid, {"unitId": car, "csv": "patrimonio;nome;categoria;ambiente;valor\nPAT-0102;Projetor Sala 3;TI e equipamentos;Sala 3;2.500,00\n;Extintor corredor;Segurança (extintores, câmeras);Corredor;"}, sess=O); assert "2 ativo(s)" in unq(loc), unq(loc); print("ativos ok")
-html = page("/operacoes/fornecedores", sess=O); aid = find_form_aid(html, "Novo fornecedor"); loc = post("/operacoes/fornecedores", aid, {"nome": "Frio Bom Refrigeração", "servico": "Ar-condicionado", "telefone": "67 9"}, sess=O); assert "Fornecedor salvo" in unq(loc)
+# v33 · cadastro de fornecedor por etapas (com CNPJ conferido): nasce em rascunho; chamado com fornecedor não homologado fica registrado no chamado
+html = page("/operacoes/fornecedores/novo", sess=O); aid = find_form_aid(html, 'name="razaoSocial"'); loc = post("/operacoes/fornecedores/novo", aid, {"tipo": "PJ", "documento": "91.444.777/0001-09", "categoria": "Ar-condicionado e refrigeração", "razaoSocial": "Frio Bom Refrigeração Ltda (fictícia)", "nomeFantasia": "Frio Bom"}, sess=O); assert "Rascunho criado" in unq(loc), unq(loc)
+FORN = re.search(r"/operacoes/fornecedores/(\d+)", loc).group(1)
 # ---- painel: preventiva vencida (última 01/05 + 90d = 30/07) e garantia vencendo
 html = page("/operacoes", sess=O); assert "Ar-condicionado Sala 5" in html and "Preventivas vencidas" in html and "Garantias vencendo" in html; print("preventiva vencida + garantia detectadas ok")
 aid = find_form_aid(html, "Abrir preventiva"); assetId = re.search(r'name="assetId" value="(\d+)"', html).group(1); loc = post("/operacoes", aid, {"assetId": assetId}, sess=O); prev = re.search(r"/operacoes/chamados/(\d+)\?", loc).group(1)
@@ -55,7 +57,9 @@ post(f"/operacoes/chamados/{cid}", aid, {"id": cid, "status": "EM_EXECUCAO", "su
 loc = post(f"/operacoes/chamados/{cid}", aid, {"id": cid, "status": "CONCLUIDO", "custoReal": 180.5, "evidencia": "NF 123", "nota": "Tomada trocada"}, sess=O); assert "concluído" in unq(loc)
 html = page(f"/operacoes/chamados/{cid}", sess=P); assert "Como foi o atendimento?" in html; aid = find_form_aid(html, "Como foi o atendimento?"); post(f"/operacoes/chamados/{cid}", aid, {"id": cid, "avaliacao": 5}, sess=P)
 html = page(f"/operacoes/chamados/{cid}", sess=O); assert "180,50" in html and "5 / 5" in html and "Frio Bom" in html; print("execução, conclusão com custo, avaliação ok")
-html = page("/operacoes/fornecedores", sess=O); assert "180,50" in html and "5" in html
+html = page("/operacoes/fornecedores?aba=desempenho", sess=O); assert "Frio Bom" in html and "5 / 5" in html
+html = page(f"/operacoes/fornecedores/{FORN}?aba=transacoes", sess=O); assert "Tomada da sala 5" in html and "5 / 5" in html
+assert "exceção registrada por Zelador" in psql(f"SELECT texto FROM work_order_events WHERE work_order_id={cid} AND texto LIKE 'Fornecedor:%'")
 # preventiva concluída atualiza última preventiva
 html = page(f"/operacoes/chamados/{prev}", sess=O); aid = find_form_aid(html, "Atualizar"); post(f"/operacoes/chamados/{prev}", aid, {"id": prev, "status": "CONCLUIDO", "custoReal": 250}, sess=O)
 html = page("/operacoes/ativos", sess=O); assert "Em uso" in html and psql(f"SELECT ultima_preventiva FROM assets WHERE id={assetId}") == psql("SELECT (now() AT TIME ZONE 'America/Campo_Grande')::date"); print("preventiva concluída atualiza o ativo ok")

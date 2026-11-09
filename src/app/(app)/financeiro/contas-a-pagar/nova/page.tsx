@@ -7,6 +7,7 @@ import { operaCP, aprovaCP, opcoesFeriado, numeroCP, NATUREZAS } from "@/lib/con
 import { listarContas, listarCentros, opcoesConta } from "@/lib/plano-contas";
 import { INTERVALO_LABEL, type Intervalo } from "@/lib/parcelas";
 import { FormContaPagar, type OpcoesCP, type InicialCP } from "../_form";
+import * as F from "@/lib/fornecedores";
 import { criarContaPagar } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +20,14 @@ export default async function NovaContaPagar({ searchParams }: { searchParams: P
   const cfg = await getSettings(); const escopo = scopeUnit(s); const h = hoje();
   const [units, fornecedores, contratos, entidades, responsaveis, contas, centros] = await Promise.all([
     sql<{ id: number; nome: string; company_id: number | null }[]>`SELECT id, nome, company_id FROM units ${escopo === null ? sql`` : sql`WHERE id=${escopo}`} ORDER BY nome`,
-    sql<{ id: number; nome: string }[]>`SELECT id, nome FROM suppliers WHERE ativo ORDER BY nome`,
+    sql<{ id: number; nome: string; status: string; abrangencia: string; restricao_ate: string | null; restricoes: string | null; conta_id: number | null; cost_center_id: number | null }[]>`SELECT id, nome, status, abrangencia, restricao_ate::text, restricoes, conta_id, cost_center_id FROM suppliers WHERE ativo ORDER BY nome`,
     sql<OpcoesCP["contratos"]>`SELECT c.id, c.supplier_id, sp.nome AS fornecedor, c.objeto, c.valor_mensal::float, c.unit_id FROM contracts c JOIN suppliers sp ON sp.id=c.supplier_id WHERE c.status='VIGENTE' ${escopo === null ? sql`` : sql`AND (c.unit_id IS NULL OR c.unit_id=${escopo})`} ORDER BY sp.nome, c.objeto`,
     sql<OpcoesCP["entidades"]>`SELECT id, nome, cnpj FROM companies ORDER BY nome`,
     sql<OpcoesCP["responsaveis"]>`SELECT id, nome FROM users WHERE ativo AND role NOT IN ('COLABORADOR','LEITURA') ORDER BY nome`,
     listarContas(), listarCentros(),
   ]);
   const ini: InicialCP = { unitId: escopo !== null ? String(escopo) : "", supplierId: "", fornecedorNovo: "", contractId: "", categoria: "", tipoDocumento: (cfg.contasPagar.tiposDocumento as string[])[0] ?? "Boleto", numeroDocumento: "", emissao: h, descricao: "",
-    recorrente: false, valor: "", parcelas: "1", intervalo: "MENSAL", dias: "30", primeiroVencimento: "", ajustarDiaUtil: !!cfg.contasPagar.ajustarDiaUtil, obs: "", companyId: "", responsavelId: String(s.id), boleto: "", chaveNfe: "", natureza: "OPERACAO", contaId: "", centroId: "" };
+    recorrente: false, valor: "", parcelas: "1", intervalo: "MENSAL", dias: "30", primeiroVencimento: "", ajustarDiaUtil: !!cfg.contasPagar.ajustarDiaUtil, obs: "", companyId: "", responsavelId: String(s.id), boleto: "", chaveNfe: "", natureza: "OPERACAO", contaId: "", centroId: "", excecaoMotivo: "" };
   let origem: string | null = null;
   const contrato = Number(sp.contrato) || 0; const de = Number(sp.de) || 0;
   if (contrato) { const c = contratos.find(x => x.id === contrato); if (c) { Object.assign(ini, { supplierId: String(c.supplier_id), contractId: String(c.id), descricao: c.objeto.slice(0, 300), valor: c.valor_mensal ? fmtNum(c.valor_mensal) : "", recorrente: !!c.valor_mensal, parcelas: c.valor_mensal ? "12" : "1", unitId: c.unit_id ? String(c.unit_id) : ini.unitId }); origem = `Pré-preenchido do contrato “${c.objeto}” (${c.fornecedor}).`; } }
@@ -38,7 +39,12 @@ export default async function NovaContaPagar({ searchParams }: { searchParams: P
         companyId: p.company_id && !p.unit_id ? String(p.company_id) : "", responsavelId: p.responsavel_user_id && responsaveis.some(r => r.id === p.responsavel_user_id) ? String(p.responsavel_user_id) : String(s.id) });
       origem = `Copiado de ${numeroCP(p.numero)} — confira o 1º vencimento e o documento.`; }
   }
-  const o: OpcoesCP = { units, podeRede: escopo === null, entidades, responsaveis, fornecedores, contratos, categorias: cfg.financeiro.categoriasSaida as string[], tipos: cfg.contasPagar.tiposDocumento as string[], alcada: Number(cfg.contasPagar.alcadaValor ?? 0), aprova: aprovaCP(cfg, s), feriados: opcoesFeriado(cfg), hoje: h,
+  // v33 · elegibilidade de cada fornecedor por unidade (homologação e escopo), conferida de novo no servidor ao salvar
+  const cfgF = await F.cfgForn(); const autorizadas = await sql<{ supplier_id: number; unit_id: number }[]>`SELECT supplier_id, unit_id FROM supplier_units WHERE status='AUTORIZADA'`;
+  const fornOpc: OpcoesCP["fornecedores"] = fornecedores.map(f => { const us = autorizadas.filter(x => x.supplier_id === f.id).map(x => x.unit_id); const eleg: Record<string, [string, string]> = {};
+    for (const k of ["", ...units.map(u => String(u.id))]) { const e = F.elegibilidade(f, us, k ? Number(k) : null, cfgF, h); eleg[k] = [e.nivel, e.texto]; }
+    return { id: f.id, nome: f.nome, status: F.STATUS_FORN[f.status] ?? f.status, eleg, contaId: f.conta_id, centroId: f.cost_center_id }; });
+  const o: OpcoesCP = { units, podeRede: escopo === null, entidades, responsaveis, fornecedores: fornOpc, contratos, categorias: cfg.financeiro.categoriasSaida as string[], tipos: cfg.contasPagar.tiposDocumento as string[], alcada: Number(cfg.contasPagar.alcadaValor ?? 0), aprova: aprovaCP(cfg, s), feriados: opcoesFeriado(cfg), hoje: h,
     naturezas: Object.entries(NATUREZAS).map(([codigo, x]) => ({ codigo, rotulo: x.rotulo, dica: x.dica })), naturezasAprovam: (cfg.contasPagar.naturezaSempreAprova ?? []) as string[],
     contas: opcoesConta(contas, "SAIDA"), centros: centros.filter(c => c.ativo && (escopo === null || c.unit_id === null || c.unit_id === escopo)).map(c => ({ id: c.id, codigo: c.codigo, nome: c.nome, tipo: c.tipo, unit_id: c.unit_id })), exigirConta: cfg.planoContas?.exigirContaContasPagar !== false };
   return (

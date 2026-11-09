@@ -4,6 +4,7 @@ import { veContratos } from "./contratos";
 import { kpisVisiveis, vePainelExecutivo } from "./kpi";
 import { nomeKpi } from "./kpi-catalogo";
 import { getSettings } from "./utils";
+import { STATUS_FORN, veFornecedores } from "./fornecedores";
 
 /**
  * Busca global (v23 · Ctrl+K): pessoas, alunos, solicitações, casos, chamados, ações, projetos, POPs, contratos e indicadores —
@@ -48,6 +49,12 @@ export async function buscar(s: Session, termo: string, porGrupo = 6): Promise<R
     .then(xs => xs.map(x => ({ grupo: "POPs e processos", titulo: `${x.codigo} · ${x.titulo}`, sub: x.area, href: `/governanca/pops/${x.id}` }))));
   if (veContratos(s)) tarefas.push(sql<{ id: number; objeto: string; fornecedor: string | null }[]>`SELECT c.id, c.objeto, f.nome AS fornecedor FROM contracts c LEFT JOIN suppliers f ON f.id=c.supplier_id WHERE (${campo(sql`c.objeto`)} LIKE ${like} OR ${campo(sql`coalesce(f.nome, '')`)} LIKE ${like}) ${escopo === null ? sql`` : sql`AND (c.unit_id IS NULL OR c.unit_id=${escopo})`} ORDER BY c.fim NULLS LAST LIMIT ${porGrupo}`
     .then(xs => xs.map(x => ({ grupo: "Contratos", titulo: x.objeto, sub: x.fornecedor, href: `/operacoes/contratos/${x.id}` }))));
+  // v33 · fornecedores: nome, razão social ou CNPJ (com ou sem pontuação); CPF de pessoa física nunca entra na busca
+  if (veFornecedores(s)) { const dig = termo.replace(/\D/g, "");
+    tarefas.push(sql<{ id: number; nome: string; status: string; categoria: string | null; razao: string | null }[]>`SELECT s.id, s.nome, s.status, s.categoria, (SELECT e.razao_social FROM supplier_establishments e WHERE e.supplier_id=s.id AND e.ativo ORDER BY e.matriz DESC, e.id LIMIT 1) AS razao FROM suppliers s
+      WHERE ${campo(sql`s.nome`)} LIKE ${like} OR EXISTS (SELECT 1 FROM supplier_establishments e WHERE e.supplier_id=s.id AND e.ativo AND (${campo(sql`e.razao_social`)} LIKE ${like} OR ${campo(sql`coalesce(e.nome_fantasia, '')`)} LIKE ${like} ${dig.length >= 5 ? sql`OR (e.tipo_doc='CNPJ' AND e.documento LIKE ${`%${dig}%`})` : sql``}))
+      ORDER BY (s.status IN ('INATIVO','REJEITADO')), s.nome LIMIT ${porGrupo}`
+      .then(xs => xs.map(x => ({ grupo: "Fornecedores", titulo: x.nome, sub: [x.razao && x.razao !== x.nome ? x.razao : null, x.categoria, STATUS_FORN[x.status]?.toLowerCase()].filter(Boolean).join(" · "), href: `/operacoes/fornecedores/${x.id}` })))); }
   if (vePainelExecutivo(s)) tarefas.push((async () => {
     const cfg = await getSettings(); const ano = cfg.matriculas.anoLetivo as number;
     return (await kpisVisiveis(s)).filter(k => normalizar(`${nomeKpi(k, ano)} ${k.formula}`).includes(q)).slice(0, porGrupo).map(k => ({ grupo: "Indicadores", titulo: nomeKpi(k, ano), sub: k.fonte, href: `/executivo/indicador/${encodeURIComponent(k.chave)}` }));

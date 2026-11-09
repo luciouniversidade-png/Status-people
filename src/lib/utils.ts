@@ -89,7 +89,7 @@ export async function getSettings(): Promise<Settings> {
   const rows = await db.select().from(schema.settings);
   const s: Record<string, unknown> = { ...DEFAULT_SETTINGS };
   for (const r of rows) {
-    if (r.key === "push_vapid") continue; // chave privada das notificações: só o módulo de push lê, nunca circula com as configurações
+    if (r.key === "push_vapid" || r.key.startsWith("forn_import_")) continue; // chave privada das notificações (só o push lê) e prévias de importação de fornecedores (de cada pessoa): nunca circulam com as configurações
     // objetos de configuração recebem as chaves novas do padrão (ex.: alçadas criadas depois da instalação)
     const base = (DEFAULT_SETTINGS as Record<string, unknown>)[r.key];
     s[r.key] = base && typeof base === "object" && !Array.isArray(base) && r.value && typeof r.value === "object" && !Array.isArray(r.value) ? { ...(base as object), ...(r.value as object) } : r.value;

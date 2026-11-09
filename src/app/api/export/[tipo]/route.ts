@@ -21,6 +21,7 @@ import { exportarV23 } from "@/lib/export-v23";
 import { exportarV25 } from "@/lib/export-v25";
 import { exportarV27 } from "@/lib/export-v27";
 import { exportarV28 } from "@/lib/export-v28";
+import { exportarV33 } from "@/lib/export-v33";
 import { getSettings, ENR_STATUS } from "@/lib/utils";
 import { calcularRevisao } from "@/lib/avaliacao-server";
 import { ESTADO_AV, FAIXA_FINAL_LABEL, faixaFinal, descricaoQuadrante, FAIXAS_PADRAO, type Criterio, type Memoria, type Notas, type Faixas } from "@/lib/avaliacao";
@@ -36,7 +37,7 @@ const TELA_DO_EXPORT: Record<string, string> = {
   pops: "/governanca/pops", excecoes: "/governanca/excecoes", ncs: "/governanca/controles", decisoes: "/governanca/decisoes", consentimentos: "/governanca/privacidade/consentimentos",
   inadimplencia: "/financeiro/inadimplencia", caixa: "/financeiro/caixa", descontos: "/financeiro/descontos", recebimentos: "/financeiro/recebimentos", extrato: "/financeiro/conciliacao", divergencias: "/financeiro/divergencias",
   fpa: "/financeiro/orcamento", "contas-a-pagar-bordero": "/financeiro/contas-a-pagar", "lancamentos-classificados": "/financeiro/caixa", "plano-de-contas": "/financeiro/plano-de-contas", "resultado-rateio": "/financeiro/rateio",
-  chamados: "/operacoes/chamados", ativos: "/operacoes/ativos", vistorias: "/operacoes/vistorias", contratos: "/operacoes/contratos", licencas: "/operacoes/licencas",
+  chamados: "/operacoes/chamados", fornecedores: "/operacoes/fornecedores", ativos: "/operacoes/ativos", vistorias: "/operacoes/vistorias", contratos: "/operacoes/contratos", licencas: "/operacoes/licencas",
   acoes: "/estrategia/acoes", projetos: "/estrategia/projetos", indicadores: "/estrategia/indicadores", indicador: "/executivo", painel: "/executivo", fluxos: "/fluxos", solicitacoes: "/solicitacoes",
 };
 
@@ -175,7 +176,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ tipo: string }>
     rows = [[`Ciclo: ${c.nome} · cálculo pelo motor oficial (pendências e não observados nunca viram zero)`], cab, ...linhas];
   } else {
     const url = new URL(req.url);
-    const v22 = (await exportarV22(tipo, s, u, url)) ?? (await exportarV23(tipo, s, u, url)) ?? (await exportarV25(tipo, s, u, url)) ?? (await exportarV27(tipo, s, u, url)) ?? (await exportarV28(tipo, s, u, url));
+    const v22 = (await exportarV22(tipo, s, u, url)) ?? (await exportarV23(tipo, s, u, url)) ?? (await exportarV25(tipo, s, u, url)) ?? (await exportarV27(tipo, s, u, url)) ?? (await exportarV28(tipo, s, u, url)) ?? (await exportarV33(tipo, s));
     if (v22 === "negado") return NextResponse.json({ erro: "Não autorizado." }, { status: 403 });
     if (!v22) return NextResponse.json({ erro: "Tipo inválido." }, { status: 404 });
     rows = v22;

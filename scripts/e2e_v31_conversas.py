@@ -55,7 +55,7 @@ def dm(n): return (HOJE + timedelta(days=n)).strftime("%d/%m")
 
 print("Preparação")
 RH = login("rh@colegiostatus", "Status2026!"); r = RH.get(B + f"/api/setup?token={TOKEN}"); assert r.json()["ok"], r.text
-assert psql("SELECT value->>'versao' FROM settings WHERE key='banco'") == "31.0"
+assert float(psql("SELECT value->>'versao' FROM settings WHERE key='banco'")) >= 31  # 31.0 ou posterior
 U = {c: int(psql(f"SELECT id FROM units WHERE codigo='{c}'")) for c in ["CAR", "CUL"]}; CAR, CUL = U["CAR"], U["CUL"]
 P = {n: int(psql(f"SELECT id FROM positions WHERE nome='{n}'")) for n in ["Professor", "Coordenador Pedagógico", "Diretor Pedagógico"]}
 def emp(nome, cargo, unit, gestor=None):

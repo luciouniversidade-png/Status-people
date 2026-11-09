@@ -227,6 +227,8 @@ export async function minhasPendencias(s: Session, opcoes: { semTreinamentos?: b
   // v30 · ciência de itens, formação a validar, avaliações de candidatos, satisfação com a contratação, inscrições, reação e transparência salarial
   try { const { pendenciasV30 } = await import("./pendencias-v30"); const v = await pendenciasV30(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v30: ${e instanceof Error ? e.message : String(e)}`); }
   try { const { pendenciasV31 } = await import("./pendencias-v31"); const v = await pendenciasV31(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v31: ${e instanceof Error ? e.message : String(e)}`); }
+  try { const { pendenciasV32 } = await import("./pendencias-v32"); const v = await pendenciasV32(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v32: ${e instanceof Error ? e.message : String(e)}`); }
+  try { const { pendenciasV33 } = await import("./pendencias-v33"); const v = await pendenciasV33(s); itens.push(...v.itens); falhas.push(...v.falhas); } catch (e) { falhas.push(`v33: ${e instanceof Error ? e.message : String(e)}`); }
   // sem duplicatas (o mesmo registro pode surgir por dois caminhos)
   // v29: pendência de uma tela fora do acesso do cargo não entra (a pessoa não teria onde resolvê-la)
   const vistos = new Set<string>(); const unicos = itens.filter(i => vistos.has(i.chave) ? false : (vistos.add(i.chave), true)).filter(i => veTela(s, i.href));

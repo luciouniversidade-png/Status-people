@@ -7,6 +7,8 @@
  *  - aprovações        → o que ela aprova (alçadas), cargo a cargo.
  * Promoveu ou mudou o cargo na ficha → o acesso muda na próxima tela. Desligou → o acesso cai.
  * Exceções existem, mas são raras e ficam à vista: exceção individual (com motivo) e substituição temporária (com data de fim).
+ * v32 · Telas por pessoa: sobre o cargo, cada pessoa pode ter telas a mais e a menos (com motivo e, se quiser, data de fim) — o ajuste
+ * guarda só a diferença; tudo o mais continua seguindo o cargo (mudou o cargo, o resto acompanha).
  * Contas sem ficha (contabilidade externa, consultoria, TI, homologação) têm a atuação definida no próprio acesso.
  */
 import { cache } from "react";
@@ -22,6 +24,10 @@ export type DefAcesso = { atuacao: Role; telas: string[] | null; aprova: string[
 export type AcessoUsuario = { atuacao?: Role; telas?: string[] | null; aprova?: string[] | null; descontoPct?: number | null; unitId?: number | null; motivo?: string | null; em?: string; por?: string };
 /** users.substituicao — por um período a pessoa recebe também o acesso de outro cargo (férias, licença, vaga em aberto). */
 export type Substituicao = { positionId: number; ate: string; motivo: string; desde?: string; por?: string };
+/** v32 · users.ajuste_telas — o padrão é o cargo; aqui fica só o que é diferente para esta pessoa (telas a mais e a menos). */
+export type AjusteTelas = { mais: string[]; menos: string[]; motivo: string; em: string; por: string; ate?: string | null };
+/** O ajuste como vale agora: “ignoradas” = telas do ajuste que a atuação atual não tem (ou fixas, que não saem); vencido = passou da data de fim. */
+export type AjusteEfetivo = { mais: string[]; menos: string[]; ignoradas: string[]; motivo: string; em: string; por: string; ate: string | null; vencido: boolean };
 
 export const ATUACOES: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "GESTOR", "FINANCEIRO", "COMERCIAL", "OPERACOES", "LEITURA", "COLABORADOR"];
 export const ATUACAO: Record<Role, { rotulo: string; curto: string; descricao: string; alcance: "REDE" | "UNIDADE" }> = {
@@ -187,21 +193,51 @@ export function normalizarTelas(role: Role, telas: string[] | null): string[] | 
   return disp.size === set.size ? null : telasDaAtuacao(role).map(t => t.chave).filter(k => set.has(k));
 }
 
+/** Lista explícita das telas (nulo vira todas as da atuação). */
+export const listaTelas = (role: Role, telas: string[] | null) => expandir(role, telas);
+
+// ------------------------------------------------------------------ v32 · telas por pessoa (ajuste sobre o cargo)
+/** Lê users.ajuste_telas; sem nenhuma tela a mais ou a menos = sem ajuste. */
+export function lerAjuste(raw: unknown): AjusteTelas | null {
+  const a = (raw ?? null) as Partial<AjusteTelas> | null; if (!a || typeof a !== "object") return null;
+  const lista = (x: unknown) => (Array.isArray(x) ? [...new Set(x.filter((k): k is string => typeof k === "string" && k.startsWith("/")))] : []);
+  const mais = lista(a.mais), menos = lista(a.menos); if (!mais.length && !menos.length) return null;
+  return { mais, menos, motivo: String(a.motivo ?? ""), em: String(a.em ?? ""), por: String(a.por ?? ""), ate: typeof a.ate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(a.ate) ? a.ate : null };
+}
+/** Diferença entre o que ficou marcado e o que a pessoa teria pelo cargo (sem as fixas): é isso, e só isso, que o ajuste guarda. */
+export function diferencaTelas(role: Role, baseTelas: string[] | null, marcadas: string[]): { mais: string[]; menos: string[] } {
+  const cat = telasDaAtuacao(role).filter(t => !t.fixa).map(t => t.chave); const base = new Set(expandir(role, baseTelas)); const m = new Set(marcadas);
+  return { mais: cat.filter(k => m.has(k) && !base.has(k)), menos: cat.filter(k => !m.has(k) && base.has(k)) };
+}
+/** Aplica o ajuste às telas: tira as “a menos” (as fixas ficam), põe as “a mais” que a atuação tem. */
+export function aplicarAjuste(role: Role, telas: string[] | null, aj: AjusteTelas | null, hoje = hojeLocal()): { telas: string[] | null; ajuste: AjusteEfetivo | null } {
+  if (!aj) return { telas, ajuste: null };
+  const cat = new Set(telasDaAtuacao(role).map(t => t.chave)); const vencido = !!(aj.ate && aj.ate < hoje);
+  const mais = aj.mais.filter(k => cat.has(k) && !TELAS_FIXAS.has(k)); const menos = aj.menos.filter(k => cat.has(k) && !TELAS_FIXAS.has(k));
+  const ignoradas = [...aj.mais.filter(k => !mais.includes(k)), ...aj.menos.filter(k => !menos.includes(k))];
+  let out = telas;
+  if (!vencido && (mais.length || menos.length)) { const set = new Set(expandir(role, telas)); for (const k of menos) set.delete(k); for (const k of mais) set.add(k); out = normalizarTelas(role, [...set]); }
+  return { telas: out, ajuste: { mais, menos, ignoradas, motivo: aj.motivo, em: aj.em, por: aj.por, ate: aj.ate ?? null, vencido } };
+}
+
 // ------------------------------------------------------------------ acesso efetivo
 const PRECEDENCIA: Role[] = ["DIRECAO", "RH", "DIRETOR_UNIDADE", "FINANCEIRO", "GESTOR", "COMERCIAL", "OPERACOES", "LEITURA", "COLABORADOR"];
 const acima = (a: Role, b: Role) => PRECEDENCIA.indexOf(a) <= PRECEDENCIA.indexOf(b);
 export type LinhaAcesso = {
   id: number; nome: string; email: string; role: string; unit_id: number | null; employee_id: number | null; ativo: boolean; acesso: unknown; substituicao: unknown;
   e_unit: number | null; e_sit: string | null; e_pos: number | null; p_nome: string | null; p_acesso: unknown; p_familia: string | null;
-  s_nome: string | null; s_acesso: unknown; s_familia: string | null; s_pos: number | null;
+  s_nome: string | null; s_acesso: unknown; s_familia: string | null; s_pos: number | null; ajuste_telas?: unknown;
 };
 export type Efetivo = {
   role: Role; unitId: number | null; telas: string[] | null; aprova: string[]; origem: Origem; cargo: string | null; positionId: number | null;
   substituicao: { cargo: string; ate: string; motivo: string } | null; excecaoMotivo: string | null; bloqueio: null | "DESLIGADO"; descontoPct: number;
+  /** v32 · telas a mais e a menos desta pessoa sobre o cargo (null = segue o cargo em tudo) */
+  ajuste: AjusteEfetivo | null;
 };
 const hojeLocal = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Campo_Grande" });
 
-export function calcularAcesso(u: LinhaAcesso, padrao: PadraoAprovacao, hoje = hojeLocal(), desconto?: PadraoDesconto): Efetivo {
+/** opts.semAjuste / opts.semSubstituicao: o acesso “de base” da pessoa (o que ela teria só pelo cargo ou pela exceção) — a referência do editor de telas por pessoa. */
+export function calcularAcesso(u: LinhaAcesso, padrao: PadraoAprovacao, hoje = hojeLocal(), desconto?: PadraoDesconto, opts: { semAjuste?: boolean; semSubstituicao?: boolean } = {}): Efetivo {
   const ua = (u.acesso ?? null) as AcessoUsuario | null;
   let base: DefAcesso; let origem: Origem; let unitId: number | null; let excecaoMotivo: string | null = null;
   const vinculado = !!u.employee_id && u.e_sit !== null;
@@ -217,9 +253,14 @@ export function calcularAcesso(u: LinhaAcesso, padrao: PadraoAprovacao, hoje = h
   }
   let role = base.atuacao; let telas = base.telas ? normalizarTelas(role, base.telas) : null; let aprova = base.aprova ?? aprovaPadrao(role, padrao);
   let descontoPct = typeof base.descontoPct === "number" ? base.descontoPct : descontoPadrao(role, desconto);
+  // v32 · telas a mais e a menos desta pessoa (só quem tem ficha; a conta sem ficha já tem as telas definidas nela mesma).
+  // O ajuste vale sobre o acesso de sempre (cargo ou exceção); a substituição temporária soma por cima, enquanto durar —
+  // quem cobre o gerente vê as telas do gerente, mesmo as que foram retiradas só dela no dia a dia.
+  let ajuste: AjusteEfetivo | null = null;
+  if (vinculado && !opts.semAjuste) { const r = aplicarAjuste(role, telas, lerAjuste(u.ajuste_telas), hoje); telas = r.telas; ajuste = r.ajuste; }
   // substituição temporária: assume o acesso do cargo substituído (se for maior) e soma telas e aprovações
   const sub = (u.substituicao ?? null) as Substituicao | null; let substituicao: Efetivo["substituicao"] = null;
-  if (sub && sub.positionId && u.s_pos && sub.ate >= hoje) {
+  if (sub && sub.positionId && u.s_pos && sub.ate >= hoje && !opts.semSubstituicao) {
     const d = defDoCargo({ nome: u.s_nome ?? "", acesso: u.s_acesso, familia: u.s_familia });
     const novo = acima(d.atuacao, role) ? d.atuacao : role;
     const uniao = new Set([...expandir(role, telas), ...expandir(d.atuacao, d.telas ? normalizarTelas(d.atuacao, d.telas) : null)]);
@@ -231,7 +272,7 @@ export function calcularAcesso(u: LinhaAcesso, padrao: PadraoAprovacao, hoje = h
   const ordem = ALCADAS.map(a => a.chave); aprova = ordem.filter(k => aprova.includes(k));
   // alcance: atuação de unidade fica presa à unidade da ficha; atuação de rede não tem unidade (como as contas de rede sempre foram)
   if (origem !== "DIRETO") unitId = ATUACAO[role].alcance === "UNIDADE" ? unitId : null;
-  return { role, unitId, telas, aprova, origem, cargo: vinculado ? u.p_nome : null, positionId: vinculado ? u.e_pos : null, substituicao, excecaoMotivo, bloqueio: vinculado && u.e_sit === "DESLIGADO" ? "DESLIGADO" : null, descontoPct };
+  return { role, unitId, telas, aprova, origem, cargo: vinculado ? u.p_nome : null, positionId: vinculado ? u.e_pos : null, substituicao, excecaoMotivo, bloqueio: vinculado && u.e_sit === "DESLIGADO" ? "DESLIGADO" : null, descontoPct, ajuste };
 }
 
 /** Grava o acesso efetivo nas colunas que as consultas usam (users.role, unit_id, aprova, origem_acesso) e encerra quem foi desligado. */
@@ -251,7 +292,7 @@ async function carregar(userId: number): Promise<CargaSessao> {
   let u: (LinhaAcesso & { aprova_atual: string[] | null; origem_atual: string | null; desconto_atual: number | null }) | undefined;
   try {
     [u] = await sql<(LinhaAcesso & { aprova_atual: string[] | null; origem_atual: string | null; desconto_atual: number | null })[]>`
-      SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.aprova AS aprova_atual, u.origem_acesso AS origem_atual, u.desconto_pct::float AS desconto_atual,
+      SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.ajuste_telas, u.aprova AS aprova_atual, u.origem_acesso AS origem_atual, u.desconto_pct::float AS desconto_atual,
              e.unit_id AS e_unit, e.situacao AS e_sit, e.position_id AS e_pos, p.nome AS p_nome, p.acesso AS p_acesso, p.familia AS p_familia,
              ps.id AS s_pos, ps.nome AS s_nome, ps.acesso AS s_acesso, ps.familia AS s_familia
       FROM users u LEFT JOIN employees e ON e.id = u.employee_id LEFT JOIN positions p ON p.id = e.position_id
@@ -262,7 +303,7 @@ async function carregar(userId: number): Promise<CargaSessao> {
     const [v] = await sql<{ id: number; nome: string; email: string; role: Role; unit_id: number | null; employee_id: number | null; ativo: boolean }[]>`SELECT id, nome, email, role, unit_id, employee_id, ativo FROM users WHERE id=${userId}`;
     if (!v) return { s: null, motivo: null }; if (!v.ativo) return { s: null, motivo: "inativo" };
     const s: Session = { id: v.id, nome: v.nome, email: v.email, role: v.role, unitId: v.unit_id, employeeId: v.employee_id, telas: null, aprova: aprovaPadrao(v.role), cargo: null, origem: "DIRETO", descontoPct: descontoPadrao(v.role) };
-    return { s, ef: { role: v.role, unitId: v.unit_id, telas: null, aprova: s.aprova!, origem: "DIRETO", cargo: null, positionId: null, substituicao: null, excecaoMotivo: null, bloqueio: null, descontoPct: s.descontoPct! } };
+    return { s, ef: { role: v.role, unitId: v.unit_id, telas: null, aprova: s.aprova!, origem: "DIRETO", cargo: null, positionId: null, substituicao: null, excecaoMotivo: null, bloqueio: null, descontoPct: s.descontoPct!, ajuste: null } };
   }
   if (!u) return { s: null, motivo: null };
   const pd = await lerPadroes(); const ef = calcularAcesso(u, pd.aprova, undefined, pd.desconto);
@@ -277,16 +318,17 @@ export const carregarSessao = cache(carregar);
 export async function sessaoDoUsuario(userId: number): Promise<Session | null> { const r = await carregar(userId); return r.s; }
 
 /** Acesso efetivo de um usuário para conferência (“o que esta pessoa vê”), sem gravar nada — vale também para conta inativa. */
-export async function efetivoDoUsuario(userId: number): Promise<{ linha: LinhaAcesso; ef: Efetivo; sessao: Session } | null> {
+export async function efetivoDoUsuario(userId: number): Promise<{ linha: LinhaAcesso; ef: Efetivo; sessao: Session; base: Efetivo } | null> {
   const [u] = await sql<LinhaAcesso[]>`
-    SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao,
+    SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.ajuste_telas,
            e.unit_id AS e_unit, e.situacao AS e_sit, e.position_id AS e_pos, p.nome AS p_nome, p.acesso AS p_acesso, p.familia AS p_familia,
            ps.id AS s_pos, ps.nome AS s_nome, ps.acesso AS s_acesso, ps.familia AS s_familia
     FROM users u LEFT JOIN employees e ON e.id = u.employee_id LEFT JOIN positions p ON p.id = e.position_id
     LEFT JOIN positions ps ON ps.id = CASE WHEN jsonb_typeof(u.substituicao->'positionId') = 'number' THEN (u.substituicao->>'positionId')::int END
     WHERE u.id = ${userId}`;
   if (!u) return null; const pd = await lerPadroes(); const ef = calcularAcesso(u, pd.aprova, undefined, pd.desconto);
-  return { linha: u, ef, sessao: { id: u.id, nome: u.nome, email: u.email, role: ef.role, unitId: ef.unitId, employeeId: u.employee_id, telas: ef.telas, aprova: ef.aprova, cargo: ef.cargo, positionId: ef.positionId, origem: ef.origem, substituicao: ef.substituicao, descontoPct: ef.descontoPct } };
+  const base = calcularAcesso(u, pd.aprova, undefined, pd.desconto, { semAjuste: true, semSubstituicao: true });
+  return { linha: u, ef, base, sessao: { id: u.id, nome: u.nome, email: u.email, role: ef.role, unitId: ef.unitId, employeeId: u.employee_id, telas: ef.telas, aprova: ef.aprova, cargo: ef.cargo, positionId: ef.positionId, origem: ef.origem, substituicao: ef.substituicao, descontoPct: ef.descontoPct } };
 }
 
 /** Recalcula o acesso de todos (ou de alguns): depois de mudar o cargo, a ficha, a importação ou a rotina diária. Devolve quantos mudaram. */
@@ -294,7 +336,7 @@ export async function sincronizarAcessos(ids?: number[]): Promise<{ mudaram: num
   let rows: (LinhaAcesso & { aprova_atual: string[] | null; origem_atual: string | null; desconto_atual: number | null })[];
   try {
     rows = await sql<(LinhaAcesso & { aprova_atual: string[] | null; origem_atual: string | null; desconto_atual: number | null })[]>`
-      SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.aprova AS aprova_atual, u.origem_acesso AS origem_atual, u.desconto_pct::float AS desconto_atual,
+      SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.ajuste_telas, u.aprova AS aprova_atual, u.origem_acesso AS origem_atual, u.desconto_pct::float AS desconto_atual,
              e.unit_id AS e_unit, e.situacao AS e_sit, e.position_id AS e_pos, p.nome AS p_nome, p.acesso AS p_acesso, p.familia AS p_familia,
              ps.id AS s_pos, ps.nome AS s_nome, ps.acesso AS s_acesso, ps.familia AS s_familia
       FROM users u LEFT JOIN employees e ON e.id = u.employee_id LEFT JOIN positions p ON p.id = e.position_id

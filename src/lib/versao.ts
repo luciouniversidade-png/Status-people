@@ -1,3 +1,3 @@
 /** Versão do sistema e do esquema do banco exigido por este código. Aumente SCHEMA_VERSION sempre que MIGRATION_SQL ganhar instruções novas. */
-export const APP_VERSION = "v31";
-export const SCHEMA_VERSION = "31.0";
+export const APP_VERSION = "v33";
+export const SCHEMA_VERSION = "33.0";

@@ -1,3 +1,5 @@
+import Link from "@/components/Link";
+import { configIA } from "@/lib/ia";
 import { requireGestao, scopeUnit } from "@/lib/auth";
 import { sql } from "@/db";
 import { Page, Card, Badge, Flash, Field, Select, Textarea, Btn } from "@/components/ui";
@@ -35,7 +37,8 @@ export default async function Assistente({ searchParams }: { searchParams: Promi
         </div>
         <div className="space-y-4">
           <Card title="Gerar rascunho">
-            {!ligada && <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-aviso">IA desligada nesta instalação: sem a variável AI_API_KEY nada é gerado nem simulado. O restante do sistema funciona normalmente.</p>}
+            {!ligada && <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-aviso">IA desligada nesta instalação: sem a variável AI_API_KEY nada é gerado nem simulado. O restante do sistema funciona normalmente.{ESTR ? <> Para ligar: <Link href="/configuracoes#ia" className="font-medium underline">Configurações → IA (opcional)</Link> — passo a passo e teste de conexão.</> : " Para ligar, fale com a Direção ou o RH."}</p>}
+            {ligada && <p className="mb-2 text-[11px] text-slate-500">IA ligada · modelo {configIA().modelo}{ESTR ? <> · <Link href="/configuracoes#ia" className="text-acao hover:underline">testar a conexão</Link></> : null}</p>}
             <form action={gerarAssistente} className="space-y-2"><Field label="O que preparar"><Select name="tarefa">{Object.entries(TAREFAS_ESTRATEGIA).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field><Btn small pendingText="Gerando…">Gerar rascunho</Btn></form>
           </Card>
           <Card title={`Fatos que serão enviados (${fatos.length})`}>

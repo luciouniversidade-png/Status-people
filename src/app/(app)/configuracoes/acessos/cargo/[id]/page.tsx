@@ -3,7 +3,7 @@ import Link from "@/components/Link";
 import { sql } from "@/db";
 import { requireSession, can, type Role } from "@/lib/auth";
 import { Page, Card, Flash, Table, Td, Badge, Btn, Select, Field } from "@/components/ui";
-import { ATUACAO, defDoCargo, telasDaAtuacao, aprovaPadrao, lerPadroes, descontoPadrao, rotuloAtuacao, rotuloAlcada, naoRevisado, ALCADAS } from "@/lib/acesso";
+import { ATUACAO, defDoCargo, telasDaAtuacao, aprovaPadrao, lerPadroes, descontoPadrao, rotuloAtuacao, rotuloAlcada, naoRevisado, ALCADAS, lerAjuste } from "@/lib/acesso";
 import { fmtData } from "@/lib/utils";
 import { salvarAcessoCargo, copiarAcessoCargo } from "../../../acesso-actions";
 import { criarAcessosAutoatendimento } from "../../../actions";
@@ -22,7 +22,7 @@ export default async function AcessoDoCargo({ params, searchParams }: { params: 
   const pds = await lerPadroes(); const padrao = pds.aprova; const pdAprova = aprovaPadrao(atuacao, padrao); const pdDesc = descontoPadrao(atuacao, pds.desconto);
   const telas = trocou ? null : def.telas; const aprova = trocou || !def.aprova ? pdAprova : def.aprova; const segue = trocou || !def.aprova;
   const [pessoas, outros, [{ semAcesso }]] = await Promise.all([
-    sql<{ id: number; nome: string; email: string; ativo: boolean; origem_acesso: string | null; role: string; unidade: string | null; substituicao: { ate?: string } | null }[]>`SELECT u.id, u.nome, u.email, u.ativo, u.origem_acesso, u.role, un.nome AS unidade, u.substituicao FROM users u JOIN employees e ON e.id=u.employee_id LEFT JOIN units un ON un.id=e.unit_id WHERE e.position_id=${pid} ORDER BY u.ativo DESC, u.nome`,
+    sql<{ id: number; nome: string; email: string; ativo: boolean; origem_acesso: string | null; role: string; unidade: string | null; substituicao: { ate?: string } | null; ajuste_telas: unknown }[]>`SELECT u.id, u.nome, u.email, u.ativo, u.origem_acesso, u.role, un.nome AS unidade, u.substituicao, u.ajuste_telas FROM users u JOIN employees e ON e.id=u.employee_id LEFT JOIN units un ON un.id=e.unit_id WHERE e.position_id=${pid} ORDER BY u.ativo DESC, u.nome`,
     sql<{ id: number; nome: string; acesso: unknown; familia: string | null }[]>`SELECT id, nome, acesso, familia FROM positions WHERE id <> ${pid} ORDER BY ordem, nome`,
     sql<{ semAcesso: number }[]>`SELECT count(*)::int AS "semAcesso" FROM employees e WHERE e.position_id=${pid} AND e.situacao IN ('ATIVO','EM_ADMISSAO') AND NOT EXISTS (SELECT 1 FROM users u WHERE u.employee_id=e.id)`,
   ]);
@@ -59,9 +59,10 @@ export default async function AcessoDoCargo({ params, searchParams }: { params: 
           <Table head={["Pessoa", "Unidade", "Acesso", ""]} empty="Ninguém deste cargo tem acesso ainda — crie em Configurações → Usuários e acessos.">
             {pessoas.map(u => { const [tom, rot] = ORIGEM[u.origem_acesso ?? "CARGO"] ?? ORIGEM.CARGO; return (
               <tr key={u.id}><Td>{u.nome}<div className="text-[11px] text-slate-500">{u.email}</div></Td><Td>{u.unidade ?? "—"}</Td>
-                <Td>{u.ativo ? <Badge v={tom} label={rot} /> : <Badge v="DESLIGADO" label="inativo" />}{u.origem_acesso === "EXCECAO" && <div className="text-[11px] text-slate-500">atuação: {rotuloAtuacao(u.role)}</div>}{u.substituicao?.ate && <div className="text-[11px] text-aviso">substituição até {fmtData(u.substituicao.ate)}</div>}</Td>
-                <Td><Link href={`/configuracoes/acessos/usuario/${u.id}`} className="text-xs text-acao hover:underline">ver acesso</Link></Td></tr>); })}
+                <Td>{u.ativo ? <Badge v={tom} label={rot} /> : <Badge v="DESLIGADO" label="inativo" />}{u.origem_acesso === "EXCECAO" && <div className="text-[11px] text-slate-500">atuação: {rotuloAtuacao(u.role)}</div>}{u.substituicao?.ate && <div className="text-[11px] text-aviso">substituição até {fmtData(u.substituicao.ate)}</div>}{(() => { const aj = lerAjuste(u.ajuste_telas); return aj ? <div className="text-[11px] text-slate-600">telas desta pessoa: <b className="text-ok">+{aj.mais.length}</b> <b className="text-erro">−{aj.menos.length}</b>{aj.ate ? ` até ${fmtData(aj.ate)}` : ""}</div> : null; })()}</Td>
+                <Td><Link href={`/configuracoes/acessos/usuario/${u.id}#telas`} className="text-xs text-acao hover:underline">ver acesso · telas</Link></Td></tr>); })}
           </Table>
+          {pessoas.some(u => lerAjuste(u.ajuste_telas)) && <p className="mt-2 text-xs text-slate-600">Quem tem <b>telas desta pessoa</b> continua seguindo este cargo em tudo o que não foi ajustado: o que você mudar aqui vale para ela também, menos as telas acrescentadas ou retiradas só dela (<Link href={`/configuracoes/acessos?aba=pessoas&cargo=${pid}`} className="text-acao underline">ver e ajustar em lote</Link>).</p>}
           {semAcesso > 0 && <form action={criarAcessosAutoatendimento} className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-line bg-mist px-3 py-2"><input type="hidden" name="positionId" value={pid} /><input type="hidden" name="voltar" value={`/configuracoes/acessos/cargo/${pid}`} /><Btn small kind="ghost">Criar os acessos das {semAcesso} ficha(s) deste cargo</Btn><span className="text-xs text-slate-600">Cada login nasce com o acesso deste cargo; quem não tem e-mail na ficha fica listado. A senha ninguém conhece: a pessoa usa “Esqueci minha senha” ou recebe do RH uma senha temporária.</span></form>}
         </Card>
         <div className="space-y-4">

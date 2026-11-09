@@ -3,13 +3,14 @@ import Link from "@/components/Link";
 import { sql } from "@/db";
 import { requireSession, can, type Role } from "@/lib/auth";
 import { Page, Card, Flash, Badge, Btn, Select, Field, Input, Textarea } from "@/components/ui";
-import { ATUACAO, ATUACOES, efetivoDoUsuario, filtrarMenu, aprovaPadrao, lerPadroes, descontoPadrao, rotuloAtuacao, rotuloAlcada, defDoCargo, type AcessoUsuario, type Substituicao } from "@/lib/acesso";
+import { ATUACAO, ATUACOES, efetivoDoUsuario, filtrarMenu, aprovaPadrao, lerPadroes, descontoPadrao, rotuloAtuacao, rotuloAlcada, defDoCargo, telasDaAtuacao, listaTelas, lerAjuste, aplicarAjuste, chaveTela, rotuloTela, type AcessoUsuario, type Substituicao } from "@/lib/acesso";
 import { montarMenu } from "@/lib/menu";
 import { ehComite } from "@/lib/etica";
 import { podePrivacidade } from "@/lib/privacidade";
 import { fmtData, hoje, addDays } from "@/lib/utils";
-import { salvarExcecao, voltarAoCargo, salvarAcessoConta, salvarSubstituicao, encerrarSubstituicao } from "../../../acesso-actions";
-import { CamposAcesso } from "../../_editor";
+import { salvarExcecao, voltarAoCargo, salvarAcessoConta, salvarSubstituicao, encerrarSubstituicao, salvarTelasPessoa, tirarAjusteTelas, copiarAjusteTelas } from "../../../acesso-actions";
+import { CamposAcesso, CamposTelasPessoa } from "../../_editor";
+import { MarcarTudoAjuste, ContadorAjuste } from "@/components/AcessoEditorCliente";
 
 export const dynamic = "force-dynamic";
 const ORIGEM: Record<string, string> = { CARGO: "Acesso do cargo da ficha", EXCECAO: "Exceção individual", SEM_CARGO: "Ficha sem cargo (autoatendimento)", DIRETO: "Conta sem ficha" };
@@ -18,7 +19,7 @@ export default async function OQueAPessoaVe({ params, searchParams }: { params: 
   const s = await requireSession(); if (!can.configurar(s)) redirect("/");
   const { id } = await params; const sp = await searchParams; const uid = Number(id); if (!Number.isInteger(uid)) notFound();
   const r = await efetivoDoUsuario(uid); if (!r) notFound();
-  const { linha: u, ef, sessao } = r; const ua = (u.acesso ?? null) as AcessoUsuario | null; const sub = (u.substituicao ?? null) as Substituicao | null;
+  const { linha: u, ef, sessao, base } = r; const ua = (u.acesso ?? null) as AcessoUsuario | null; const sub = (u.substituicao ?? null) as Substituicao | null;
   let membroEtica = false, gestorPriv = false; try { membroEtica = await ehComite(sessao); gestorPriv = await podePrivacidade(sessao); } catch { /* opcional */ }
   let temEquipe = false; if (u.employee_id) { const [t] = await sql<{ ok: boolean }[]>`SELECT EXISTS (SELECT 1 FROM employees WHERE gestor_id=${u.employee_id} AND situacao IN ('ATIVO','FERIAS','AFASTADO','EM_ADMISSAO')) AS ok`; temEquipe = !!t?.ok; }
   const m = montarMenu(sessao, { nNotif: 0, membroEtica, gestorPriv, temEquipe }); const menu = filtrarMenu(m.grupos, m.inferior, sessao);
@@ -26,6 +27,11 @@ export default async function OQueAPessoaVe({ params, searchParams }: { params: 
   const [unidadeConta] = u.unit_id ? await sql<{ nome: string }[]>`SELECT nome FROM units WHERE id=${u.unit_id}` : [];
   const [cargos, units, padrao] = await Promise.all([sql<{ id: number; nome: string; acesso: unknown; familia: string | null }[]>`SELECT id, nome, acesso, familia FROM positions ORDER BY ordem, nome`, sql<{ id: number; nome: string }[]>`SELECT id, nome FROM units ORDER BY nome`, lerPadroes()]);
   const subAtiva = !!(sub && sub.ate >= hoje());
+  // v32 · telas por pessoa: a referência é o acesso “de base” (cargo ou exceção, sem a substituição); o ajuste guarda só a diferença
+  const aj = ef.ajuste; const ajRaw = lerAjuste(u.ajuste_telas);
+  const baseSet = new Set(listaTelas(base.role, base.telas)); const permanentes = aplicarAjuste(base.role, base.telas, ajRaw);
+  const efSet = new Set(listaTelas(base.role, permanentes.telas));
+  const comAjuste = u.employee_id ? await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM users WHERE ajuste_telas IS NOT NULL AND ativo AND id<>${uid} ORDER BY nome LIMIT 300` : [];
   const doCargo = ficha?.position_id ? defDoCargo(cargos.find(c => c.id === ficha.position_id) ?? null) : null;
   const atEx = (sp.atuacao && sp.atuacao in ATUACAO ? sp.atuacao : ua?.atuacao ?? doCargo?.atuacao ?? "COLABORADOR") as Role;
   const pdEx = aprovaPadrao(atEx, padrao.aprova);
@@ -37,17 +43,20 @@ export default async function OQueAPessoaVe({ params, searchParams }: { params: 
         <div className="rounded-md border border-line bg-white px-3 py-2"><div className="text-xs text-slate-600">Origem</div><div className="font-semibold text-navy">{ORIGEM[ef.origem]}</div><div className="text-[11px] text-slate-500">{u.email}{!u.ativo ? " · inativo" : ""}</div></div>
         <div className="rounded-md border border-line bg-white px-3 py-2"><div className="text-xs text-slate-600">Cargo</div><div className="font-semibold text-navy">{ficha ? ficha.cargo ?? "ficha sem cargo" : "—"}</div><div className="text-[11px] text-slate-500">{ficha ? `${ficha.nome} · ${ficha.unidade ?? ""}` : "conta sem ficha"}{ficha?.position_id ? <> · <Link href={`/configuracoes/acessos/cargo/${ficha.position_id}`} className="text-acao hover:underline">acesso do cargo</Link></> : null}</div></div>
         <div className="rounded-md border border-line bg-white px-3 py-2"><div className="text-xs text-slate-600">Atuação e alcance</div><div className="font-semibold text-navy">{rotuloAtuacao(ef.role)}</div><div className="text-[11px] text-slate-500">{ATUACAO[ef.role].alcance === "UNIDADE" ? `unidade ${ficha?.unidade ?? unidadeConta?.nome ?? ""}` : u.employee_id ? "rede toda" : unidadeConta ? `rede · unidade de referência ${unidadeConta.nome}` : "rede toda"}</div></div>
-        <div className="rounded-md border border-line bg-white px-3 py-2"><div className="text-xs text-slate-600">Telas · aprovações</div><div className="font-semibold text-navy">{menu.grupos.reduce((n, [, xs]) => n + xs.length, 0)} · {ef.aprova.length}</div><div className="text-[11px] text-slate-500">{ef.telas ? "telas escolhidas" : "todas as da atuação"}</div></div>
+        <div className="rounded-md border border-line bg-white px-3 py-2"><div className="flex items-baseline justify-between gap-2 text-xs text-slate-600"><span>Telas · aprovações</span>{u.employee_id ? <a href="#telas" className="text-[11px] text-acao hover:underline">ajustar telas ↓</a> : null}</div><div className="font-semibold text-navy">{menu.grupos.reduce((n, [, xs]) => n + xs.length, 0)} · {ef.aprova.length}</div><div className="text-[11px] text-slate-500">{ef.telas ? "telas escolhidas" : "todas as da atuação"}{aj && !aj.vencido && (aj.mais.length || aj.menos.length) ? ` · ajuste +${aj.mais.length} −${aj.menos.length}` : ""}</div></div>
       </div>
       {ef.bloqueio === "DESLIGADO" && <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-erro">A ficha está desligada: este login não entra mais (o acesso foi encerrado automaticamente).</p>}
       {ef.origem === "EXCECAO" && <p className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"><b>Exceção individual:</b> {ef.excecaoMotivo ?? "sem motivo registrado"}{ua?.em ? ` · desde ${fmtData(ua.em)}${ua.por ? ` (${ua.por})` : ""}` : ""}</p>}
       {subAtiva && <p className="mb-4 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-navy"><b>Substituição:</b> recebe também o acesso de {ef.substituicao?.cargo} até {fmtData(sub!.ate)} — {sub!.motivo}</p>}
 
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
         <Card title="Menu desta pessoa (o que ela vê)">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {menu.grupos.map(([g, xs]) => <div key={g || "geral"}><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{g || "Geral"}</div><ul className="mt-0.5 space-y-0.5 text-sm">{xs.map(([h, l]) => <li key={h} className="text-slate-800">{l}</li>)}</ul></div>)}
+            {menu.grupos.map(([g, xs]) => <div key={g || "geral"}><div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{g || "Geral"}</div><ul className="mt-0.5 space-y-0.5 text-sm">{xs.map(([h, l]) => <li key={h} className="text-slate-800">{l}{aj && !aj.vencido && aj.mais.includes(chaveTela(h, u.employee_id)) && <span className="ml-1 rounded bg-emerald-50 px-1 text-[10px] font-semibold text-ok" title="Tela acrescentada só para esta pessoa">+ só desta pessoa</span>}</li>)}</ul></div>)}
           </div>
+          {aj && !aj.vencido && aj.menos.length > 0 && (() => { const vistas = new Set(listaTelas(ef.role, ef.telas)); const voltam = aj.menos.filter(k => vistas.has(k)); const fora = aj.menos.filter(k => !vistas.has(k));
+            return <p className="mt-3 text-xs text-slate-600"><b className="text-erro">Retiradas desta pessoa</b> (o cargo dá, ela não vê): {fora.length ? fora.map(k => rotuloTela(k)).join(" · ") : "—"}{voltam.length > 0 && <> · <span className="text-slate-700">enquanto durar a substituição, vê pelo cargo substituído: {voltam.map(k => rotuloTela(k)).join(" · ")}</span></>}</p>; })()}
           <div className="mt-4 border-t border-line pt-3 text-sm"><b className="text-navy">Aprova:</b> {ef.aprova.length ? ef.aprova.map(k => rotuloAlcada(k)).join(" · ") : <span className="text-slate-500">nada</span>} · <b className="text-navy">descontos até</b> {String(ef.descontoPct).replace(".", ",")}%</div>
           <p className="mt-2 text-xs text-slate-500">Atalhos do celular: {menu.inferior.map(i => i.rotulo).join(" · ") || "—"}. Telas fora do menu (detalhes de um registro, por exemplo) seguem a regra da própria tela e o alcance.</p>
         </Card>
@@ -90,6 +99,31 @@ export default async function OQueAPessoaVe({ params, searchParams }: { params: 
           )}
         </div>
       </div>
+
+      {u.employee_id ? (
+        <div id="telas" className="mt-4 scroll-mt-4"><Card title="Telas desta pessoa — o padrão é o cargo" actions={<ContadorAjuste total={telasDaAtuacao(base.role).length} form="form-telas-pessoa" />}>
+          <p className="mb-3 text-sm text-slate-700">O ponto de partida são as telas {base.origem === "EXCECAO" ? <>da <b>exceção individual</b> ({rotuloAtuacao(base.role)})</> : <>do cargo <b>{ficha?.cargo ?? "da ficha"}</b></>}. Marque ou desmarque só o que for diferente para esta pessoa — tela a tela, o grupo inteiro (<i>todas</i>, <i>nenhuma</i>, <i>como o cargo</i>) ou tudo de uma vez — e salve uma vez só. O ONE guarda apenas a diferença: se o cargo mudar, o resto acompanha.</p>
+          {aj && <div className={`mb-3 rounded-md border px-3 py-2 text-sm ${aj.vencido ? "border-line bg-mist text-slate-600" : "border-amber-200 bg-amber-50 text-amber-950"}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2"><div className="min-w-0"><b>{aj.vencido ? `Ajuste vencido em ${fmtData(aj.ate)}` : "Ajuste em vigor"}:</b> {aj.mais.length} tela(s) a mais e {aj.menos.length} a menos que o cargo{aj.ate && !aj.vencido ? ` · vale até ${fmtData(aj.ate)}` : !aj.ate ? " · sem prazo" : ""}.
+              <span className="block text-xs">{aj.motivo}{aj.em ? ` · ${fmtData(aj.em)}` : ""}{aj.por ? ` · ${aj.por}` : ""}</span>
+              {aj.mais.length > 0 && <span className="mt-1 block text-xs"><b className="text-ok">+</b> {aj.mais.map(k => rotuloTela(k)).join(" · ")}</span>}
+              {aj.menos.length > 0 && <span className="block text-xs"><b className="text-erro">−</b> {aj.menos.map(k => rotuloTela(k)).join(" · ")}</span>}
+              {aj.ignoradas.length > 0 && <span className="mt-1 block text-[11px] text-slate-600">{aj.ignoradas.length} tela(s) do ajuste não existem na atuação atual ({rotuloAtuacao(ef.role)}) e não valem: {aj.ignoradas.map(k => rotuloTela(k)).join(", ")}. Salve de novo para limpar.</span>}</div>
+              <form action={tirarAjusteTelas}><input type="hidden" name="id" value={uid} /><Btn small kind="ghost">Voltar tudo ao cargo</Btn></form></div>
+          </div>}
+          {subAtiva && <p className="mb-3 text-xs text-slate-600">Em substituição até {fmtData(sub!.ate)}: as telas de {ef.substituicao?.cargo} somam enquanto durar e não aparecem aqui — o ajuste vale sobre o acesso de sempre desta pessoa.</p>}
+          <form id="form-telas-pessoa" action={salvarTelasPessoa} className="space-y-3"><input type="hidden" name="id" value={uid} />
+            <MarcarTudoAjuste />
+            <CamposTelasPessoa atuacao={base.role} base={baseSet} efetivas={efSet} />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_12rem]">
+              <Field label="Motivo (obrigatório quando ficar diferente do cargo)"><Input name="motivo" defaultValue={ajRaw?.motivo ?? ""} placeholder="Ex.: apoia o fechamento do mês até dezembro" /></Field>
+              <Field label="Vale até (opcional)"><Input type="date" name="ate" min={hoje()} max={addDays(hoje(), 366)} defaultValue={ajRaw?.ate && ajRaw.ate >= hoje() ? ajRaw.ate : ""} /></Field>
+            </div>
+            <div className="flex flex-wrap items-center gap-3"><Btn>Salvar as telas desta pessoa</Btn><span className="text-xs text-slate-500">Só aparecem as telas que a atuação {rotuloAtuacao(base.role)} permite; dentro de cada tela, o que a pessoa pode alterar segue a atuação. Tela de outra área: exceção individual (outra atuação) ou substituição temporária. Várias pessoas de uma vez: <Link href="/configuracoes/acessos?aba=pessoas" className="text-acao underline">ajuste em lote</Link>.</span></div>
+          </form>
+          {comAjuste.length > 0 && <form action={copiarAjusteTelas} className="mt-3 flex flex-wrap items-end gap-2 border-t border-line pt-3"><input type="hidden" name="id" value={uid} /><Field label="Copiar o ajuste de outra pessoa" className="min-w-0 flex-1 sm:max-w-sm"><Select name="origemId" required defaultValue="">{[<option key="" value="">— escolha —</option>, ...comAjuste.map(x => <option key={x.id} value={x.id}>{x.nome}</option>)]}</Select></Field><Btn small kind="ghost">Copiar o ajuste</Btn></form>}
+        </Card></div>
+      ) : null}
     </Page>
   );
 }

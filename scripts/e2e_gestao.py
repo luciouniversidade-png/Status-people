@@ -307,7 +307,7 @@ html = page(f"/estrategia/relatorio?mes={PER}"); assert all(x in html for x in [
 html = page("/auditoria?entidade=action_plans"); assert "situação da ação do plano" in html; ok("trilha de auditoria do plano de ação")
 
 print("Assistente estratégico (IA como apoio)")
-html = page("/estrategia/assistente"); assert "IA desligada nesta instalação" in html and "Fatos que serão enviados" in html and "[E1]" in html and "Saúde estratégica:" in html
+html = page("/estrategia/assistente"); assert "IA desligada nesta instalação" in html and "/configuracoes#ia" in html and "Fatos que serão enviados" in html and "[E1]" in html and "Saúde estratégica:" in html
 fatos = html[html.find("Fatos que serão enviados"):]; assert "Satisfação nas reuniões de pais" in fatos and "Diretora Carandá" not in fatos and "Gestor Cultura" not in fatos and "Financeiro Rede" not in fatos and "Cand Site 1" not in fatos
 assert "Ação do plano nº" in fatos and "Enviar fluxo de caixa ao comitê" not in fatos and "Aguardando lista" not in fatos
 ok("assistente mostra exatamente os fatos enviados: números e títulos institucionais, sem nomes de pessoas nem texto livre das ações")
@@ -315,6 +315,8 @@ aid_ia = aid_of(html, 'name="tarefa"'); erro(post("/estrategia/assistente", aid_
 erro(post("/estrategia/assistente", aid_ia, {"tarefa": "LEITURA"}, sess=G), "Direção/RH e dos diretores"); erro(post("/estrategia/assistente", aid_ia, {"tarefa": "INVENTADA"}), "Escolha o que")
 assert psql("SELECT count(*) FROM strategy_ai_drafts") == "0" and psql("SELECT count(*) FROM ai_agents WHERE nome='Assistente estratégico' AND nivel='N1' AND status='PILOTO'") == "1"
 assert "Assistente estratégico" in page("/governanca/agentes"); ok("sem AI_API_KEY nada é gerado nem simulado; gestor não usa; assistente registrado no inventário de agentes (N1, piloto)")
+hc = page("/configuracoes"); assert "IA desligada nesta instalação." in hc and "Como ligar (uma vez" in hc and "Testar a IA agora" in hc
+erro(post("/configuracoes", aid_of(hc, "Testar a IA agora"), {}), "IA desligada: cadastre AI_API_KEY"); ok("v32 · Configurações → IA (opcional): desligada, com o passo a passo; o teste sem chave não envia nada")
 psql(f"INSERT INTO strategy_ai_drafts (tarefa, unit_id, modelo, texto, alertas, created_by, fontes) VALUES ('PRIORIDADES', NULL, 'teste', 'Prioridade 1: destravar a ação bloqueada [E1].', '[]'::jsonb, {RH}, '[]'::jsonb)"); dr = psql("SELECT max(id) FROM strategy_ai_drafts")
 html = page("/estrategia/assistente"); aid_dc = aid_of(html, 'name="decisao"'); assert "Rascunho — revisar" in html
 erro(post("/estrategia/assistente", aid_dc, {"id": dr, "decisao": "APROVAR", "texto": "x"}, sess=DS), "outro escopo")

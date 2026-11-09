@@ -2,6 +2,7 @@ import { sql } from "@/db";
 import { hoje, addDays, getSettings } from "./utils";
 import { fmtPct, fmtNumero } from "./formato";
 import { matrizTreinamento } from "./clima-academy";
+import { chamarAnthropic } from "./ia";
 
 export const PRONTIDAO: Record<string, string> = { PRONTO: "Pronto agora", UM_DOIS_ANOS: "Pronto em 1–2 anos", EM_DESENVOLVIMENTO: "Em desenvolvimento" };
 export const CLASSIF: Record<string, string> = { TALENTO_CHAVE: "Talento-chave", ALTO_POTENCIAL: "Alto potencial", SOLIDO: "Sólido", ATENCAO: "Atenção" };
@@ -125,10 +126,8 @@ Regras inegociáveis:
 - Não invente números. Cite os valores do contexto quando usar.`;
 
 export async function perguntarIA(pergunta: string, contexto: unknown): Promise<{ resposta: string; modelo: string; tokensEntrada: number; tokensSaida: number }> {
-  const key = process.env.AI_API_KEY; const modelo = process.env.AI_MODEL ?? "claude-sonnet-4-5";
-  if (!key) throw new Error("O assistente de IA não está configurado. Defina AI_API_KEY (chave da Anthropic) e, opcionalmente, AI_MODEL nas variáveis do servidor.");
-  const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: modelo, max_tokens: 1200, system: PROMPT_SISTEMA, messages: [{ role: "user", content: `CONTEXTO (dados agregados e anonimizados, JSON):\n${JSON.stringify(contexto)}\n\nPERGUNTA: ${pergunta}` }] }) });
-  if (!r.ok) throw new Error(`Provedor de IA respondeu ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const j = await r.json() as { content: { type: string; text?: string }[]; usage?: { input_tokens: number; output_tokens: number }; model?: string };
-  return { resposta: j.content.filter(c => c.type === "text").map(c => c.text).join("\n"), modelo: j.model ?? modelo, tokensEntrada: j.usage?.input_tokens ?? 0, tokensSaida: j.usage?.output_tokens ?? 0 };
+  // v32: porta única do provedor (src/lib/ia.ts) — sem chave nada é enviado; erros do provedor dizem o que corrigir
+  const r = await chamarAnthropic({ sistema: PROMPT_SISTEMA, usuario: `CONTEXTO (dados agregados e anonimizados, JSON):\n${JSON.stringify(contexto)}\n\nPERGUNTA: ${pergunta}`, maxTokens: 1200,
+    semChave: "O assistente de IA não está configurado. Defina AI_API_KEY (chave da Claude API) e, opcionalmente, AI_MODEL nas variáveis do servidor (Configurações → IA)." });
+  return { resposta: r.texto, modelo: r.modelo, tokensEntrada: r.tokensEntrada, tokensSaida: r.tokensSaida };
 }

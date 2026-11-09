@@ -1,5 +1,6 @@
 "use server";
 import { textoImportacao } from "@/lib/importacao";
+import * as F from "@/lib/fornecedores";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db, schema, sql } from "@/db";
@@ -36,7 +37,12 @@ export async function atualizarChamado(fd: FormData) {
     else if (strOrNull(fd, "nota")) await evento(id, s, "COMENTARIO", str(fd, "nota"));
     if (gestor) { const resp = int(fd, "responsavelUserId"); if (resp !== null && resp !== w.responsavelUserId) { upd.responsavelUserId = resp; const [u] = await db.select({ nome: schema.users.nome }).from(schema.users).where(eq(schema.users.id, resp)); await evento(id, s, "ATRIBUICAO", `Responsável: ${u?.nome ?? resp}`);
       await notificar([resp], `Chamado #${id} atribuído a você`, w.titulo, `/operacoes/chamados/${id}`, "ACAO"); }
-      const sup = int(fd, "supplierId"); if (sup !== null) upd.supplierId = sup || null; const prio = strOrNull(fd, "prioridade"); if (prio && prio !== w.prioridade) { upd.prioridade = prio; upd.slaAte = await slaOs(prio, w.createdAt); await evento(id, s, "STATUS", `Prioridade: ${prio.toLowerCase()}`); }
+      const sup = int(fd, "supplierId");
+      // v33 · fornecedor suspenso/inativo não recebe chamado novo; fora da homologação da unidade, fica registrado no chamado
+      if (sup && sup !== w.supplierId) { const e = await F.elegibilidadeFornecedor(sup, w.unitId);
+        if (e.nivel === "BLOQUEADO") { await audit(s, "tentativa bloqueada: chamado para fornecedor bloqueado", "suppliers", sup, null, { chamado: id }); throw new Error(e.texto); }
+        await evento(id, s, "ATRIBUICAO", `Fornecedor: ${e.nome}${e.nivel === "EXCECAO" ? ` — ${e.texto} (exceção registrada por ${s.nome})` : ""}`); }
+      if (sup !== null) upd.supplierId = sup || null; const prio = strOrNull(fd, "prioridade"); if (prio && prio !== w.prioridade) { upd.prioridade = prio; upd.slaAte = await slaOs(prio, w.createdAt); await evento(id, s, "STATUS", `Prioridade: ${prio.toLowerCase()}`); }
       const cp = num(fd, "custoPrevisto"); if (cp !== null) upd.custoPrevisto = String(cp); const cr2 = num(fd, "custoReal"); if (cr2 !== null && !upd.custoReal) upd.custoReal = String(cr2); }
     const av = int(fd, "avaliacao"); if (av && av >= 1 && av <= 5 && (dono || gestor)) { upd.avaliacao = av; await evento(id, s, "AVALIACAO", `Avaliação do solicitante: ${av}/5`); }
     await db.update(schema.workOrders).set(upd).where(eq(schema.workOrders.id, id)); await audit(s, "atualizar chamado", "work_orders", id, { status: w.status }, { status: upd.status ?? w.status });
@@ -80,13 +86,7 @@ export async function registrarVistoria(fd: FormData) {
 }
 
 // ---------- Fornecedores ----------
-export async function salvarFornecedor(fd: FormData) {
-  const s = await requireSession(); const id = int(fd, "id"); const b = "/operacoes/fornecedores";
-  try { assert(can.operacoes(s)); const nome = str(fd, "nome"); if (!nome) throw new Error("Informe o nome."); const d = { nome, servico: strOrNull(fd, "servico"), telefone: strOrNull(fd, "telefone"), email: strOrNull(fd, "email"), contrato: strOrNull(fd, "contrato"), ativo: str(fd, "ativo") !== "0", obs: strOrNull(fd, "obs") };
-    if (id) await db.update(schema.suppliers).set(d).where(eq(schema.suppliers.id, id)); else await db.insert(schema.suppliers).values(d); await audit(s, id ? "editar fornecedor" : "criar fornecedor", "suppliers", id, null, { nome });
-  } catch (e) { redirect(go(b, "erro", e instanceof Error ? e.message : "Erro")); }
-  redirect(go(b, "ok", "Fornecedor salvo."));
-}
+// v33 · o cadastro de fornecedores saiu daqui: agora é por etapas, com documento, homologação e trilha (operacoes/fornecedores/actions.ts).
 export async function abrirPreventiva(fd: FormData) {
   const s = await requireSession(); const assetId = Number(fd.get("assetId")); let id = 0;
   try { assert(can.operacoes(s)); const [a] = await db.select().from(schema.assets).where(eq(schema.assets.id, assetId)); if (!a) throw new Error("Ativo não encontrado."); assertScope(s, a.unitId);

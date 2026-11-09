@@ -1,6 +1,7 @@
 "use server";
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
+import * as F from "@/lib/fornecedores";
 import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
 import { audit, str, strOrNull, int, hoje } from "@/lib/utils";
 import { RENOVACAO, TIPO_LICENCA, podeContratos, podeLicencas, PERFIS_CONTRATO, PERFIS_LICENCA } from "@/lib/contratos";
@@ -29,12 +30,22 @@ export async function salvarContrato(fd: FormData) {
     const inicio = iso(strOrNull(fd, "inicio"), "Início"); if (!inicio) throw new Error("Informe o início."); const fim = iso(strOrNull(fd, "fim"), "Fim"); if (fim && fim < inicio) throw new Error("O fim é anterior ao início.");
     const renovacao = str(fd, "renovacao") || "MANUAL"; if (!RENOVACAO[renovacao]) throw new Error("Tipo de renovação inválido.");
     const aviso = Number(str(fd, "avisoPrevioDias") || "30"); if (!Number.isInteger(aviso) || aviso < 0 || aviso > 365) throw new Error("Aviso prévio: 0 a 365 dias.");
+    // v33 · fornecedor homologado para a abrangência (SUP-RN-015); fora disso só com exceção registrada; suspenso/inativo bloqueia
+    let excecao: string | null | undefined = undefined;
+    const [ant] = id ? await sql<{ supplier_id: number; unit_id: number | null }[]>`SELECT supplier_id, unit_id FROM contracts WHERE id=${id}` : [];
+    if (!ant || ant.supplier_id !== sup.id || ant.unit_id !== unitId) {
+      const e = await F.elegibilidadeFornecedor(sup.id, unitId);
+      if (e.nivel === "BLOQUEADO") await audit(s, "tentativa bloqueada: contrato com fornecedor bloqueado", "suppliers", sup.id, null, { objeto: str(fd, "objeto").slice(0, 80) });
+      excecao = F.exigirExcecao(e, str(fd, "excecaoMotivo"), s.nome) || null;
+    }
     const d = { supplierId: sup.id, unitId, objeto, numero: strOrNull(fd, "numero"), valorMensal: dinheiro(fd, "valorMensal", "Valor mensal"), valorTotal: dinheiro(fd, "valorTotal", "Valor total"), inicio, fim, renovacao, aviso, indice: strOrNull(fd, "reajusteIndice"), reajuste: iso(strOrNull(fd, "proximoReajuste"), "Próximo reajuste"), resp: await validarResp(int(fd, "responsavelUserId"), unitId, "contrato"), obs: strOrNull(fd, "obs") };
     if (id) {
       const [c] = await sql<{ unit_id: number | null; status: string }[]>`SELECT unit_id, status FROM contracts WHERE id=${id}`; if (!c) throw new Error("Contrato não encontrado"); const u = scopeUnit(s); if (u !== null && c.unit_id !== u) throw new Error("Sem acesso a este contrato."); if (c.status !== "VIGENTE") throw new Error("Contrato encerrado não se edita.");
+      if (excecao !== undefined) await sql`UPDATE contracts SET excecao_fornecedor=${excecao} WHERE id=${id}`;
       await sql`UPDATE contracts SET supplier_id=${d.supplierId}, unit_id=${d.unitId}, objeto=${d.objeto}, numero=${d.numero}, valor_mensal=${d.valorMensal}, valor_total=${d.valorTotal}, inicio=${d.inicio}, fim=${d.fim}, renovacao=${d.renovacao}, aviso_previo_dias=${d.aviso}, reajuste_indice=${d.indice}, proximo_reajuste=${d.reajuste}, responsavel_user_id=${d.resp}, obs=${d.obs}, updated_at=now() WHERE id=${id}`;
-    } else { const [r] = await sql<{ id: number }[]>`INSERT INTO contracts (supplier_id, unit_id, objeto, numero, valor_mensal, valor_total, inicio, fim, renovacao, aviso_previo_dias, reajuste_indice, proximo_reajuste, responsavel_user_id, obs, created_by) VALUES (${d.supplierId}, ${d.unitId}, ${d.objeto}, ${d.numero}, ${d.valorMensal}, ${d.valorTotal}, ${d.inicio}, ${d.fim}, ${d.renovacao}, ${d.aviso}, ${d.indice}, ${d.reajuste}, ${d.resp}, ${d.obs}, ${s.id}) RETURNING id`; id = r.id; }
-    await audit(s, novo ? "cadastrar contrato" : "editar contrato", "contracts", id, null, { objeto, fim, renovacao });
+    } else { const [r] = await sql<{ id: number }[]>`INSERT INTO contracts (supplier_id, unit_id, objeto, numero, valor_mensal, valor_total, inicio, fim, renovacao, aviso_previo_dias, reajuste_indice, proximo_reajuste, responsavel_user_id, obs, created_by, excecao_fornecedor) VALUES (${d.supplierId}, ${d.unitId}, ${d.objeto}, ${d.numero}, ${d.valorMensal}, ${d.valorTotal}, ${d.inicio}, ${d.fim}, ${d.renovacao}, ${d.aviso}, ${d.indice}, ${d.reajuste}, ${d.resp}, ${d.obs}, ${s.id}, ${excecao ?? null}) RETURNING id`; id = r.id; }
+    await audit(s, novo ? "cadastrar contrato" : "editar contrato", "contracts", id, null, { objeto, fim, renovacao, excecaoFornecedor: excecao ?? null });
+    if (excecao) await audit(s, "exceção de fornecedor em contrato", "suppliers", sup.id, null, { contrato: id, excecao });
   } catch (e) { redirect(go(novo ? "/operacoes/contratos" : `/operacoes/contratos/${id}`, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/operacoes/contratos/${id}`, "ok", "Contrato salvo."));
 }
@@ -47,8 +58,12 @@ export async function renovarContrato(fd: FormData) {
     if (!c || c.status !== "VIGENTE") throw new Error("Só contratos vigentes são renovados."); const u = scopeUnit(s); if (u !== null && c.unit_id !== u) throw new Error("Sem acesso a este contrato.");
     const inicio = iso(strOrNull(fd, "inicio"), "Início") ?? (c.fim ? new Date(Date.parse(c.fim + "T00:00:00Z") + 86400000).toISOString().slice(0, 10) : hoje()); const fim = iso(strOrNull(fd, "fim"), "Fim"); if (!fim || fim <= inicio) throw new Error("Informe o novo fim (depois do início).");
     const valor = dinheiro(fd, "valorMensal", "Valor mensal") ?? c.valor_mensal;
+    // v33 · renovar é contratar de novo: o fornecedor é conferido agora (suspenso bloqueia; fora da homologação, exceção com motivo)
+    const e = await F.elegibilidadeFornecedor(c.supplier_id, c.unit_id);
+    if (e.nivel === "BLOQUEADO") await audit(s, "tentativa bloqueada: renovar contrato com fornecedor bloqueado", "suppliers", c.supplier_id, null, { contrato: id });
+    const excecao = F.exigirExcecao(e, str(fd, "excecaoMotivo"), s.nome) || null;
     nid = await sql.begin(async tx => { await tx`UPDATE contracts SET status='ENCERRADO', obs=concat_ws(E'\n', obs, ${`Renovado em ${new Date().toLocaleDateString("pt-BR")}`}::text), updated_at=now() WHERE id=${id}`;
-      const [n] = await tx<{ id: number }[]>`INSERT INTO contracts (supplier_id, unit_id, objeto, numero, valor_mensal, inicio, fim, renovacao, aviso_previo_dias, reajuste_indice, proximo_reajuste, responsavel_user_id, renovado_de, obs, created_by) VALUES (${c.supplier_id}, ${c.unit_id}, ${c.objeto}, ${strOrNull(fd, "numero") ?? c.numero}, ${valor}, ${inicio}, ${fim}, ${c.renovacao}, ${c.aviso_previo_dias}, ${c.reajuste_indice}, ${iso(strOrNull(fd, "proximoReajuste"), "Próximo reajuste")}, ${c.responsavel_user_id}, ${id}, ${strOrNull(fd, "obs")}, ${s.id}) RETURNING id`; return n.id; });
+      const [n] = await tx<{ id: number }[]>`INSERT INTO contracts (supplier_id, unit_id, objeto, numero, valor_mensal, inicio, fim, renovacao, aviso_previo_dias, reajuste_indice, proximo_reajuste, responsavel_user_id, renovado_de, obs, created_by, excecao_fornecedor) VALUES (${c.supplier_id}, ${c.unit_id}, ${c.objeto}, ${strOrNull(fd, "numero") ?? c.numero}, ${valor}, ${inicio}, ${fim}, ${c.renovacao}, ${c.aviso_previo_dias}, ${c.reajuste_indice}, ${iso(strOrNull(fd, "proximoReajuste"), "Próximo reajuste")}, ${c.responsavel_user_id}, ${id}, ${strOrNull(fd, "obs")}, ${s.id}, ${excecao}) RETURNING id`; return n.id; });
     await audit(s, "renovar contrato", "contracts", nid, { anterior: id }, { inicio, fim, valor });
   } catch (e) { redirect(go(`/operacoes/contratos/${id}`, "erro", e instanceof Error ? e.message : "Erro")); }
   redirect(go(`/operacoes/contratos/${nid}`, "ok", "Contrato renovado: novo período criado; o anterior foi encerrado."));

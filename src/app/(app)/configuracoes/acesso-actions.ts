@@ -2,12 +2,13 @@
 import { redirect } from "next/navigation";
 import { sql } from "@/db";
 import { requireSession, can, assert, type Role } from "@/lib/auth";
-import { audit, str, int, hoje } from "@/lib/utils";
+import { audit, str, int, hoje, addDays, fmtData, caminhoSeguro } from "@/lib/utils";
 const erroMsg = (e: unknown) => (e instanceof Error ? e.message : "Erro inesperado.");
 import { comMensagem } from "@/lib/redirecionar";
 import {
   ATUACAO, ALCADAS, ehAlcada, defDoCargo, normalizarTelas, telasDaAtuacao, sincronizarAcessos, sincronizarPorCargo, calcularAcesso, lerPadraoAprovacao, rotuloAtuacao,
-  type DefAcesso, type AcessoUsuario, type Substituicao, type LinhaAcesso,
+  efetivoDoUsuario, lerAjuste, diferencaTelas, listaTelas, rotuloTela,
+  type DefAcesso, type AcessoUsuario, type Substituicao, type LinhaAcesso, type AjusteTelas,
 } from "@/lib/acesso";
 
 const go = (b: string, k: "ok" | "erro", m: string, hash = "") => comMensagem(b, k, m, hash);
@@ -31,9 +32,9 @@ function lerDef(fd: FormData): DefAcesso {
  * Trava de segurança: depois da mudança, alguém ativo continua podendo configurar o sistema (Configurações e Acesso por cargo)?
  * Simula o acesso de todos com a definição nova — evita trancar a rede para fora do próprio sistema.
  */
-async function aindaHaQuemConfigure(mudanca: { positionId?: number; def?: DefAcesso | null; userId?: number; acesso?: AcessoUsuario | null; substituicao?: Substituicao | null }) {
+async function aindaHaQuemConfigure(mudanca: { positionId?: number; def?: DefAcesso | null; userId?: number; acesso?: AcessoUsuario | null; substituicao?: Substituicao | null; ajustes?: Map<number, AjusteTelas | null> }) {
   const rows = await sql<LinhaAcesso[]>`
-    SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao,
+    SELECT u.id, u.nome, u.email, u.role, u.unit_id, u.employee_id, u.ativo, u.acesso, u.substituicao, u.ajuste_telas,
            e.unit_id AS e_unit, e.situacao AS e_sit, e.position_id AS e_pos, p.nome AS p_nome, p.acesso AS p_acesso, p.familia AS p_familia,
            ps.id AS s_pos, ps.nome AS s_nome, ps.acesso AS s_acesso, ps.familia AS s_familia
     FROM users u LEFT JOIN employees e ON e.id = u.employee_id LEFT JOIN positions p ON p.id = e.position_id
@@ -44,6 +45,7 @@ async function aindaHaQuemConfigure(mudanca: { positionId?: number; def?: DefAce
     const x = { ...r };
     if (mudanca.positionId && mudanca.def !== undefined) { if (x.e_pos === mudanca.positionId) x.p_acesso = mudanca.def; if (x.s_pos === mudanca.positionId) x.s_acesso = mudanca.def; }
     if (mudanca.userId === x.id) { if (mudanca.acesso !== undefined) x.acesso = mudanca.acesso; if (mudanca.substituicao !== undefined) x.substituicao = mudanca.substituicao; }
+    if (mudanca.ajustes?.has(x.id)) x.ajuste_telas = mudanca.ajustes.get(x.id) ?? null;
     const ef = calcularAcesso(x, padrao); if (ef.bloqueio) continue;
     const configura = ef.role === "RH" || ef.role === "DIRECAO";
     const ve = !ef.telas || (ef.telas.includes("/configuracoes") && ef.telas.includes("/configuracoes/acessos"));
@@ -157,7 +159,7 @@ export async function encerrarSubstituicao(fd: FormData) {
     if (!(await aindaHaQuemConfigure({ userId: id, substituicao: null }))) throw new Error("Encerrar agora tiraria o último acesso que configura o sistema.");
     await sql`UPDATE users SET substituicao=NULL WHERE id=${id}`; await audit(s, "substituição encerrada", "users", id, u.substituicao, null); await sincronizarAcessos([id]);
   } catch (e) { redirect(go(USUARIO(id), "erro", erroMsg(e))); }
-  redirect(go(USUARIO(id), "ok", "Substituição encerrada: o acesso volta ao do cargo."));
+  redirect(go(USUARIO(id), "ok", "Substituição encerrada: o acesso volta ao de sempre (o do cargo, com os ajustes desta pessoa, se houver)."));
 }
 
 /** Recalcula o acesso de todos agora (a rotina diária também faz). */
@@ -189,4 +191,128 @@ export async function salvarAprovacoesCargos(fd: FormData) {
     msg = n ? `Aprovações salvas em ${n} cargo(s).` : "Nada mudou.";
   } catch (e) { redirect(go("/configuracoes/acessos?aba=aprovacoes", "erro", erroMsg(e))); }
   redirect(go("/configuracoes/acessos?aba=aprovacoes", "ok", msg));
+}
+
+// ------------------------------------------------------------------ v32 · telas por pessoa (ajuste sobre o cargo)
+const TRAVA = "Com este ajuste ninguém ativo conseguiria configurar o sistema (Configurações e Acesso por cargo). Mantenha essas duas telas em pelo menos um acesso de Direção ou RH.";
+const dataBR = (d: string) => fmtData(d);
+/** Data de fim opcional do ajuste: de hoje até 1 ano. */
+function lerAte(fd: FormData): string | null {
+  const ate = str(fd, "ate"); if (!ate) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ate) || ate < hoje()) throw new Error("Data de fim do ajuste: hoje ou depois (ou deixe em branco para valer sem prazo).");
+  if (ate > addDays(hoje(), 366)) throw new Error("Ajuste com data de fim de no máximo 1 ano — sem prazo, deixe em branco.");
+  return ate;
+}
+const juntarMotivo = (novo: string, antes?: string | null) => (antes && antes !== novo && !novo.includes(antes) ? `${novo} · antes: ${antes}` : novo).slice(0, 400);
+
+/** Salva as telas de uma pessoa: o que ficou marcado × o que ela teria pelo cargo. Guarda só a diferença (a mais e a menos). */
+export async function salvarTelasPessoa(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; let msg = "";
+  try {
+    assert(can.configurar(s), "Só Direção e RH ajustam as telas de uma pessoa.");
+    const r = await efetivoDoUsuario(id); if (!r) throw new Error("Acesso não encontrado.");
+    if (!r.linha.employee_id) throw new Error("Conta sem ficha: as telas dela são definidas no próprio acesso da conta.");
+    const role = r.base.role; const disp = new Set(telasDaAtuacao(role).map(t => t.chave));
+    const marcadas = fd.getAll("telas").map(String).filter(k => disp.has(k));
+    const { mais, menos } = diferencaTelas(role, r.base.telas, marcadas); const antes = lerAjuste(r.linha.ajuste_telas);
+    if (!mais.length && !menos.length) {
+      if (!antes) { msg = "Nada mudou: as telas marcadas são exatamente as do cargo."; }
+      else {
+        if (!(await aindaHaQuemConfigure({ ajustes: new Map([[id, null]]) }))) throw new Error(TRAVA);
+        await sql`UPDATE users SET ajuste_telas=NULL WHERE id=${id}`; await audit(s, "ajuste de telas retirado", "users", id, antes, null);
+        msg = `As telas ficaram iguais às do cargo: o ajuste saiu e ${r.linha.nome} volta a seguir o cargo em tudo.`;
+      }
+    } else {
+      const motivo = str(fd, "motivo"); if (motivo.length < 10) throw new Error("Escreva o motivo do ajuste (mínimo 10 caracteres) — ele fica à vista na Matriz de acesso.");
+      const ate = lerAte(fd); const novo: AjusteTelas = { mais, menos, motivo: motivo.slice(0, 400), em: hoje(), por: s.nome, ate };
+      if (!(await aindaHaQuemConfigure({ ajustes: new Map([[id, novo]]) }))) throw new Error(TRAVA);
+      await sql`UPDATE users SET ajuste_telas=${JSON.stringify(novo)}::jsonb WHERE id=${id}`; await audit(s, "ajuste de telas da pessoa", "users", id, antes, novo);
+      msg = `Telas de ${r.linha.nome} salvas: ${mais.length} a mais e ${menos.length} a menos que o cargo${ate ? `, até ${dataBR(ate)}` : ""}. O resto continua seguindo o cargo.`;
+    }
+    await sincronizarAcessos([id]);
+  } catch (e) { redirect(go(USUARIO(id), "erro", erroMsg(e), "#telas")); }
+  redirect(go(USUARIO(id), "ok", msg, "#telas"));
+}
+
+/** Tira o ajuste: a pessoa volta a seguir o cargo em todas as telas. */
+export async function tirarAjusteTelas(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const volta = caminhoSeguro(str(fd, "voltar"), `${USUARIO(id)}#telas`); let msg = "";
+  try {
+    assert(can.configurar(s), "Só Direção e RH ajustam as telas de uma pessoa.");
+    const [u] = await sql<{ nome: string; ajuste_telas: unknown }[]>`SELECT nome, ajuste_telas FROM users WHERE id=${id}`; if (!u) throw new Error("Acesso não encontrado.");
+    const antes = lerAjuste(u.ajuste_telas); if (!antes) throw new Error("Esta pessoa já segue o cargo em todas as telas.");
+    if (!(await aindaHaQuemConfigure({ ajustes: new Map([[id, null]]) }))) throw new Error(TRAVA);
+    await sql`UPDATE users SET ajuste_telas=NULL WHERE id=${id}`; await audit(s, "ajuste de telas retirado", "users", id, antes, null); await sincronizarAcessos([id]);
+    msg = `${u.nome} volta a seguir o cargo em todas as telas.`;
+  } catch (e) { redirect(go(volta, "erro", erroMsg(e))); }
+  redirect(go(volta, "ok", msg));
+}
+
+/** Copia o ajuste de outra pessoa (as mesmas telas a mais e a menos, recalculadas sobre o cargo de quem recebe). */
+export async function copiarAjusteTelas(fd: FormData) {
+  const s = await requireSession(); const id = int(fd, "id") ?? 0; const de = int(fd, "origemId") ?? 0; let msg = "";
+  try {
+    assert(can.configurar(s), "Só Direção e RH ajustam as telas de uma pessoa."); assert(id !== de, "Escolha outra pessoa para copiar.");
+    const [r, o] = await Promise.all([efetivoDoUsuario(id), efetivoDoUsuario(de)]); if (!r || !o) throw new Error("Acesso não encontrado.");
+    if (!r.linha.employee_id) throw new Error("Conta sem ficha: as telas dela são definidas no próprio acesso da conta.");
+    const fonte = lerAjuste(o.linha.ajuste_telas); if (!fonte) throw new Error(`${o.linha.nome} não tem ajuste de telas para copiar.`);
+    const role = r.base.role; const cat = new Set(telasDaAtuacao(role).filter(t => !t.fixa).map(t => t.chave));
+    const alvo = new Set(listaTelas(role, r.base.telas)); for (const k of fonte.menos) alvo.delete(k); for (const k of fonte.mais) if (cat.has(k)) alvo.add(k);
+    const { mais, menos } = diferencaTelas(role, r.base.telas, [...alvo]); const antes = lerAjuste(r.linha.ajuste_telas);
+    if (!mais.length && !menos.length) throw new Error(`Nada a copiar: com o cargo de ${r.linha.nome}, o ajuste de ${o.linha.nome} não muda nenhuma tela.`);
+    const novo: AjusteTelas = { mais, menos, motivo: `Mesmo ajuste de ${o.linha.nome}: ${fonte.motivo}`.slice(0, 400), em: hoje(), por: s.nome, ate: fonte.ate && fonte.ate >= hoje() ? fonte.ate : null };
+    if (!(await aindaHaQuemConfigure({ ajustes: new Map([[id, novo]]) }))) throw new Error(TRAVA);
+    await sql`UPDATE users SET ajuste_telas=${JSON.stringify(novo)}::jsonb WHERE id=${id}`; await audit(s, "ajuste de telas da pessoa (cópia)", "users", id, antes, { ...novo, de: o.linha.nome }); await sincronizarAcessos([id]);
+    msg = `${r.linha.nome} recebeu o ajuste de ${o.linha.nome}: ${mais.length} a mais e ${menos.length} a menos que o cargo.`;
+  } catch (e) { redirect(go(USUARIO(id), "erro", erroMsg(e), "#telas")); }
+  redirect(go(USUARIO(id), "ok", msg, "#telas"));
+}
+
+/**
+ * Ajuste em lote: várias pessoas e várias telas de uma vez — acrescentar, retirar ou voltar ao padrão do cargo.
+ * Cada pessoa continua seguindo o próprio cargo; só a diferença é guardada. Tela que a atuação da pessoa não tem não entra (sem efeito).
+ */
+export async function ajusteTelasLote(fd: FormData) {
+  const s = await requireSession(); const volta = caminhoSeguro(str(fd, "voltar"), "/configuracoes/acessos?aba=pessoas"); let msg = "";
+  try {
+    assert(can.configurar(s), "Só Direção e RH ajustam as telas das pessoas.");
+    const ids = [...new Set(fd.getAll("users").map(Number).filter(x => Number.isInteger(x) && x > 0))]; if (!ids.length) throw new Error("Marque as pessoas que recebem o ajuste.");
+    if (ids.length > 300) throw new Error("No máximo 300 pessoas por vez.");
+    const acao = str(fd, "acao"); if (!["ACRESCENTAR", "RETIRAR", "PADRAO"].includes(acao)) throw new Error("Escolha o que fazer: acrescentar, retirar ou voltar ao padrão do cargo.");
+    const telas = [...new Set(fd.getAll("telas").map(String))]; if (acao !== "PADRAO" && !telas.length) throw new Error("Marque as telas.");
+    const motivo = str(fd, "motivo"); if (acao !== "PADRAO" && motivo.length < 10) throw new Error("Escreva o motivo do ajuste (mínimo 10 caracteres) — ele fica à vista na Matriz de acesso.");
+    const ate = acao === "PADRAO" ? null : lerAte(fd);
+    const novos = new Map<number, AjusteTelas | null>(); const antesDe = new Map<number, AjusteTelas | null>(); const nomes = new Map<number, string>();
+    let inclusoes = 0, retiradas = 0, voltas = 0, semEfeito = 0, mudaramData = 0; const semFicha: string[] = [];
+    for (const id of ids) {
+      const r = await efetivoDoUsuario(id); if (!r || !r.linha.ativo) continue; if (!r.linha.employee_id) { semFicha.push(r.linha.nome); continue; }
+      const role = r.base.role; const cat = new Set(telasDaAtuacao(role).filter(t => !t.fixa).map(t => t.chave)); const base = new Set(listaTelas(role, r.base.telas));
+      const atual = lerAjuste(r.linha.ajuste_telas); nomes.set(id, r.linha.nome);
+      const ef = new Set([...base].filter(k => !(atual?.menos ?? []).includes(k))); for (const k of atual?.mais ?? []) if (cat.has(k)) ef.add(k);
+      if (acao === "PADRAO" && !telas.length) { if (atual) { novos.set(id, null); antesDe.set(id, atual); voltas++; } continue; }
+      for (const k of telas) {
+        if (!cat.has(k)) { semEfeito++; continue; }
+        if (acao === "ACRESCENTAR") { if (ef.has(k)) semEfeito++; else { ef.add(k); inclusoes++; } }
+        else if (acao === "RETIRAR") { if (!ef.has(k)) semEfeito++; else { ef.delete(k); retiradas++; } }
+        else { const naBase = base.has(k); if (naBase === ef.has(k)) semEfeito++; else { if (naBase) ef.add(k); else ef.delete(k); voltas++; } }
+      }
+      const { mais, menos } = diferencaTelas(role, r.base.telas, [...ef]);
+      if (JSON.stringify([mais, menos]) === JSON.stringify([atual?.mais.filter(k => cat.has(k)) ?? [], atual?.menos.filter(k => cat.has(k)) ?? []])) continue;
+      if (!mais.length && !menos.length) { if (atual) { novos.set(id, null); antesDe.set(id, atual); } continue; }
+      const dataNova = acao === "PADRAO" ? atual?.ate ?? null : ate; if ((atual?.ate ?? null) !== dataNova && atual) mudaramData++;
+      novos.set(id, { mais, menos, motivo: acao === "PADRAO" ? (atual?.motivo ?? "ajuste revisto") : juntarMotivo(motivo, atual?.motivo), em: hoje(), por: s.nome, ate: dataNova });
+      antesDe.set(id, atual);
+    }
+    if (!novos.size) throw new Error(semFicha.length && semFicha.length === ids.length ? "Contas sem ficha não recebem ajuste: as telas delas são definidas no próprio acesso da conta." : "Nada mudou: as pessoas marcadas já estavam assim (ou a atuação delas não tem essas telas).");
+    if (!(await aindaHaQuemConfigure({ ajustes: novos }))) throw new Error(TRAVA);
+    for (const [id, aj] of novos) {
+      await sql`UPDATE users SET ajuste_telas=${aj ? JSON.stringify(aj) : null}::jsonb WHERE id=${id}`;
+      await audit(s, aj ? "ajuste de telas da pessoa (lote)" : "ajuste de telas retirado (lote)", "users", id, antesDe.get(id) ?? null, aj);
+    }
+    await audit(s, "ajuste de telas em lote", "users", null, null, { acao, pessoas: novos.size, telas: telas.map(k => rotuloTela(k)), inclusoes, retiradas, voltas, semEfeito, ate });
+    await sincronizarAcessos([...novos.keys()]);
+    const partes = acao === "ACRESCENTAR" ? `${inclusoes} tela(s) acrescentada(s)` : acao === "RETIRAR" ? `${retiradas} tela(s) retirada(s)` : `${voltas} volta(s) ao padrão do cargo`;
+    msg = `Ajuste em lote aplicado a ${novos.size} pessoa(s): ${partes}${ate ? `, até ${dataBR(ate)}` : ""}.${semEfeito ? ` ${semEfeito} sem efeito (a pessoa já estava assim ou a atuação dela não tem a tela).` : ""}${semFicha.length ? ` Contas sem ficha ficaram de fora: ${semFicha.join(", ")}.` : ""}${mudaramData ? ` Em ${mudaramData} pessoa(s) a data de fim do ajuste mudou (uma data por pessoa).` : ""}`;
+  } catch (e) { redirect(go(volta, "erro", erroMsg(e))); }
+  redirect(go(volta, "ok", msg));
 }

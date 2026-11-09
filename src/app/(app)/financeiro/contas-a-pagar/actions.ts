@@ -6,6 +6,7 @@ import { requireSession, assert, scopeUnit, type Session } from "@/lib/auth";
 import { audit, str, int, hoje, caminhoSeguro, getSettings } from "@/lib/utils";
 import { competenciaFechada, mensagemTrava } from "@/lib/conciliacao";
 import { notificar } from "@/lib/comunicacao";
+import * as F from "@/lib/fornecedores";
 import { aprovaCP, operaCP, baixaManualCP, motivosAprovacao, aprovacoesExigidas, numeroCP, opcoesFeriado, MOTIVO_ROTULO, NATUREZAS, ehNatureza, type MotivoCP } from "@/lib/contas-pagar";
 import { contaParaLancar, classificarPelaBaixa, garantirCentrosPadrao } from "@/lib/plano-contas";
 import { gerarParcelas, lerValorBr, somaCentavos, fmtBr, fmtDataBr, proximoDiaUtil, INTERVALO_LABEL, type Intervalo } from "@/lib/parcelas";
@@ -130,23 +131,46 @@ export async function criarContaPagar(fd: FormData) {
         AND ((${numeroDocumento}::text IS NOT NULL AND numero_documento=${numeroDocumento}) OR (valor_total=${valor} AND primeiro_vencimento=${venc1}::date)) LIMIT 1`;
       if (d) throw new Error(`Parece duplicado: ${numeroCP(d.numero)} já tem o mesmo fornecedor e ${numeroDocumento ? "número de documento" : "valor e 1º vencimento"}. Se não for, marque “não é duplicado” e salve de novo.`);
     }
+    // v33 · fornecedor homologado (SUP-RN-004/015): elegibilidade no lançamento, pela unidade; fora dela só com exceção formal (SUP-RN-009).
+    // Exceção = controle independente: o título vai para a aprovação de outra pessoa (quem registrou a exceção não libera sozinho).
+    const cfgF = await F.cfgForn(); const motivoExc = str(fd, "excecaoMotivo").replace(/\s+/g, " ").slice(0, 300); let excecaoFornecedor: string | null = null;
+    const cadastrarNovo = !supplierId && str(fd, "cadastrar") === "1";
+    if (supplierId) {
+      const e = await F.elegibilidadeFornecedor(supplierId, unitId, cfgF);
+      if (e.nivel === "BLOQUEADO") await audit(s, "tentativa bloqueada: lançar conta para fornecedor bloqueado", "suppliers", supplierId, null, { situacao: e.texto });
+      excecaoFornecedor = F.exigirExcecao(e, motivoExc, s.nome) || null;
+    } else {
+      const nn = F.nomeNormalizado(fornecedor); const [igual] = (await sql<{ id: number; nome: string; status: string }[]>`SELECT id, nome, status FROM suppliers`).filter(x => F.nomeNormalizado(x.nome) === nn);
+      if (igual) throw new Error(["SUSPENSO", "REJEITADO", "INATIVO"].includes(igual.status) ? `${igual.nome} está ${F.STATUS_FORN[igual.status].toLowerCase()} no cadastro de fornecedores: não dá para lançar nem recadastrar com o mesmo nome.` : `${igual.nome} já está no cadastro de fornecedores: escolha na lista em vez de cadastrar de novo.`);
+      excecaoFornecedor = `Fornecedor ${cadastrarNovo ? "novo, cadastrado no lançamento (em cadastro, sem homologação)" : "sem cadastro (só o nome no título)"} · exceção registrada por ${s.nome}${motivoExc ? `: ${motivoExc}` : ""}`;
+    }
     const motivos: MotivoCP[] = await motivosAprovacao(cfg, { unitId, categoria, parcelas, natureza });
+    if (excecaoFornecedor && cfgF.excecaoExigeAprovacao !== false) motivos.push({ codigo: "FORNECEDOR", texto: `${excecaoFornecedor.split(" · ")[0]} — controle independente: outra pessoa com a alçada aprova.` });
     const necessarias = aprovacoesExigidas(cfg, motivos, total); const aprova = aprovaCP(cfg, s);
-    const aprovacoes: Aprovacao[] = necessarias && aprova ? [{ userId: s.id, nome: s.nome, at: new Date().toISOString() }] : [];
+    // com exceção de fornecedor, quem lançou só conta como 1ª aprovação quando a dupla checagem já exige outra pessoa
+    const contaQuemLanca = necessarias > 0 && aprova && !(motivos.some(m => m.codigo === "FORNECEDOR") && necessarias < 2);
+    const aprovacoes: Aprovacao[] = contaQuemLanca ? [{ userId: s.id, nome: s.nome, at: new Date().toISOString() }] : [];
     const status = aprovacoes.length >= necessarias ? "ATIVO" : "AGUARDANDO_APROVACAO";
-    if (!supplierId && str(fd, "cadastrar") === "1") { const [f] = await sql<{ id: number }[]>`INSERT INTO suppliers (nome, servico, ativo) VALUES (${fornecedor}, ${categoria}, true) RETURNING id`; supplierId = f.id; await audit(s, "cadastrar fornecedor (contas a pagar)", "suppliers", f.id, null, { nome: fornecedor }); }
+    if (cadastrarNovo) {
+      const catForn = cfgF.categorias.some(([n]) => n === categoria) ? categoria : null;
+      const [f] = await sql<{ id: number }[]>`INSERT INTO suppliers (nome, servico, ativo, status, origem, tipo, categoria, criticidade, criado_por) VALUES (${fornecedor}, ${categoria}, true, 'RASCUNHO', 'CONTAS_A_PAGAR', 'PJ', ${catForn}, ${F.criticidadeDaCategoria(cfgF, catForn)}, ${s.id}) RETURNING id`;
+      supplierId = f.id; await audit(s, "cadastrar fornecedor (contas a pagar)", "suppliers", f.id, null, { nome: fornecedor, status: "RASCUNHO", origem: "CONTAS_A_PAGAR" });
+    }
     const novo = await sql.begin(async tx => {
       await tx`SELECT pg_advisory_xact_lock(270001)`;
+      // TC-SUP-004 · suspensão em corrida: confere de novo dentro da transação, com a linha do fornecedor travada para leitura
+      if (supplierId) { const [st] = await tx<{ status: string }[]>`SELECT status FROM suppliers WHERE id=${supplierId} FOR SHARE`; if (st && ["SUSPENSO", "REJEITADO", "INATIVO"].includes(st.status)) throw new Error(`Fornecedor ${F.STATUS_FORN[st.status].toLowerCase()} agora há pouco: lançamento bloqueado.`); }
       const [{ prox }] = await tx<{ prox: number }[]>`SELECT coalesce(max(numero), 0)::int + 1 AS prox FROM payables`;
-      const [p] = await tx<{ id: number }[]>`INSERT INTO payables (numero, unit_id, company_id, supplier_id, fornecedor_nome, contract_id, responsavel_user_id, categoria, conta_id, cost_center_id, tipo_documento, numero_documento, chave_nfe, emissao, descricao, recorrente, natureza, valor_total, parcelas, intervalo, dias_intervalo, primeiro_vencimento, ajustar_dia_util, status, motivos_aprovacao, aprovacoes, aprovacoes_necessarias, aprovado_por, aprovado_em, obs, created_by)
+      const [p] = await tx<{ id: number }[]>`INSERT INTO payables (numero, unit_id, company_id, supplier_id, fornecedor_nome, contract_id, responsavel_user_id, categoria, conta_id, cost_center_id, tipo_documento, numero_documento, chave_nfe, emissao, descricao, recorrente, natureza, valor_total, parcelas, intervalo, dias_intervalo, primeiro_vencimento, ajustar_dia_util, status, motivos_aprovacao, aprovacoes, aprovacoes_necessarias, aprovado_por, aprovado_em, obs, created_by, excecao_fornecedor)
         VALUES (${prox}, ${unitId}, ${companyId}, ${supplierId}, ${fornecedor}, ${contractId}, ${resp.id}, ${categoria}, ${contaId}, ${centroId}, ${tipoDocumento}, ${numeroDocumento}, ${chaveNfe}, ${emissao}, ${descricao}, ${recorrente}, ${natureza}, ${valor}, ${n}, ${intervalo}, ${dias}, ${venc1}, ${ajustar}, ${status}, ${motivos.length ? JSON.stringify(motivos) : null}::jsonb, ${JSON.stringify(aprovacoes)}::jsonb, ${necessarias},
-          ${status === "ATIVO" && aprovacoes.length ? s.id : null}, ${status === "ATIVO" && aprovacoes.length ? new Date().toISOString() : null}, ${obs}, ${s.id}) RETURNING id`;
+          ${status === "ATIVO" && aprovacoes.length ? s.id : null}, ${status === "ATIVO" && aprovacoes.length ? new Date().toISOString() : null}, ${obs}, ${s.id}, ${excecaoFornecedor}) RETURNING id`;
       for (const x of parcelas) await tx`INSERT INTO payable_installments (payable_id, parcela, emissao, vencimento, valor, competencia, codigo_barras) VALUES (${p.id}, ${x.parcela}, ${x.emissao}, ${x.vencimento}, ${x.valor}, ${x.competencia}, ${x.parcela === 1 ? boleto : null})`;
       return { id: p.id, numero: prox };
     });
     await evento(novo.id, s, `Lançada: ${n} parcela(s) ${recorrente ? `recorrentes de ${fmtBr(valor)}` : `somando ${fmtBr(total)}`}${natureza !== "OPERACAO" ? ` · ${NATUREZAS[natureza].curto}` : ""} · ${INTERVALO_LABEL[intervalo].toLowerCase()} · 1º vencimento ${fmtDataBr(parcelas[0].vencimento)}${ajustar ? " (dia útil)" : ""}${chaveNfe ? " · NF-e conferida" : ""}${boleto ? " · boleto da 1ª parcela conferido" : ""}.`);
     if (motivos.length) await evento(novo.id, s, status === "ATIVO" ? `Aprovada no lançamento por quem tem a alçada: ${motivos.map(m => MOTIVO_ROTULO[m.codigo]).join(", ")}.` : `Aguardando ${necessarias === 2 ? (aprovacoes.length ? "a 2ª aprovação (dupla checagem; a 1ª é de quem lançou)" : "duas aprovações de pessoas diferentes (dupla checagem)") : "aprovação"}: ${motivos.map(m => m.texto).join(" ")}`);
-    await audit(s, "lançar conta a pagar", "payables", novo.id, null, { numero: novo.numero, fornecedor, categoria, contaId, centroId, natureza, unitId, companyId, recorrente, valor, parcelas: n, compromisso: total, status, motivos: motivos.map(m => m.codigo), aprovacoesNecessarias: necessarias, nfe: !!chaveNfe, boleto: !!boleto });
+    await audit(s, "lançar conta a pagar", "payables", novo.id, null, { numero: novo.numero, fornecedor, categoria, contaId, centroId, natureza, unitId, companyId, recorrente, valor, parcelas: n, compromisso: total, status, motivos: motivos.map(m => m.codigo), aprovacoesNecessarias: necessarias, nfe: !!chaveNfe, boleto: !!boleto, excecaoFornecedor });
+    if (excecaoFornecedor && supplierId) { await audit(s, "exceção de fornecedor em conta a pagar", "suppliers", supplierId, null, { titulo: numeroCP(novo.numero), excecao: excecaoFornecedor }); await evento(novo.id, s, `Exceção de fornecedor: ${excecaoFornecedor}`); }
     if (status === "AGUARDANDO_APROVACAO") await notificar(await aprovadores(cfg, [s.id]), "Conta a pagar aguardando aprovação", `${numeroCP(novo.numero)} · ${fmtBr(total)} · ${categoria}`, `${BASE}/${novo.id}`, "ACAO", `cpaprov:${novo.id}`);
     destino = `${BASE}/${novo.id}`; msg = status === "ATIVO" ? `${numeroCP(novo.numero)} lançada com ${n} parcela(s) — já entra no caixa projetado.` : `${numeroCP(novo.numero)} lançada e enviada para aprovação (${motivos.map(m => MOTIVO_ROTULO[m.codigo].toLowerCase()).join(", ")}${necessarias === 2 ? "; dupla checagem" : ""}).`;
   } catch (e) { redirect(go(back, "erro", msgErro(e))); }
@@ -163,6 +187,10 @@ export async function decidirContaPagar(fd: FormData) {
     const ja = (p.aprovacoes ?? []); assert(!ja.some(a => a.userId === s.id), "Você já aprovou este título: a dupla checagem pede outra pessoa.");
     const motivo = str(fd, "motivo").slice(0, 1000);
     if (decisao === "APROVAR") {
+      // v33 · TC-SUP-004: o fornecedor é conferido de novo na aprovação; suspenso/inativo depois do lançamento só a Direção aprova, com motivo
+      if (p.supplier_id) { const e = await F.elegibilidadeFornecedor(p.supplier_id, p.unit_id);
+        if (e.nivel === "BLOQUEADO") { if (s.role !== "DIRECAO" || motivo.length < 10) { await audit(s, "tentativa bloqueada: aprovar conta de fornecedor bloqueado", "suppliers", p.supplier_id, null, { titulo: numeroCP(p.numero) }); throw new Error(`${e.texto} Obrigação em curso: só a Direção aprova, escrevendo o motivo (mínimo 10 caracteres) — ou rejeite o título.`); }
+          await evento(id, s, `Aprovação ciente da situação do fornecedor (${e.texto.split(":")[0]}): ${motivo}`); } }
       const novas = [...ja, { userId: s.id, nome: s.nome, at: new Date().toISOString() }]; const completa = novas.length >= Math.max(1, p.aprovacoes_necessarias);
       await sql`UPDATE payables SET aprovacoes=${JSON.stringify(novas)}::jsonb, status=${completa ? "ATIVO" : "AGUARDANDO_APROVACAO"}, aprovado_por=${completa ? s.id : null}, aprovado_em=${completa ? new Date().toISOString() : null}, updated_at=now() WHERE id=${id} AND status='AGUARDANDO_APROVACAO'`;
       await evento(id, s, completa ? `Aprovada${novas.length > 1 ? ` (${novas.length}ª aprovação — dupla checagem completa)` : ""}${motivo ? `: ${motivo}` : "."}` : `1ª aprovação de ${p.aprovacoes_necessarias} (dupla checagem)${motivo ? `: ${motivo}` : ""} — falta outra pessoa com a alçada.`);

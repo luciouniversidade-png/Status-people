@@ -1,4 +1,8 @@
 import re, subprocess, requests
+from datetime import datetime as _dt, timedelta as _td
+from zoneinfo import ZoneInfo as _ZI
+# títulos de teste vencidos há 30 dias (dentro da janela de 90 dias da inadimplência), em qualquer data em que a suíte rode
+VENC = _dt.now(_ZI("America/Campo_Grande")).date() - _td(days=30); COMP = VENC.strftime("%Y-%m")
 B = "http://localhost:3100"
 def psql(q): return subprocess.run(["su", "postgres", "-c", f"/usr/lib/postgresql/16/bin/psql -h /tmp/pg -U status -d status_people -q -t -c \"{q}\""], capture_output=True, text=True).stdout.strip()
 def mk(): s = requests.Session(); s.headers.update({"Origin": B}); return s
@@ -33,7 +37,7 @@ html = page("/estrategia/okrs"); assert html.count("<tr") >= 6; oid = re.search(
 # KR automático lê do sistema: inadimplência sem títulos = sem medição; criar título vencido → 100% inadimplência, KR desce
 html = page(f"/estrategia/okrs/{oid}"); assert "lido do sistema" in html and "Inadimplência (90 dias)" in html; assert "—" in html; print("KR com fonte automática exibido ok")
 car = psql("SELECT id FROM units WHERE nome='Carandá'").strip()
-psql(f"INSERT INTO receivables (aluno_nome, unit_id, tipo, competencia, vencimento, valor, status) VALUES ('Dev', {car}, 'MENSALIDADE', '2026-08', '2026-08-10', 1000, 'ABERTO'), ('Pag', {car}, 'MENSALIDADE', '2026-08', '2026-08-10', 1000, 'PAGO')")
+psql(f"INSERT INTO receivables (aluno_nome, unit_id, tipo, competencia, vencimento, valor, status) VALUES ('Dev', {car}, 'MENSALIDADE', '{COMP}', '{VENC.isoformat()}', 1000, 'ABERTO'), ('Pag', {car}, 'MENSALIDADE', '{COMP}', '{VENC.isoformat()}', 1000, 'PAGO')")
 html = page(f"/estrategia/okrs/{oid}"); i = html.find("Inadimplência (90 dias)"); row = html[i:i + 1500]; assert ">50<" in row or "50</" in row, row[:600]; print("KR lido do sistema: inadimplência 50% ok")
 assert psql("SELECT valor_atual FROM key_results WHERE titulo='Inadimplência (90 dias)'").strip() == "50.00"; print("valor gravado no KR ok")
 # novo objetivo + KR manual + check-in → progresso

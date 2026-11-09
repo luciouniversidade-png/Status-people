@@ -12,6 +12,8 @@ export const ENTIDADES: Record<string, { tabela: string; unidade: string | null 
   // v24
   payroll_cycle: { tabela: "payroll_cycles", unidade: null }, cash_entry: { tabela: "cash_entries", unidade: "unit_id" }, obligation: { tabela: "obligations", unidade: "unit_id" }, fiscal_case: { tabela: "fiscal_cases", unidade: null },
   timesheet_day: { tabela: "timesheet_days", unidade: null }, candidate_doc: { tabela: "candidate_doc_requests", unidade: null }, sst_exam: { tabela: "sst_exams", unidade: null }, sst_incident: { tabela: "sst_incidents", unidade: "unit_id" }, audit: { tabela: "audits", unidade: "unit_id" }, nonconformity: { tabela: "nonconformities", unidade: "unit_id" },
+  // v33 · documento do fornecedor (habilitação): anexado pelo cadastro ou pelo portal do fornecedor
+  supplier_document: { tabela: "supplier_documents", unidade: null },
 };
 
 /** Unidade do registro dono do anexo (para o escopo por unidade). */
@@ -61,6 +63,8 @@ export async function acessoAnexoRestrito(s: Session, entidade: string, id: numb
     if (modo === "ver" && s.employeeId) { const [d] = await sql<{ employee_id: number }[]>`SELECT employee_id FROM timesheet_days WHERE id=${id}`; return d?.employee_id === s.employeeId; }
     return false;
   }
+  // v33 · documentos do fornecedor: vê quem trabalha com Fornecedores; anexa quem cadastra (o portal grava pelo próprio fluxo)
+  if (entidade === "supplier_document") { const { veFornecedores, podeCadastrar } = await import("./fornecedores"); return (modo === "ver" ? veFornecedores(s) : podeCadastrar(s)) ? true : false; }
   if (entidade === "request") {
     if (["DIRECAO", "RH", "FINANCEIRO"].includes(s.role)) return true;
     const [r] = await sql<{ ok: boolean; unit_id: number | null }[]>`SELECT (solicitante_user_id=${s.id} OR EXISTS (SELECT 1 FROM jsonb_array_elements(etapas) e WHERE (e->'aprovadores') @> to_jsonb(${s.id}::int))) AS ok, unit_id FROM requests WHERE id=${id}`;

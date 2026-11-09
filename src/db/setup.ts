@@ -673,6 +673,75 @@ ALTER TABLE objectives ADD COLUMN IF NOT EXISTS parent_id integer;
 CREATE INDEX IF NOT EXISTS objectives_parent_idx ON objectives(parent_id);
 -- v31 · calibração: o retrato de antes (nível, potencial e nota; ou atitudes, resultados e nota) para comparar pré × pós
 ALTER TABLE perf_reviews ADD COLUMN IF NOT EXISTS pre_calibracao jsonb;
+-- v32 · telas por pessoa: o padrão continua sendo o cargo; o ajuste guarda só o que é diferente para esta pessoa (telas a mais e a menos)
+ALTER TABLE users ADD COLUMN IF NOT EXISTS ajuste_telas jsonb;
+CREATE INDEX IF NOT EXISTS users_ajuste_telas_idx ON users ((ajuste_telas IS NOT NULL)) WHERE ajuste_telas IS NOT NULL;
+-- v33 · fornecedores (SO-ARCH-SUP-001): mestre + estabelecimentos (CNPJ/CPF) + unidades autorizadas; homologação por risco, com
+-- pareceres e decisão segregada; documentos com validade; dados bancários em quarentena (conferência + aprovação independentes);
+-- avaliação e ocorrências; portal do fornecedor sem autoaprovação. Os fornecedores que já existiam entram como LEGADO (revisar).
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS tipo text NOT NULL DEFAULT 'PJ';
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS categoria text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS subcategoria text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS criticidade text NOT NULL DEFAULT 'BAIXA';
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS criticidade_fatores jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS criticidade_motivo text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'LEGADO';
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS status_motivo text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS status_em timestamp;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS status_por text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS abrangencia text NOT NULL DEFAULT 'REDE';
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS responsavel_user_id integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS contingencia text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS capacidade text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS origem text NOT NULL DEFAULT 'LEGADO';
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS criado_por integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS created_at timestamp NOT NULL DEFAULT now();
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS updated_at timestamp NOT NULL DEFAULT now();
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS versao integer NOT NULL DEFAULT 1;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS homologado_em timestamp;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS homologado_por text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS revalidar_em date;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS restricoes text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS restricao_ate date;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS risco_revisado text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS risco_revisado_motivo text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS forma_pagamento text;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS prazo_dias integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS desconto_pct numeric(5,2);
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS desconto_dias integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS conta_id integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS cost_center_id integer;
+ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS condicao_obs text;
+UPDATE suppliers SET status='INATIVO' WHERE status='LEGADO' AND ativo=false;
+CREATE INDEX IF NOT EXISTS suppliers_status_idx ON suppliers(status, categoria);
+CREATE TABLE IF NOT EXISTS supplier_establishments (id serial PRIMARY KEY, supplier_id integer NOT NULL, tipo_doc text NOT NULL DEFAULT 'CNPJ', documento text NOT NULL, pais text NOT NULL DEFAULT 'BR', razao_social text NOT NULL, nome_fantasia text, matriz boolean NOT NULL DEFAULT true, ie text, im text, regime text, cnae text, situacao_cadastral text NOT NULL DEFAULT 'NAO_CONSULTADA', situacao_fonte text, situacao_em date, situacao_por text, cep text, logradouro text, numero text, complemento text, bairro text, cidade text, uf text, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS supplier_estab_doc_uq ON supplier_establishments(tipo_doc, documento) WHERE ativo;
+CREATE INDEX IF NOT EXISTS supplier_estab_sup_idx ON supplier_establishments(supplier_id);
+CREATE INDEX IF NOT EXISTS supplier_estab_raiz_idx ON supplier_establishments((left(documento, 8))) WHERE tipo_doc='CNPJ';
+CREATE TABLE IF NOT EXISTS supplier_units (supplier_id integer NOT NULL, unit_id integer NOT NULL, status text NOT NULL DEFAULT 'AUTORIZADA', desde date NOT NULL DEFAULT current_date, obs text, PRIMARY KEY (supplier_id, unit_id));
+CREATE TABLE IF NOT EXISTS supplier_contacts (id serial PRIMARY KEY, supplier_id integer NOT NULL, nome text NOT NULL, finalidade text NOT NULL DEFAULT 'PRINCIPAL', cargo text, telefone text, email text, principal boolean NOT NULL DEFAULT false, autoriza_comunicacao boolean NOT NULL DEFAULT true, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_contacts_sup_idx ON supplier_contacts(supplier_id);
+CREATE TABLE IF NOT EXISTS supplier_bank_accounts (id serial PRIMARY KEY, supplier_id integer NOT NULL, establishment_id integer, banco_codigo text, banco_nome text, agencia text, conta text, tipo_conta text NOT NULL DEFAULT 'CORRENTE', titular_nome text, titular_doc text, pix_tipo text, pix_chave text, terceiro boolean NOT NULL DEFAULT false, status text NOT NULL DEFAULT 'PROPOSTA', versao integer NOT NULL DEFAULT 1, criado_por_nome text, created_at timestamp NOT NULL DEFAULT now(), ativada_em timestamp);
+CREATE INDEX IF NOT EXISTS supplier_bank_sup_idx ON supplier_bank_accounts(supplier_id, status);
+CREATE TABLE IF NOT EXISTS supplier_bank_changes (id serial PRIMARY KEY, supplier_id integer NOT NULL, account_id integer NOT NULL, origem text NOT NULL DEFAULT 'INTERNO', solicitante_user_id integer, solicitante_nome text NOT NULL, evidencia text, conferencia_user_id integer, conferencia_nome text, conferencia_canal text, conferencia_em timestamp, aprovacao_user_id integer, aprovacao_nome text, aprovacao_em timestamp, status text NOT NULL DEFAULT 'AGUARDANDO_CONFERENCIA', motivo text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS supplier_bank_change_aberta_uq ON supplier_bank_changes(supplier_id) WHERE status IN ('AGUARDANDO_CONFERENCIA','AGUARDANDO_APROVACAO');
+CREATE TABLE IF NOT EXISTS supplier_documents (id serial PRIMARY KEY, supplier_id integer NOT NULL, establishment_id integer, tipo text NOT NULL, numero text, emissao date, validade date, status text NOT NULL DEFAULT 'ENVIADO', origem text NOT NULL DEFAULT 'INTERNO', hash text, enviado_por_user_id integer, enviado_por_nome text, conferido_por_nome text, conferido_em timestamp, motivo_recusa text, obs text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_docs_sup_idx ON supplier_documents(supplier_id, tipo);
+CREATE INDEX IF NOT EXISTS supplier_docs_validade_idx ON supplier_documents(validade) WHERE status IN ('ENVIADO','CONFERIDO');
+CREATE TABLE IF NOT EXISTS supplier_homologations (id serial PRIMARY KEY, supplier_id integer NOT NULL, tipo text NOT NULL DEFAULT 'INICIAL', fase text NOT NULL DEFAULT 'ANALISE', criticidade text NOT NULL, risco jsonb, submetido_por integer, submetido_nome text, submetido_em timestamp NOT NULL DEFAULT now(), responsavel_user_id integer, decisao text, decidido_por integer, decidido_nome text, decidido_em timestamp, justificativa text, restricoes text, restricao_ate date, vigencia_ate date, regra text NOT NULL DEFAULT 'SUP-POL-2026.11', motivo_devolucao text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS supplier_homolog_aberta_uq ON supplier_homologations(supplier_id) WHERE fase IN ('ANALISE','APROVACAO');
+CREATE TABLE IF NOT EXISTS supplier_reviews (id serial PRIMARY KEY, homologation_id integer NOT NULL, etapa text NOT NULL, resultado text NOT NULL, parecer text NOT NULL, autor_user_id integer, autor_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_reviews_h_idx ON supplier_reviews(homologation_id);
+CREATE TABLE IF NOT EXISTS supplier_evaluations (id serial PRIMARY KEY, supplier_id integer NOT NULL, periodo text NOT NULL, unit_id integer, notas jsonb NOT NULL, pesos jsonb NOT NULL, nota numeric(4,1) NOT NULL, amostra integer NOT NULL DEFAULT 0, indicadores jsonb, comentario text, avaliador_user_id integer, avaliador_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_eval_sup_idx ON supplier_evaluations(supplier_id, created_at);
+CREATE TABLE IF NOT EXISTS supplier_occurrences (id serial PRIMARY KEY, supplier_id integer NOT NULL, unit_id integer, data date NOT NULL DEFAULT current_date, natureza text NOT NULL, severidade text NOT NULL DEFAULT 'MEDIA', descricao text NOT NULL, causa text, plano text, prazo date, status text NOT NULL DEFAULT 'ABERTA', fechamento_em timestamp, fechamento_obs text, work_order_id integer, registrado_por_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_occ_sup_idx ON supplier_occurrences(supplier_id, status);
+CREATE TABLE IF NOT EXISTS supplier_invitations (id serial PRIMARY KEY, supplier_id integer NOT NULL, email text, token_hash text NOT NULL UNIQUE, expira_em date NOT NULL, estado text NOT NULL DEFAULT 'ATIVO', escopo jsonb NOT NULL DEFAULT '["contatos","banco","documentos"]'::jsonb, criado_por_nome text, created_at timestamp NOT NULL DEFAULT now(), aberto_em timestamp, ultimo_acesso timestamp, envios integer NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS supplier_invite_ativo_uq ON supplier_invitations(supplier_id) WHERE estado='ATIVO';
+CREATE TABLE IF NOT EXISTS supplier_change_requests (id serial PRIMARY KEY, supplier_id integer NOT NULL, invitation_id integer, origem text NOT NULL DEFAULT 'PORTAL', protocolo text NOT NULL UNIQUE, campos jsonb NOT NULL, status text NOT NULL DEFAULT 'PENDENTE', decidido_nome text, decidido_em timestamp, motivo text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS supplier_change_sup_idx ON supplier_change_requests(supplier_id, status);
+ALTER TABLE payables ADD COLUMN IF NOT EXISTS excecao_fornecedor text;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS excecao_fornecedor text;
 `;
 
 // Estrutura vigente ditada em 16/07/2026 (22 cargos) + Professor e Pedagoga (corpo docente).
@@ -871,6 +940,38 @@ export const DEFAULT_SETTINGS = {
     pdiAdesaoAlvo: 80,                       // v31 · % de liderados com PDI ativo esperado por líder (engajamento por liderança)
   },
   // v31 · conversas: 1:1 marcadas e feedback contínuo (qualquer colega manda ou pede feedback)
+  // v33 · fornecedores (SO-ARCH-SUP-001) — política proposta, editável em Configurações → Fornecedores (v33). Os documentos não são
+  // rol jurídico: a exigência concreta depende da atividade, da lei aplicável e da análise técnica responsável.
+  fornecedores: {
+    categorias: [
+      ["Alimentação e cantina", "ALTA"], ["Transporte escolar", "ALTA"], ["Segurança e portaria", "ALTA"], ["Tecnologia e sistemas (dados pessoais)", "ALTA"],
+      ["Limpeza e conservação", "MEDIA"], ["Manutenção predial e elétrica", "MEDIA"], ["Ar-condicionado e refrigeração", "MEDIA"], ["Controle de pragas", "MEDIA"],
+      ["Eventos e passeios", "MEDIA"], ["Serviços profissionais (contábil, jurídico)", "MEDIA"], ["Uniformes", "BAIXA"], ["Material didático e livros", "BAIXA"],
+      ["Papelaria e escritório", "BAIXA"], ["Utilidades (energia, água, internet)", "BAIXA"], ["Outros", "BAIXA"],
+    ] as [string, string][],
+    // documentos exigíveis por criticidade (pessoa jurídica) — a pessoa física usa a lista "PF"
+    documentos: {
+      BAIXA: ["Comprovante de inscrição e situação cadastral (CNPJ)"],
+      MEDIA: ["Comprovante de inscrição e situação cadastral (CNPJ)", "Contrato social ou CCMEI", "CND federal (Receita/PGFN)", "CRF do FGTS", "CNDT (débitos trabalhistas)"],
+      ALTA: ["Comprovante de inscrição e situação cadastral (CNPJ)", "Contrato social ou CCMEI", "CND federal (Receita/PGFN)", "CRF do FGTS", "CNDT (débitos trabalhistas)", "CND estadual", "CND municipal", "Alvará de funcionamento"],
+      PF: ["Documento de identificação do prestador", "Inscrição municipal de autônomo (ISS)"],
+    } as Record<string, string[]>,
+    // documentos a mais por categoria ("Categoria | Documento")
+    extras: [
+      ["Alimentação e cantina", "Licença sanitária (Vigilância Sanitária)"], ["Alimentação e cantina", "Certificado de boas práticas na manipulação de alimentos"],
+      ["Transporte escolar", "Autorização municipal de transporte escolar"], ["Transporte escolar", "Apólice de seguro de passageiros (APP)"], ["Transporte escolar", "Laudo de vistoria do veículo"],
+      ["Segurança e portaria", "Autorização de funcionamento (vigilância)"], ["Tecnologia e sistemas (dados pessoais)", "Termo de tratamento de dados pessoais (LGPD)"],
+      ["Controle de pragas", "Licença sanitária e responsável técnico"], ["Manutenção predial e elétrica", "Registro do responsável técnico (CREA/CFT) e ART"],
+    ] as [string, string][],
+    revalidacaoMeses: { ALTA: 6, MEDIA: 12, BAIXA: 24 } as Record<string, number>,
+    alertaDocumentosDias: 30,                 // pendência e aviso antes do vencimento
+    pesos: { qualidade: 30, pontualidade: 25, atendimento: 20, custo: 15, conformidade: 10 } as Record<string, number>,
+    conviteDias: 7,                           // validade do link do portal do fornecedor
+    concentracaoAlertaPct: 15,                // fornecedor com mais que isto da despesa líquida de 12 meses pesa no risco
+    vencidoBloqueiaAlta: true,                // documento exigível vencido de fornecedor de criticidade ALTA leva a "em revalidação"
+    legadoAte: "",                            // cadastros anteriores à v33 valem até esta data (definida na atualização: +180 dias)
+    excecaoExigeAprovacao: true,              // conta a pagar com exceção de fornecedor vai para a aprovação de outra pessoa (controle independente)
+  },
   conversas: {
     temas: ["Alinhamento de expectativas", "Avaliação de desempenho", "Carreira", "Checkpoint de PDI", "Construção do PDI", "Desenvolvimento de competências", "Devolutiva", "Feedback", "Líder para liderado", "Mentoria", "Planejamento de trabalho", "Resultados"] as string[],
     duracaoMin: 60,                          // duração padrão da 1:1 (minutos)
@@ -1538,6 +1639,11 @@ const FKS: [string, string, string, string][] = [
   ["receivables", "unit_id", "units", "RESTRICT"], ["collection_actions", "receivable_id", "receivables", "CASCADE"], ["agreement_installments", "agreement_id", "agreements", "CASCADE"], ["discounts", "unit_id", "units", "RESTRICT"], ["tuition_prices", "unit_id", "units", "RESTRICT"], ["cash_entries", "unit_id", "units", "RESTRICT"], ["budgets", "unit_id", "units", "RESTRICT"],
   ["key_results", "objective_id", "objectives", "CASCADE"], ["kr_checkins", "key_result_id", "key_results", "CASCADE"], ["projects", "objective_id", "objectives", "SET NULL"], ["milestones", "project_id", "projects", "CASCADE"], ["project_updates", "project_id", "projects", "CASCADE"], ["project_risks", "project_id", "projects", "CASCADE"],
   ["work_orders", "unit_id", "units", "RESTRICT"], ["work_orders", "asset_id", "assets", "SET NULL"], ["work_orders", "supplier_id", "suppliers", "SET NULL"], ["work_order_events", "work_order_id", "work_orders", "CASCADE"], ["inspections", "unit_id", "units", "RESTRICT"], ["assets", "unit_id", "units", "RESTRICT"],
+  // v33 · fornecedores
+  ["supplier_establishments", "supplier_id", "suppliers", "CASCADE"], ["supplier_units", "supplier_id", "suppliers", "CASCADE"], ["supplier_units", "unit_id", "units", "CASCADE"], ["supplier_contacts", "supplier_id", "suppliers", "CASCADE"],
+  ["supplier_bank_accounts", "supplier_id", "suppliers", "CASCADE"], ["supplier_bank_changes", "supplier_id", "suppliers", "CASCADE"], ["supplier_bank_changes", "account_id", "supplier_bank_accounts", "CASCADE"], ["supplier_documents", "supplier_id", "suppliers", "CASCADE"],
+  ["supplier_homologations", "supplier_id", "suppliers", "CASCADE"], ["supplier_reviews", "homologation_id", "supplier_homologations", "CASCADE"], ["supplier_evaluations", "supplier_id", "suppliers", "CASCADE"], ["supplier_occurrences", "supplier_id", "suppliers", "CASCADE"],
+  ["supplier_invitations", "supplier_id", "suppliers", "CASCADE"], ["supplier_change_requests", "supplier_id", "suppliers", "CASCADE"], ["suppliers", "responsavel_user_id", "users", "SET NULL"], ["suppliers", "conta_id", "chart_accounts", "SET NULL"], ["suppliers", "cost_center_id", "cost_centers", "SET NULL"]
 ];
 
 /** Divide o SQL em instruções, sem quebrar em ';' dentro de aspas simples, blocos $$ ou comentários. */
@@ -1616,6 +1722,32 @@ export async function seedBase(adminPassword: string) {
   log.push(...(await seedAcessoV29()));
   log.push(...(await seedV30()));
   log.push(...(await seedV31()));
+  log.push(...(await seedV33()));
+  return log;
+}
+
+/**
+ * v33 · uma vez por banco: os fornecedores que já existiam continuam como LEGADO ("cadastro anterior — revisar"), valendo para
+ * novos lançamentos até a data de transição (hoje + 180 dias, editável em Configurações); a tela Fornecedores entra nos acessos
+ * personalizados que já viam Contas a pagar.
+ */
+export async function seedV33(): Promise<string[]> {
+  const log: string[] = [];
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v33_fornecedores'`;
+    if (!feito) {
+      const ate = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
+      const [cfg] = await sql<{ value: Record<string, unknown> }[]>`SELECT value FROM settings WHERE key='fornecedores'`;
+      const atual = (cfg?.value ?? {}) as Record<string, unknown>;
+      if (!atual.legadoAte) await sql`INSERT INTO settings (key, value) VALUES ('fornecedores', ${JSON.stringify({ ...atual, legadoAte: ate })}::jsonb) ON CONFLICT (key) DO UPDATE SET value = settings.value || ${JSON.stringify({ legadoAte: ate })}::jsonb`;
+      let n = 0; const ajustar = (telas: string[]) => (telas.includes("/financeiro/contas-a-pagar") && !telas.includes("/operacoes/fornecedores") ? [...telas, "/operacoes/fornecedores"] : telas);
+      for (const c of await sql<{ id: number; acesso: { atuacao?: string; telas?: string[] | null } | null }[]>`SELECT id, acesso FROM positions WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(c.acesso!.telas!); if (novo.length !== c.acesso!.telas!.length) { await sql`UPDATE positions SET acesso = jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${c.id}`; n++; } }
+      for (const u of await sql<{ id: number; acesso: { telas?: string[] | null } | null }[]>`SELECT id, acesso FROM users WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(u.acesso!.telas!); if (novo.length !== u.acesso!.telas!.length) { await sql`UPDATE users SET acesso = jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${u.id}`; n++; } }
+      const [{ legados }] = await sql<{ legados: number }[]>`SELECT count(*)::int AS legados FROM suppliers WHERE status='LEGADO'`;
+      await sql`INSERT INTO settings (key, value) VALUES ('v33_fornecedores', ${JSON.stringify({ em: new Date().toISOString(), legados, legadoAte: atual.legadoAte || ate, telas: n })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+      log.push(`Fornecedores (v33): ${legados} cadastro(s) anterior(es) marcado(s) para revisar, valendo até ${atual.legadoAte || ate}${n ? `; tela incluída em ${n} acesso(s) personalizado(s)` : ""}.`);
+    }
+  } catch (e) { log.push(`Fornecedores (v33) pendente: ${e instanceof Error ? e.message : String(e)}`); }
   return log;
 }
 

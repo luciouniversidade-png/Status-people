@@ -1,4 +1,5 @@
 /** IA como apoio: rascunhos com fontes. Nunca atribui nota, não infere personalidade/saúde, não decide sobre emprego. */
+import { chamarAnthropic } from "./ia";
 export type FonteIA = { id: string; natureza: string; data: string | null; texto: string; criterio?: string | null };
 export const TAREFAS_IA: Record<string, string> = { SINTESE: "Síntese das evidências registradas", PAUTA: "Pauta para a conversa de feedback", RASCUNHO_FEEDBACK: "Rascunho de feedback", SUGESTOES: "Sugestões de ações de desenvolvimento", PENDENCIAS: "Informações pendentes ou insuficientes" };
 export const CONFIG_IA_VERSAO = "desempenho-ia-v1";
@@ -31,10 +32,7 @@ export function validarRespostaIA(texto: string, autorizados: string[]) {
   return { texto: limpo, alertas, citados: [...new Set(citados.filter(c => autorizados.includes(c)))] };
 }
 export async function chamarIA(sistema: string, usuario: string) {
-  const key = process.env.AI_API_KEY; const modelo = process.env.AI_MODEL ?? "claude-sonnet-4-5";
-  if (!key) throw new Error("Recurso de IA indisponível: AI_API_KEY não configurada. Nada foi gerado nem simulado.");
-  const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json" }, body: JSON.stringify({ model: modelo, max_tokens: 900, system: sistema, messages: [{ role: "user", content: usuario }] }) });
-  if (!r.ok) throw new Error(`Provedor de IA respondeu ${r.status}.`);
-  const j = await r.json() as { content: { type: string; text?: string }[]; model?: string };
-  return { texto: j.content.filter(c => c.type === "text").map(c => c.text).join("\n"), modelo: j.model ?? modelo };
+  // v32: a chamada passa pela porta única (src/lib/ia.ts): modelo padrão atual, workspace opcional e erros com o caminho da correção
+  const r = await chamarAnthropic({ sistema, usuario, maxTokens: 900 });
+  return { texto: r.texto, modelo: r.modelo };
 }

@@ -1,6 +1,6 @@
 import type { Role } from "@/lib/auth";
 import { ALCADAS, ATUACAO, ATUACOES, telasDaAtuacao, type Tela } from "@/lib/acesso";
-import { MarcarGrupo, ContadorTelas, SeguePadrao } from "@/components/AcessoEditorCliente";
+import { MarcarGrupo, ContadorTelas, SeguePadrao, MarcarGrupoAjuste } from "@/components/AcessoEditorCliente";
 
 /** Telas da atuação agrupadas como no menu. */
 export function gruposDeTelas(role: Role): [string, Tela[]][] {
@@ -59,6 +59,35 @@ export function CamposAcesso({ atuacao, telas, aprova, padraoAprova, seguePadrao
       </SeguePadrao>
       <label className="mt-3 flex flex-wrap items-center gap-2 rounded-md border border-line p-3 text-sm"><span className="font-medium text-navy">Descontos e bolsas:</span> aprova até <input type="number" name="descontoPct" min={0} max={100} step="0.5" defaultValue={descontoPct ?? ""} placeholder={String(descontoPadrao)} className="w-20 rounded-md border border-line px-2 py-1 text-sm" aria-label="Alçada de desconto (%)" />% <span className="text-xs text-slate-500">vazio = padrão da atuação ({String(descontoPadrao).replace(".", ",")}%). Acima disso o pedido vai para quem tem alçada maior.</span></label>
       <p className="mt-2 text-xs text-slate-500">Dentro de cada tela, o que a pessoa pode alterar segue a atuação ({ATUACAO[atuacao].rotulo}); as aprovações acima valem cargo a cargo. Quem solicita nunca aprova a própria solicitação (exceto RH/Direção, como sempre).</p>
+    </>
+  );
+}
+
+/** v32 · marcas ao vivo (só CSS): a caixa sabe o que o cargo dá (data-base) — marcada a mais ou desmarcada a menos aparece destacada. */
+const AJ_CSS = `.aj .aj-mais,.aj .aj-menos{display:none;border-radius:4px;padding:0 5px;font-size:10.5px;font-weight:600;line-height:17px;white-space:nowrap}
+.aj input[data-base="0"]:checked~.aj-mais{display:inline-block;background:#e6f3ec;color:#1f7a4d}
+.aj input[data-base="1"]:not(:checked)~.aj-menos{display:inline-block;background:#f8e9e9;color:#a12b2b}
+.aj input[data-base="1"]:not(:checked)~.aj-rot{color:#64748b;text-decoration:line-through}`;
+
+/**
+ * v32 · Telas desta pessoa: o catálogo da atuação dela, por grupo do menu, marcado como ela vê hoje. Cada caixa guarda o que o
+ * cargo dá (data-base): o que fica diferente do cargo aparece como “+ só desta pessoa” ou “− tirada desta pessoa”.
+ */
+export function CamposTelasPessoa({ atuacao, base, efetivas }: { atuacao: Role; base: Set<string>; efetivas: Set<string> }) {
+  const grupos = gruposDeTelas(atuacao);
+  return (
+    <>
+      <style>{AJ_CSS}</style>
+      <div className="aj grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {grupos.map(([g, ts]) => (
+          <fieldset key={g} className="rounded-md border border-line p-3">
+            <legend className="px-1 text-sm font-medium text-navy">{g}<MarcarGrupoAjuste /></legend>
+            {ts.map(t => t.fixa
+              ? <label key={t.chave} className="flex items-start gap-2 py-0.5 text-sm text-slate-500"><input type="checkbox" checked disabled className="mt-0.5" /><span>{t.rotulo} <span className="text-[11px]">(sempre)</span></span></label>
+              : <label key={t.chave} className="flex flex-wrap items-start gap-x-2 gap-y-0.5 py-0.5 text-sm"><input type="checkbox" name="telas" value={t.chave} data-base={base.has(t.chave) ? "1" : "0"} defaultChecked={efetivas.has(t.chave)} className="mt-0.5" aria-describedby={`b-${t.chave}`} /><span className="aj-rot">{t.rotulo}</span><span className="aj-mais">+ só desta pessoa</span><span className="aj-menos">− tirada desta pessoa</span><span id={`b-${t.chave}`} className="sr-only">{base.has(t.chave) ? "o cargo dá esta tela" : "o cargo não dá esta tela"}</span></label>)}
+          </fieldset>
+        ))}
+      </div>
     </>
   );
 }

@@ -91,6 +91,7 @@ export const users = pgTable("users", {
   aprova: text("aprova").array(),          // v29: aprovações efetivas (gravadas pelo sistema a partir do cargo)
   origemAcesso: text("origem_acesso"),     // v29: CARGO · SEM_CARGO · EXCECAO · DIRETO
   descontoPct: numeric("desconto_pct", { precision: 5, scale: 2 }), // v29: alçada de desconto efetiva (%)
+  ajusteTelas: jsonb("ajuste_telas"),      // v32: ajuste de telas desta pessoa sobre o cargo { mais, menos, motivo, em, por, ate? } — o resto segue o cargo
 });
 
 export const leaveRequests = pgTable("leave_requests", {
@@ -1153,13 +1154,47 @@ export const inspections = pgTable("inspections", {
 
 export const suppliers = pgTable("suppliers", {
   id: serial("id").primaryKey(),
-  nome: text("nome").notNull(),
+  nome: text("nome").notNull(),                       // nome referencial (fantasia) do fornecedor mestre
   servico: text("servico"),
   telefone: text("telefone"),
   email: text("email"),
   contrato: text("contrato"),
-  ativo: boolean("ativo").notNull().default(true),
+  ativo: boolean("ativo").notNull().default(true),   // v33: espelho do status (falso em suspenso, rejeitado e inativo)
   obs: text("obs"),
+  // v33 · SO-ARCH-SUP-001 — o resto do cadastro fica nas tabelas supplier_* (estabelecimentos, contatos, banco, documentos…)
+  tipo: text("tipo").notNull().default("PJ"),                   // PJ · PF · EXTERIOR
+  categoria: text("categoria"),
+  subcategoria: text("subcategoria"),
+  criticidade: text("criticidade").notNull().default("BAIXA"),  // BAIXA · MEDIA · ALTA (profundidade da homologação)
+  criticidadeFatores: jsonb("criticidade_fatores").notNull().default([]),
+  criticidadeMotivo: text("criticidade_motivo"),
+  status: text("status").notNull().default("LEGADO"),           // RASCUNHO · EM_ANALISE · HOMOLOGADO · CONDICIONAL · VENCIDO · SUSPENSO · REJEITADO · INATIVO · LEGADO
+  statusMotivo: text("status_motivo"),
+  statusEm: timestamp("status_em"),
+  statusPor: text("status_por"),
+  abrangencia: text("abrangencia").notNull().default("REDE"),   // REDE · UNIDADES (supplier_units)
+  responsavelUserId: integer("responsavel_user_id"),
+  contingencia: text("contingencia"),
+  capacidade: text("capacidade"),
+  origem: text("origem").notNull().default("LEGADO"),           // INTERNO · CONTAS_A_PAGAR · IMPORTACAO · PORTAL · LEGADO
+  criadoPor: integer("criado_por"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  versao: integer("versao").notNull().default(1),               // controle otimista das transições
+  homologadoEm: timestamp("homologado_em"),
+  homologadoPor: text("homologado_por"),
+  revalidarEm: date("revalidar_em"),
+  restricoes: text("restricoes"),
+  restricaoAte: date("restricao_ate"),
+  riscoRevisado: text("risco_revisado"),
+  riscoRevisadoMotivo: text("risco_revisado_motivo"),
+  formaPagamento: text("forma_pagamento"),
+  prazoDias: integer("prazo_dias"),
+  descontoPct: numeric("desconto_pct", { precision: 5, scale: 2 }),
+  descontoDias: integer("desconto_dias"),
+  contaId: integer("conta_id"),
+  costCenterId: integer("cost_center_id"),
+  condicaoObs: text("condicao_obs"),
 });
 
 // ================= ESTRATÉGIA E PROJETOS (DOM-08) =================
