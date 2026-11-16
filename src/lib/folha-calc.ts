@@ -25,6 +25,8 @@ export const STATUS_CICLO: Record<string, string> = {
 export const TIPOS_DOC: Record<string, string> = {
   HOLERITES: "Holerites (lote ou individual)", GUIA_INSS: "Guia do INSS (DCTFWeb/DARF)", GUIA_FGTS: "Guia do FGTS Digital", GUIA_IRRF: "Guia do IRRF (DARF)",
   RESUMO_FOLHA: "Resumo da folha do contador", RECIBO_ESOCIAL: "Recibo do eSocial", OUTRO: "Outro documento",
+  // v34 · documentos pessoais (individuais) — também gerados pela divisão do PDF da folha por pessoa
+  ADIANTAMENTO: "Recibo de adiantamento (vale)", RECIBO_FERIAS: "Recibo de férias", DECIMO_TERCEIRO: "Recibo do 13º salário", PLR: "Recibo de PLR", INFORME_RENDIMENTOS: "Informe de rendimentos (IRPF)",
 };
 export const MOTIVOS_VARIACAO: Record<string, string> = {
   ADMISSOES: "Admissões no mês", DESLIGAMENTOS: "Desligamentos e rescisões", HORAS_EXTRAS: "Horas extras pagas", REAJUSTE: "Reajuste / dissídio",

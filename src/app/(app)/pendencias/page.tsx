@@ -14,8 +14,11 @@ export default async function Pendencias({ searchParams }: { searchParams: Promi
   const R = resumoPendencias(itens, h);
   const grupo = ORDEM_GRUPOS.includes(sp.grupo as GrupoPend) ? (sp.grupo as GrupoPend) : null;
   const filtroSit = sp.sit === "urgentes" ? "urgentes" : null;
-  const lista = itens.filter(i => (!grupo || i.grupo === grupo) && (!filtroSit || ["VENCIDA", "HOJE"].includes(situacaoPend(i.prazo, h))));
-  const link = (g: string | null, sit: string | null = filtroSit) => { const q = new URLSearchParams(); if (g) q.set("grupo", g); if (sit) q.set("sit", sit); const t = q.toString(); return `/pendencias${t ? `?${t}` : ""}`; };
+  // filtro por módulo (um ou vários, separados por vírgula no endereço): a caixa do RH passa de cem itens
+  const modulosAll = [...new Set(itens.map(i => i.modulo))]; const modulos = sp.modulo ? sp.modulo.split(",").filter(m => modulosAll.includes(m)) : [];
+  const lista = itens.filter(i => (!grupo || i.grupo === grupo) && (!filtroSit || ["VENCIDA", "HOJE"].includes(situacaoPend(i.prazo, h))) && (!modulos.length || modulos.includes(i.modulo)));
+  const link = (g: string | null, sit: string | null = filtroSit, mod: string | null = modulos.length ? modulos.join(",") : null) => { const q = new URLSearchParams(); if (g) q.set("grupo", g); if (sit) q.set("sit", sit); if (mod) q.set("modulo", mod); const t = q.toString(); return `/pendencias${t ? `?${t}` : ""}`; };
+  const porModulo = modulosAll.map(m => ({ m, n: itens.filter(i => i.modulo === m && (!grupo || i.grupo === grupo)).length })).filter(x => x.n > 0).sort((a, b) => b.n - a.n || a.m.localeCompare(b.m));
   const porGrupo = (g: GrupoPend) => itens.filter(i => i.grupo === g).length;
   const faixas: { chave: string; titulo: string; ok: (p: Pendencia) => boolean }[] = [
     { chave: "VENCIDA", titulo: "Vencidas", ok: p => situacaoPend(p.prazo, h) === "VENCIDA" },
@@ -39,6 +42,10 @@ export default async function Pendencias({ searchParams }: { searchParams: Promi
         {ORDEM_GRUPOS.map(g => <Link key={g} href={link(g)} className={`rounded-full border px-3 py-1 text-xs ${grupo === g ? "border-acao bg-sky-50 font-semibold text-navy" : "border-line text-slate-600 hover:bg-mist"}`}>{GRUPO_PEND[g].nome} <span className="tabular-nums text-slate-500">{porGrupo(g)}</span></Link>)}
         {filtroSit ? <Link href={link(grupo, null)} className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs text-erro">só vencidas e de hoje ✕</Link> : <Link href={link(grupo, "urgentes")} className="rounded-full border border-line px-3 py-1 text-xs text-slate-600 hover:bg-mist">só vencidas e de hoje</Link>}
       </nav>
+      {porModulo.length > 1 ? <nav aria-label="Módulos" className="-mt-2 mb-4 flex flex-wrap items-center gap-1 text-[11px] print:hidden"><span className="mr-1 text-slate-500">Por módulo:</span>
+        {modulos.length ? <Link href={link(grupo, filtroSit, null)} className="rounded-full border border-acao bg-sky-50 px-2 py-0.5 text-acao">{modulos.join(" · ")} ✕</Link> : null}
+        {porModulo.filter(x => !modulos.includes(x.m)).map(x => <Link key={x.m} href={link(grupo, filtroSit, x.m)} className="rounded-full border border-line px-2 py-0.5 text-slate-600 hover:bg-mist">{x.m} <span className="tabular-nums text-slate-400">{x.n}</span></Link>)}
+      </nav> : null}
       {lista.length === 0 ? <Card><p className="py-6 text-center text-sm text-slate-600">{itens.length === 0 ? "Nada pendente com você agora. 🎉" : "Nada neste filtro."}</p></Card> :
         <div className="space-y-4">
           {faixas.map(f => { const xs = lista.filter(f.ok); if (!xs.length) return null; return (

@@ -13,8 +13,8 @@ export const dynamic = "force-dynamic";
 export default async function Ferias({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const s = await requireStaff(); const sp = await searchParams; const u = scopeUnit(s); const cfg = await getSettings(); const quemAprova = await quemAprovaTexto("ferias");
   const status = sp.status ?? "SOLICITADA"; const h = hoje();
-  const rows = await sql<{ id: number; nome: string; employee_id: number; unidade: string; tipo: string; inicio: string; fim: string; dias: number; status: string; justificativa: string | null; solicitado_por: number | null }[]>`
-    SELECT l.id, e.nome, e.id AS employee_id, u.nome AS unidade, l.tipo, l.inicio::text, l.fim::text, l.dias, l.status, l.justificativa, l.solicitado_por
+  const rows = await sql<{ id: number; nome: string; employee_id: number; unidade: string; tipo: string; inicio: string; fim: string; dias: number; abono_dias: number; adiantar_13: boolean; status: string; justificativa: string | null; solicitado_por: number | null }[]>`
+    SELECT l.id, e.nome, e.id AS employee_id, u.nome AS unidade, l.tipo, l.inicio::text, l.fim::text, l.dias, l.abono_dias, l.adiantar_13, l.status, l.justificativa, l.solicitado_por
     FROM leave_requests l JOIN employees e ON e.id=l.employee_id JOIN units u ON u.id=e.unit_id
     WHERE 1=1 ${status ? sql`AND l.status=${status}` : sql``} ${u === null ? sql`` : sql`AND e.unit_id=${u}`}
     ORDER BY l.status='SOLICITADA' DESC, l.inicio DESC LIMIT 300`;
@@ -43,7 +43,7 @@ export default async function Ferias({ searchParams }: { searchParams: Promise<R
             {rows.map(l => (
               <tr key={l.id}>
                 <Td><Link className="text-acao" href={`/colaboradores/${l.employee_id}#ferias`}>{l.nome}</Link>{l.justificativa && (sensivel || l.tipo !== "AFASTAMENTO_SAUDE") && <div className="max-w-[220px] text-xs text-slate-500">{l.justificativa}</div>}</Td>
-                <Td>{l.unidade}</Td><Td>{LEAVE_LABEL[l.tipo]}</Td><Td className="whitespace-nowrap">{fmtData(l.inicio)} – {fmtData(l.fim)}</Td><Td>{l.dias}</Td>
+                <Td>{l.unidade}</Td><Td>{LEAVE_LABEL[l.tipo]}</Td><Td className="whitespace-nowrap">{fmtData(l.inicio)} – {fmtData(l.fim)}</Td><Td>{l.dias}{l.abono_dias ? <span className="block text-[11px] text-slate-500">+{l.abono_dias} vendido(s)</span> : null}{l.adiantar_13 ? <span className="block text-[11px] text-slate-500">13º junto</span> : null}</Td>
                 <Td><Badge v={l.status} label={LEAVE_STATUS[l.status]} /></Td>
                 <Td>{l.status === "SOLICITADA" && (podeAprovar || l.solicitado_por === s.id || can.editar(s)) && (
                   <form action={decidirAfastamento} className="flex flex-wrap gap-1"><input type="hidden" name="id" value={l.id} /><input type="hidden" name="voltar" value={`/ferias?status=${status}`} />

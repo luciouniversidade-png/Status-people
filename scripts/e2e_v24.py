@@ -193,6 +193,8 @@ emp = psql("SELECT id FROM employees WHERE unit_id=1 ORDER BY id DESC LIMIT 1")
 # escala de todos os dias começando 1 h antes de agora (horário de Campo Grande, UTC−4): sem marcação, vira no-show
 agora = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=4); ini = max(0, agora.hour * 60 + agora.minute - 60); hh = f"{ini // 60:02d}:{ini % 60:02d}"
 psql(f"INSERT INTO schedules (employee_id, vigencia_inicio, seg, ter, qua, qui, sex, sab, dom, horarios) VALUES ({emp}, '2024-01-01', 240, 240, 240, 240, 240, 240, 240, '{hh} às 23:59')")
+# em feriado do calendário (ex.: 15/11) ninguém é no-show — o teste tira o feriado só na base de teste para conferir a regra
+psql(f"DELETE FROM calendar_days WHERE data='{agora.date().isoformat()}' AND tipo IN ('FERIADO','RECESSO','FERIAS_COLETIVAS','NAO_LETIVO')")
 html = page("/ponto/hoje?unidade=1"); assert "Painel do dia" in html and "Sem marcação (no-show)" in html, "escalado sem marcação após a tolerância aparece como exceção"
 aid = find_form_aid(html, "Falta, atestado, folga do banco e dispensa")
 dow = H.weekday()

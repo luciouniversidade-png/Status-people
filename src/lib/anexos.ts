@@ -14,6 +14,9 @@ export const ENTIDADES: Record<string, { tabela: string; unidade: string | null 
   timesheet_day: { tabela: "timesheet_days", unidade: null }, candidate_doc: { tabela: "candidate_doc_requests", unidade: null }, sst_exam: { tabela: "sst_exams", unidade: null }, sst_incident: { tabela: "sst_incidents", unidade: "unit_id" }, audit: { tabela: "audits", unidade: "unit_id" }, nonconformity: { tabela: "nonconformities", unidade: "unit_id" },
   // v33 · documento do fornecedor (habilitação): anexado pelo cadastro ou pelo portal do fornecedor
   supplier_document: { tabela: "supplier_documents", unidade: null },
+  // v34 · documento para assinatura, PDF da folha dividido por pessoa, atestado enviado pelo Meu espaço, comprovante de alteração cadastral
+  sign_document: { tabela: "sign_documents", unidade: "unit_id" }, payroll_doc: { tabela: "payroll_docs", unidade: null }, pdf_split: { tabela: "pdf_splits", unidade: null },
+  medical_certificate: { tabela: "medical_certificates", unidade: null }, employee_change: { tabela: "employee_change_requests", unidade: null },
 };
 
 /** Unidade do registro dono do anexo (para o escopo por unidade). */
@@ -65,6 +68,17 @@ export async function acessoAnexoRestrito(s: Session, entidade: string, id: numb
   }
   // v33 · documentos do fornecedor: vê quem trabalha com Fornecedores; anexa quem cadastra (o portal grava pelo próprio fluxo)
   if (entidade === "supplier_document") { const { veFornecedores, podeCadastrar } = await import("./fornecedores"); return (modo === "ver" ? veFornecedores(s) : podeCadastrar(s)) ? true : false; }
+  // v34 · documento para assinatura: RH e Direção; direção da unidade (a própria); a pessoa que assina (o próprio pedido)
+  if (entidade === "sign_document") { if (modo === "editar") return false; const { acessoDocumento } = await import("./assinaturas"); return (await acessoDocumento(s, id)).ok; }
+  // v34 · PDF original da folha (antes de dividir): só RH e Direção
+  if (entidade === "pdf_split") return ["RH", "DIRECAO"].includes(s.role) ? true : false;
+  // v34 · atestado (sem CID) e comprovante de alteração cadastral: RH e Direção; a própria pessoa vê o que enviou
+  if (entidade === "medical_certificate" || entidade === "employee_change") {
+    if (["RH", "DIRECAO"].includes(s.role)) return true;
+    if (modo === "editar" || !s.employeeId) return false;
+    const [r] = await sql<{ employee_id: number }[]>`SELECT employee_id FROM ${sql(entidade === "medical_certificate" ? "medical_certificates" : "employee_change_requests")} WHERE id=${id}`;
+    return r?.employee_id === s.employeeId;
+  }
   if (entidade === "request") {
     if (["DIRECAO", "RH", "FINANCEIRO"].includes(s.role)) return true;
     const [r] = await sql<{ ok: boolean; unit_id: number | null }[]>`SELECT (solicitante_user_id=${s.id} OR EXISTS (SELECT 1 FROM jsonb_array_elements(etapas) e WHERE (e->'aprovadores') @> to_jsonb(${s.id}::int))) AS ok, unit_id FROM requests WHERE id=${id}`;
@@ -73,12 +87,16 @@ export async function acessoAnexoRestrito(s: Session, entidade: string, id: numb
   return null;
 }
 
+/** v34 · tipos de documento da folha que são da pessoa (e só dela). */
+export const TIPOS_PESSOAIS_FOLHA = ["HOLERITES", "HOLERITE", "ADIANTAMENTO", "RECIBO_FERIAS", "DECIMO_TERCEIRO", "PLR", "INFORME_RENDIMENTOS"];
+
 /** v24 · acesso a um documento da folha (pelo anexo): regra fina por tipo e registro de consulta (CRQ-FOL-V3-03). */
 export async function acessoDocFolha(s: Session, attachmentId: number): Promise<{ ok: boolean; docId: number | null }> {
   const [d] = await sql<{ id: number; tipo: string; employee_id: number | null }[]>`SELECT id, tipo, employee_id FROM payroll_docs WHERE attachment_id=${attachmentId}`;
   if (!d) return { ok: ["RH", "DIRECAO"].includes(s.role), docId: null };
   if (["RH", "DIRECAO"].includes(s.role)) return { ok: true, docId: d.id };
+  // v34 · documento pessoal (holerite, adiantamento, férias, 13º, PLR, informe de rendimentos): a própria pessoa, em qualquer perfil
+  if (d.employee_id !== null && d.employee_id === s.employeeId && TIPOS_PESSOAIS_FOLHA.includes(d.tipo)) return { ok: true, docId: d.id };
   if (s.role === "FINANCEIRO") return { ok: d.tipo.startsWith("GUIA_") || d.tipo === "RESUMO_FOLHA", docId: d.id };
-  if (s.role === "COLABORADOR") return { ok: d.tipo === "HOLERITES" && d.employee_id !== null && d.employee_id === s.employeeId, docId: d.id };
   return { ok: false, docId: d.id };
 }

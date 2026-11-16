@@ -25,18 +25,20 @@ export async function solicitarAfastamento(fd: FormData) {
     const dias = diasEntre(inicio, fim);
     const [conflito] = await sql<{ id: number }[]>`SELECT id FROM leave_requests WHERE employee_id=${employeeId} AND status IN ('SOLICITADA','APROVADA') AND inicio <= ${fim} AND fim >= ${inicio}`;
     if (conflito) throw new Error("Já existe férias/afastamento neste período para o colaborador.");
-    let periodoRef: string | null = null;
+    let periodoRef: string | null = null; let abonoDias = 0; let adiantar13 = false;
     if (tipo === "FERIAS") {
-      const aprovadas = await db.select({ periodoRef: schema.leaveRequests.periodoRef, dias: schema.leaveRequests.dias }).from(schema.leaveRequests).where(eq(schema.leaveRequests.employeeId, employeeId));
-      const usadas = aprovadas.filter(a => a.periodoRef).map(a => ({ periodoRef: a.periodoRef!, dias: a.dias }));
+      const aprovadas = await db.select({ periodoRef: schema.leaveRequests.periodoRef, dias: schema.leaveRequests.dias, abonoDias: schema.leaveRequests.abonoDias }).from(schema.leaveRequests).where(eq(schema.leaveRequests.employeeId, employeeId));
+      const usadas = aprovadas.filter(a => a.periodoRef).map(a => ({ periodoRef: a.periodoRef!, dias: a.dias + (a.abonoDias ?? 0) }));
       const aberto = periodosFerias(e.admissao, usadas, undefined, e.feriasQuitadasAte).find(p => (p.status === "ABERTO" || p.status === "VENCIDO") && p.saldo > 0);
       if (!aberto) throw new Error("Não há período aquisitivo com saldo de férias. Verifique a data de admissão ou registre como outro tipo de afastamento.");
-      if (dias > aberto.saldo) throw new Error(`Saldo do período ${aberto.inicio.slice(0, 4)}: ${aberto.saldo} dia(s). Reduza o período.`);
+      // v34 · abono pecuniário (CLT art. 143: vender até 1/3 das férias) e 1ª parcela do 13º junto com as férias (Lei 4.749/65, pedido em janeiro)
+      abonoDias = Math.max(0, Math.min(10, int(fd, "abonoDias") ?? 0)); adiantar13 = str(fd, "adiantar13") === "1";
+      if (dias + abonoDias > aberto.saldo) throw new Error(`Saldo do período ${aberto.inicio.slice(0, 4)}: ${aberto.saldo} dia(s)${abonoDias ? ` — gozo (${dias}) + abono (${abonoDias}) passam do saldo` : ""}. Reduza o período.`);
       if (dias < 5) throw new Error("Períodos de férias devem ter ao menos 5 dias corridos.");
       periodoRef = aberto.inicio;
     }
-    const [r] = await db.insert(schema.leaveRequests).values({ employeeId, tipo, inicio, fim, dias, periodoRef, justificativa: strOrNull(fd, "justificativa"), solicitadoPor: s.id }).returning({ id: schema.leaveRequests.id });
-    await audit(s, "solicitar", "leave_requests", r.id, null, { employeeId, tipo, inicio, fim, dias, justificativa: tipo === "AFASTAMENTO_SAUDE" ? "(sensível)" : strOrNull(fd, "justificativa") });
+    const [r] = await db.insert(schema.leaveRequests).values({ employeeId, tipo, inicio, fim, dias, periodoRef, justificativa: strOrNull(fd, "justificativa"), solicitadoPor: s.id, abonoDias, adiantar13 }).returning({ id: schema.leaveRequests.id });
+    await audit(s, "solicitar", "leave_requests", r.id, null, { employeeId, tipo, inicio, fim, dias, ...(abonoDias ? { abonoDias } : {}), ...(adiantar13 ? { adiantar13 } : {}), justificativa: tipo === "AFASTAMENTO_SAUDE" ? "(sensível)" : strOrNull(fd, "justificativa") });
     await notificar([...new Set([...await usuariosPorPerfil(["RH", "DIRECAO"]), ...await usuariosPorPerfil(["DIRETOR_UNIDADE"], e.unitId), ...await usuariosQueAprovam("ferias", e.unitId, e.id)])], "Pedido de férias/afastamento aguardando aprovação", `${e.nome} · ${inicio} a ${fim}`, `/ferias?status=SOLICITADA`, "ACAO");
     const cfg = await getSettings();
     await enviarEmail(await emailsQueAprovam("ferias", e.unitId, e.id), `[STATUS People] Solicitação de ${LEAVE_LABEL[tipo].toLowerCase()} — ${e.nome}`,
@@ -105,7 +107,7 @@ export async function importarHistoricoFerias(fd: FormData) {
         if (ja) { pulados++; continue; }
         const [conf] = await sql<{ id: number }[]>`SELECT id FROM leave_requests WHERE employee_id=${e.id} AND status IN ('SOLICITADA','APROVADA') AND inicio <= ${fim} AND fim >= ${inicio}`;
         if (conf) throw new Error(`já existe férias/afastamento sobreposto a ${fmtData(inicio)}–${fmtData(fim)}`);
-        const usadas = await sql<{ periodo_ref: string; dias: number }[]>`SELECT periodo_ref::text, dias FROM leave_requests WHERE employee_id=${e.id} AND tipo='FERIAS' AND status='APROVADA' AND periodo_ref IS NOT NULL`;
+        const usadas = await sql<{ periodo_ref: string; dias: number }[]>`SELECT periodo_ref::text, (dias + abono_dias)::int AS dias FROM leave_requests WHERE employee_id=${e.id} AND tipo='FERIAS' AND status='APROVADA' AND periodo_ref IS NOT NULL`;
         const per = periodosFerias(e.admissao, usadas.map(u => ({ periodoRef: u.periodo_ref, dias: u.dias })), h, e.quitadas).find(p => p.inicio <= inicio && p.saldo >= dias);
         if (!per) throw new Error(`nenhum período aquisitivo iniciado até ${fmtData(inicio)} tem saldo de ${dias} dia(s) — confira a admissão e o campo “Férias quitadas até”`);
         await db.insert(schema.leaveRequests).values({ employeeId: e.id, tipo: "FERIAS", inicio, fim, dias, periodoRef: per.inicio, justificativa: "Histórico importado da planilha", status: "APROVADA", solicitadoPor: s.id, aprovadoPor: s.id, decididoEm: new Date(), motivoDecisao: "Carga inicial — férias gozadas antes do sistema" });

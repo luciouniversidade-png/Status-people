@@ -21,6 +21,7 @@ import { ParametrosV28 } from "./_v28";
 import { ParametrosV30 } from "./_v30";
 import { ParametrosV31 } from "./_v31";
 import { ParametrosV33 } from "./_v33";
+import { ParametrosV34 } from "./_v34";
 import { BlocoIA } from "./_ia";
 
 export const dynamic = "force-dynamic";
@@ -229,6 +230,7 @@ export default async function Configuracoes({ searchParams }: { searchParams: Pr
       <ParametrosV28 />
       <ParametrosV30 />
       <ParametrosV31 />
+      <ParametrosV34 />
       <ParametrosV33 />
       <Card title="People Health — pesos e metas" className="mb-4"><div id="analytics" />
         <form action={salvarParamAnalytics} className="grid grid-cols-1 gap-4 lg:grid-cols-2">

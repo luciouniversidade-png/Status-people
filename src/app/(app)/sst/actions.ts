@@ -117,18 +117,40 @@ export async function salvarReuniaoCipa(fd: FormData) {
 export async function salvarEpi(fd: FormData) {
   const s = await requireSession(); const voltar = "/sst/conformidade#epi";
   try { assert(podeSst(s), "Sem permissão."); const nome = str(fd, "nome"); assert(nome.length >= 3, "Informe o EPI."); const troca = int(fd, "troca"); assert(troca === null || (troca >= 1 && troca <= 3650), "Troca em dias inválida.");
-    const [r] = await sql<{ id: number }[]>`INSERT INTO epi_items (nome, ca, troca_dias) VALUES (${nome}, ${strOrNull(fd, "ca")}, ${troca}) RETURNING id`; await audit(s, "cadastrar EPI", "epi_items", r.id, null, { nome }); }
+    const caValidade = str(fd, "caValidade"); assert(!caValidade || dataOk(caValidade), "Validade do CA inválida.");
+    const [r] = await sql<{ id: number }[]>`INSERT INTO epi_items (nome, ca, troca_dias, ca_validade) VALUES (${nome}, ${strOrNull(fd, "ca")}, ${troca}, ${caValidade || null}) RETURNING id`; await audit(s, "cadastrar EPI", "epi_items", r.id, null, { nome }); }
   catch (e) { redirect(go(voltar, "erro", erro(e))); }
   redirect(go(voltar, "ok", "EPI cadastrado."));
 }
 export async function registrarEntregaEpi(fd: FormData) {
-  const s = await requireSession(); const voltar = "/sst/conformidade#epi";
+  const s = await requireSession(); const voltar = "/sst/conformidade#epi"; let msg = "Entrega registrada.";
   try { assert(podeSst(s) || s.role === "DIRETOR_UNIDADE", "Sem permissão."); const employeeId = int(fd, "employeeId") ?? 0; const epiId = int(fd, "epiId") ?? 0; const data = str(fd, "data") || hoje(); assert(dataOk(data), "Data inválida.");
-    const [epi] = await sql<{ troca_dias: number | null }[]>`SELECT troca_dias FROM epi_items WHERE id=${epiId}`; assert(!!epi, "EPI não encontrado.");
-    const [r] = await sql<{ id: number }[]>`INSERT INTO epi_deliveries (employee_id, epi_id, data, quantidade, termo_assinado, proxima_troca, user_id) VALUES (${employeeId}, ${epiId}, ${data}, ${Math.max(1, int(fd, "quantidade") ?? 1)}, ${str(fd, "termo") === "1"}, ${epi.troca_dias ? addDays(data, epi.troca_dias) : null}, ${s.id}) RETURNING id`;
-    await audit(s, "registrar entrega de EPI", "epi_deliveries", r.id, null, { employeeId, epiId, termo: str(fd, "termo") === "1" }); }
+    const [epi] = await sql<{ troca_dias: number | null; nome: string; ca_validade: string | null }[]>`SELECT troca_dias, nome, ca_validade::text FROM epi_items WHERE id=${epiId}`; assert(!!epi, "EPI não encontrado.");
+    const quantidade = Math.max(1, int(fd, "quantidade") ?? 1);
+    // v34 · termo: assinado em papel (como antes) ou assinado no ONE pelo Meu espaço; baixa automática no estoque do local escolhido
+    const modo = str(fd, "termoModo") || (str(fd, "termo") === "1" ? "PAPEL" : ""); const locationId = int(fd, "locationId");
+    let id = 0;
+    await sql.begin(async tx => {
+      const [r] = await tx<{ id: number }[]>`INSERT INTO epi_deliveries (employee_id, epi_id, data, quantidade, termo_assinado, proxima_troca, user_id, location_id) VALUES (${employeeId}, ${epiId}, ${data}, ${quantidade}, ${modo === "PAPEL"}, ${epi.troca_dias ? addDays(data, epi.troca_dias) : null}, ${s.id}, ${locationId ?? null}) RETURNING id`; id = r.id;
+      if (locationId) {
+        const [it] = await tx<{ id: number }[]>`SELECT i.id FROM stock_items i JOIN stock_levels v ON v.item_id=i.id AND v.location_id=${locationId} WHERE i.epi_id=${epiId} AND i.ativo ORDER BY i.id LIMIT 1`;
+        if (!it) throw new Error(`Nenhum item de estoque ligado ao EPI “${epi.nome}” neste local: cadastre em Operações → Estoque (campo “É EPI?”) ou registre sem baixa.`);
+        const { movimentar } = await import("@/lib/estoque"); await movimentar(tx as unknown as typeof sql, s, { itemId: it.id, locationId, tipo: "ENTREGA_EPI", quantidade, employeeId, epiDeliveryId: r.id, motivo: `Entrega de EPI nº ${r.id}` });
+      }
+    });
+    if (modo === "ONE") {
+      const A = await import("@/lib/assinaturas"); const g = await A.gerarTermoEpiPdf(id); const cfg = await getSettings();
+      let pedido = 0; await sql.begin(async tx => { const d = await A.criarDocumentoAssinatura({ titulo: g.titulo, tipo: "TERMO_EPI", pdf: g.pdf, nomeArquivo: g.nome, unitId: g.unitId, referencia: `epi_delivery:${id}`, prazo: addDays(hoje(), Number(cfg.assinaturas.prazoDias)), criadoPor: s.id, criadoNome: s.nome }, [g.employeeId], tx as unknown as typeof sql); pedido = d.pedidos[0]?.id ?? 0; });
+      if (pedido) await sql`UPDATE epi_deliveries SET sign_request_id=${pedido} WHERE id=${id}`;
+      const users = await A.usuariosDasFichas([employeeId]);
+      await notificar(users, "Termo de EPI para assinar", "Confira a entrega do EPI e assine o termo no Meu espaço.", "/eu/assinaturas", "ACAO");
+      msg += users.length ? " O termo foi enviado para assinatura no Meu espaço." : " Termo gerado, mas a pessoa ainda não tem conta no ONE: crie a conta para ela assinar (ou assine em papel).";
+    } else if (modo === "PAPEL") msg += " Anexe o termo em papel na ficha do colaborador.";
+    if (locationId) msg += " Baixa feita no estoque.";
+    if (epi.ca_validade && epi.ca_validade < data) msg += ` Atenção: o CA deste EPI venceu em ${epi.ca_validade.split("-").reverse().join("/")}.`;
+    await audit(s, "registrar entrega de EPI", "epi_deliveries", id, null, { employeeId, epiId, termo: modo || "sem termo", baixaEstoque: !!locationId }); }
   catch (e) { redirect(go(voltar, "erro", erro(e))); }
-  redirect(go(voltar, "ok", "Entrega registrada. Anexe o termo assinado na ficha do colaborador quando for em papel."));
+  redirect(go(voltar, "ok", msg));
 }
 /** Convoca, num clique, a reciclagem de quem está pendente ou vencido no curso de segurança (cria a turma e a lista de presença). */
 export async function convocarReciclagem(fd: FormData) {

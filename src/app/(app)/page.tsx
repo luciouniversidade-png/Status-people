@@ -15,6 +15,7 @@ import { quemEstaFora, rotuloVisivel, corVisivel } from "@/lib/quem-fora";
 import { mural } from "@/lib/reconhecimento";
 import { mesPorExtenso } from "@/lib/formato";
 import { CartaoKpi, GradeCartoes } from "./executivo/_ui";
+import { BotaoParabens } from "./eu/_v34";
 
 export const dynamic = "force-dynamic";
 
@@ -163,12 +164,13 @@ async function BlocoDatas({ s }: { s: Session }) {
     sql<{ id: number; nome: string; unidade: string; dia: number }[]>`SELECT e.id, e.nome, u.nome AS unidade, extract(day FROM e.data_nascimento)::int AS dia FROM employees e JOIN units u ON u.id=e.unit_id WHERE e.situacao='ATIVO' AND e.data_nascimento IS NOT NULL AND extract(month FROM e.data_nascimento)=${mesAtual} ${uf} ORDER BY dia, e.nome`,
     sql<{ id: number; nome: string; unidade: string; dia: number; anos: number }[]>`SELECT e.id, e.nome, u.nome AS unidade, extract(day FROM e.admissao)::int AS dia, (extract(year FROM ${h}::date) - extract(year FROM e.admissao))::int AS anos FROM employees e JOIN units u ON u.id=e.unit_id WHERE e.situacao='ATIVO' AND extract(month FROM e.admissao)=${mesAtual} AND extract(year FROM e.admissao) < extract(year FROM ${h}::date) ${uf} ORDER BY dia, e.nome`,
   ]);
+  const ja = new Set((await sql<{ para_employee_id: number }[]>`SELECT para_employee_id FROM birthday_wishes WHERE de_user_id=${s.id} AND ano=${Number(h.slice(0, 4))}`).map(r => r.para_employee_id)); // v34 · parabéns
   return (
     <Card title="Datas do mês">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <div className="mb-1 text-xs font-medium text-slate-600">Aniversariantes</div>
-          {aniversariantes.length === 0 ? <div className="text-sm text-slate-500">Nenhum aniversário cadastrado neste mês.</div> : <ul className="space-y-0.5 text-sm">{aniversariantes.map(a => <li key={a.id}><span className="inline-block w-7 tabular-nums text-slate-500">{String(a.dia).padStart(2, "0")}</span><Link className="text-acao" href={`/colaboradores/${a.id}`}>{a.nome}</Link> <span className="text-xs text-slate-500">· {a.unidade}</span></li>)}</ul>}
+          {aniversariantes.length === 0 ? <div className="text-sm text-slate-500">Nenhum aniversário cadastrado neste mês.</div> : <ul className="space-y-0.5 text-sm">{aniversariantes.map(a => { const dif = Number(h.slice(8, 10)) - a.dia; return <li key={a.id}><span className="inline-block w-7 tabular-nums text-slate-500">{String(a.dia).padStart(2, "0")}</span><Link className="text-acao" href={`/colaboradores/${a.id}`}>{a.nome}</Link> <span className="text-xs text-slate-500">· {a.unidade}</span>{dif >= -1 && dif <= 7 && a.id !== s.employeeId && !ja.has(a.id) ? <> <BotaoParabens employeeId={a.id} voltar="/" /></> : ja.has(a.id) ? <span className="ml-1 text-[11px] text-ok">🎉 enviado</span> : null}</li>; })}</ul>}
         </div>
         <div>
           <div className="mb-1 text-xs font-medium text-slate-600">Tempo de casa</div>

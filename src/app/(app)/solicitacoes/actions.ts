@@ -161,9 +161,9 @@ export async function salvarTipoSolicitacao(fd: FormData) {
     const prazo = Number(str(fd, "prazoDias") || "2"); if (!Number.isInteger(prazo) || prazo < 1 || prazo > 30) throw new Error("Prazo por etapa: 1 a 30 dias.");
     const perfis = fd.getAll("perfis").map(String).map(p => (p === "COLABORADOR" ? p : perfilDe(p))).filter(Boolean) as string[];
     const d = { nome, descricao: strOrNull(fd, "descricao"), campos: JSON.stringify(campos), etapas: JSON.stringify(etapas), prazo, perfis: perfis.length ? JSON.stringify(perfis) : null, ativo: str(fd, "ativo") !== "0" };
-    if (id) await sql`UPDATE request_types SET nome=${d.nome}, descricao=${d.descricao}, campos=${d.campos}::jsonb, etapas=${d.etapas}::jsonb, prazo_dias=${prazo}, perfis=${d.perfis}::jsonb, ativo=${d.ativo}, updated_at=now() WHERE id=${id}`;
+    if (id) await sql`UPDATE request_types SET nome=${d.nome}, descricao=${d.descricao}, campos=${d.campos}::jsonb, etapas=${d.etapas}::jsonb, prazo_dias=${prazo}, perfis=${d.perfis}::jsonb, ativo=${d.ativo}, confidencial=${str(fd, "confidencial") === "1"}, updated_at=now() WHERE id=${id}`;
     else { const codigo = (str(fd, "codigo") || nome).normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 30); const [dup] = await sql`SELECT 1 FROM request_types WHERE codigo=${codigo}`; if (dup) throw new Error("Já existe um tipo com este código.");
-      await sql`INSERT INTO request_types (codigo, nome, descricao, campos, etapas, prazo_dias, perfis, ativo) VALUES (${codigo}, ${d.nome}, ${d.descricao}, ${d.campos}::jsonb, ${d.etapas}::jsonb, ${prazo}, ${d.perfis}::jsonb, ${d.ativo})`; }
+      await sql`INSERT INTO request_types (codigo, nome, descricao, campos, etapas, prazo_dias, perfis, ativo, confidencial) VALUES (${codigo}, ${d.nome}, ${d.descricao}, ${d.campos}::jsonb, ${d.etapas}::jsonb, ${prazo}, ${d.perfis}::jsonb, ${d.ativo}, ${str(fd, "confidencial") === "1"})`; }
     await audit(s, id ? "editar tipo de solicitação" : "criar tipo de solicitação", "request_types", id, null, { nome, campos: campos.length, etapas: etapas.length });
     msg = `Tipo salvo: ${campos.length} campo(s), ${etapas.length} etapa(s). Solicitações já abertas seguem com as etapas da época.`;
   } catch (e) { redirect(go("/solicitacoes/tipos", "erro", e instanceof Error ? e.message : "Erro")); }

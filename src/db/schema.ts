@@ -110,6 +110,8 @@ export const leaveRequests = pgTable("leave_requests", {
   motivoDecisao: text("motivo_decisao"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   lote: text("lote"),                              // v24: aprovação em lote
+  abonoDias: integer("abono_dias").notNull().default(0),     // v34: dias vendidos (abono pecuniário, até 1/3) — consomem saldo do período
+  adiantar13: boolean("adiantar_13").notNull().default(false), // v34: pediu a 1ª parcela do 13º junto com as férias
 });
 
 export const hourEntries = pgTable("hour_entries", {

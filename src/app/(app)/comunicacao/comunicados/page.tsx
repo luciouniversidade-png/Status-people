@@ -7,6 +7,7 @@ import { ROLE_LABEL } from "@/lib/auth";
 import type { Role } from "@/lib/session";
 import { PUBLICO } from "@/lib/comunicacao";
 import { publicarComunicado, cienciaComunicado, removerComunicado, decidirComunicado } from "../actions";
+import { Reacoes } from "./Reacoes";
 import { getSettings } from "@/lib/utils";
 import { Modal } from "@/components/Modal";
 
@@ -23,6 +24,10 @@ export default async function Comunicados({ searchParams }: { searchParams: Prom
     FROM announcements a LEFT JOIN units un ON un.id=a.unit_id LEFT JOIN positions pc ON pc.id=a.position_id
     WHERE (a.expira_em IS NULL OR a.expira_em >= ${h}) AND (a.status='PUBLICADO' OR a.autor_user_id=${s.id} OR (${aprova} AND a.status IN ('AGUARDANDO_APROVACAO','AGENDADO','APROVADO'))) AND (a.publico='TODOS' OR (a.publico='UNIDADE' AND (${u === null} OR a.unit_id=${u ?? 0})) OR (a.publico='PERFIL' AND a.role=${s.role}) OR (a.publico='CARGO' AND a.position_id=${s.positionId ?? 0}) OR ${can.editar(s)})
     ORDER BY a.fixado DESC, a.publicado_em DESC LIMIT 100`;
+  // v34 · reações (como no mural): contagem por emoji e as minhas
+  const rx = rows.length ? await sql<{ announcement_id: number; emoji: string; n: number; meu: boolean }[]>`SELECT announcement_id, emoji, count(*)::int AS n, bool_or(user_id=${s.id}) AS meu FROM announcement_reactions WHERE announcement_id = ANY(${rows.map(r => r.id)}) GROUP BY 1, 2` : [];
+  const reacoes = new Map<number, Record<string, number>>(); const minhas = new Map<number, string[]>();
+  for (const x of rx) { reacoes.set(x.announcement_id, { ...(reacoes.get(x.announcement_id) ?? {}), [x.emoji]: x.n }); if (x.meu) minhas.set(x.announcement_id, [...(minhas.get(x.announcement_id) ?? []), x.emoji]); }
   const units = await db.select().from(schema.units).orderBy(asc(schema.units.nome)); const cargos = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM positions ORDER BY ordem, nome`; const pode = ["DIRECAO", "RH", "DIRETOR_UNIDADE"].includes(s.role);
   const pendentes = rows.filter(r => r.status === "PUBLICADO" && r.requer_ciencia && !r.li);
   const naFila = rows.filter(r => r.status !== "PUBLICADO"); const publicados = rows.filter(r => r.status === "PUBLICADO");
@@ -44,6 +49,7 @@ export default async function Comunicados({ searchParams }: { searchParams: Prom
               {r.requer_ciencia && (r.li ? <Badge v="APROVADA" label="você deu ciência" /> : <form action={cienciaComunicado}><input type="hidden" name="id" value={r.id} /><Btn small>Li e estou ciente</Btn></form>)}
               {r.requer_ciencia && can.editar(s) && <span>{r.cientes}/{r.alvo} cientes{r.prazo_ciencia ? ` · prazo ${fmtData(r.prazo_ciencia)}` : ""}</span>}
               {r.expira_em && <span>expira em {fmtData(r.expira_em)}</span>}
+              <Reacoes id={r.id} contagem={reacoes.get(r.id) ?? {}} minhas={minhas.get(r.id) ?? []} />
               {can.editar(s) && <form action={removerComunicado} className="ml-auto"><input type="hidden" name="id" value={r.id} /><button className="text-erro">remover</button></form>}
             </div></Card>)}
         </div>

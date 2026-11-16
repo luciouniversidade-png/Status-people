@@ -15,6 +15,7 @@ import { MOTIVO_SAL, fmtBRL } from "@/lib/talento";
 import { matrizTreinamento, PROG_STATUS } from "@/lib/clima-academy";
 import { Anexos } from "@/components/Anexos";
 import { FichaV30 } from "./_v30";
+import { FichaV34 } from "./_v34";
 import { RemuneracaoTotal } from "@/components/RemuneracaoTotal";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
   const treinos = (await matrizTreinamento(emp.unitId)).linhas.find(l => l.emp.id === id);
   const vigentes = leaves.filter(l => l.status === "APROVADA" && l.inicio <= h && l.fim >= h);
   const situacao = situacaoDerivada(emp.situacao, vigentes);
-  const periodos = periodosFerias(emp.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodoRef).map(l => ({ periodoRef: l.periodoRef, dias: l.dias })), undefined, emp.feriasQuitadasAte);
+  const periodos = periodosFerias(emp.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodoRef).map(l => ({ periodoRef: l.periodoRef, dias: l.dias + (l.abonoDias ?? 0) })), undefined, emp.feriasQuitadasAte);
   const podeAprovarFerias = can.aprovar(s, "ferias"); const podeAprovarBanco = can.aprovar(s, "banco");
   const sensivel = can.verSensivel(s);
   const docStatus = (d: typeof docs[number]) => d.validade && d.validade < h ? "VENCIDO" : d.validade && d.validade <= addDays(h, 30) ? "VENCE_EM_BREVE" : d.recebidoEm ? "RECEBIDO" : d.obrigatorio ? "PENDENTE" : "OPCIONAL";
@@ -222,6 +223,7 @@ export default async function Ficha({ params, searchParams }: { params: Promise<
       </Card>
 
       <FichaV30 s={s} emp={{ id, unitId: emp.unitId, admissao: emp.admissao, situacao: emp.situacao }} />
+      <FichaV34 s={s} emp={{ id, situacao: emp.situacao }} convite={sp.convite && /^[A-Za-z0-9_-]{20,80}$/.test(sp.convite) ? sp.convite : undefined} />
       {can.verSalario(s) && <RemuneracaoTotal employeeId={id} />}
 
       <Anexos entidade="employee" id={id} voltar={`/colaboradores/${id}`} podeEnviar={can.editar(s) || s.employeeId === id} titulo="Arquivos do colaborador (contratos, certificados, laudos no Drive → aqui só o que precisa ficar no sistema)" />

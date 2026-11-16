@@ -13,6 +13,8 @@ import { solicitarAfastamento } from "../ferias/actions";
 import { atualizarContato } from "./actions";
 import { MeuEspacoV30 } from "./_v30";
 import { MeuEspacoV31 } from "./_v31";
+import { AvisosV34, MeuEspacoV34 } from "./_v34";
+import { totaisDoMes } from "@/lib/assinaturas";
 import { RemuneracaoTotal } from "@/components/RemuneracaoTotal";
 
 export const dynamic = "force-dynamic";
@@ -30,18 +32,18 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
       FROM employees e JOIN units u ON u.id=e.unit_id LEFT JOIN positions p ON p.id=e.position_id LEFT JOIN employees g ON g.id=e.gestor_id WHERE e.id=${eid}`,
     sql<{ seg: number; ter: number; qua: number; qui: number; sex: number; sab: number; dom: number; horarios: string | null; vigencia_inicio: string }[]>`SELECT seg, ter, qua, qui, sex, sab, dom, horarios, vigencia_inicio::text FROM schedules WHERE employee_id=${eid} AND vigencia_inicio <= ${h} AND (vigencia_fim IS NULL OR vigencia_fim >= ${h}) ORDER BY vigencia_inicio DESC LIMIT 1`,
     sql<{ tipo: string; descricao: string | null }[]>`SELECT c.tipo, c.descricao FROM calendar_days c JOIN employees e ON e.id=${eid} WHERE c.data=${h} AND (c.publico='TODOS' OR c.publico=e.regime) AND (c.unit_id IS NULL OR c.unit_id=e.unit_id) LIMIT 1`,
-    sql<{ id: number; tipo: string; inicio: string; fim: string; dias: number; status: string; periodo_ref: string | null }[]>`SELECT id, tipo, inicio::text, fim::text, dias, status, periodo_ref::text FROM leave_requests WHERE employee_id=${eid} ORDER BY inicio DESC LIMIT 30`,
+    sql<{ id: number; tipo: string; inicio: string; fim: string; dias: number; status: string; periodo_ref: string | null; abono_dias: number; adiantar_13: boolean }[]>`SELECT id, tipo, inicio::text, fim::text, dias, status, periodo_ref::text, abono_dias, adiantar_13 FROM leave_requests WHERE employee_id=${eid} ORDER BY inicio DESC LIMIT 30`,
     sql<{ saldo: number; pend: number; npend: number }[]>`SELECT coalesce(sum(minutos) FILTER (WHERE status='APROVADO'),0)::int AS saldo, coalesce(sum(minutos) FILTER (WHERE status='PENDENTE'),0)::int AS pend, count(*) FILTER (WHERE status='PENDENTE')::int AS npend FROM hour_entries WHERE employee_id=${eid}`,
     sql<{ data: string; minutos: number; tipo: string; status: string; descricao: string | null }[]>`SELECT data::text, minutos, tipo, status, descricao FROM hour_entries WHERE employee_id=${eid} ORDER BY data DESC, id DESC LIMIT 6`,
     sql<{ inicio: string; fim: string; turma: string; disciplina: string | null; unidade: string; sala: string | null }[]>`SELECT t.inicio, t.fim, t.turma, t.disciplina, u.nome AS unidade, sp.nome AS sala FROM teacher_slots t JOIN units u ON u.id=t.unit_id LEFT JOIN spaces sp ON sp.id=t.space_id WHERE t.employee_id=${eid} AND t.ativo AND slot_vigente(t.version_id, ${h}::date) AND t.dia_semana=${dow} ORDER BY t.inicio`,
     sql<{ id: number; numero: string; titulo: string; status: string; created_at: string; pago_em: string | null; valor: string | null }[]>`SELECT id, numero, titulo, status, created_at::text, pago_em::text, valor::text FROM requests WHERE solicitante_user_id=${s.id} ORDER BY created_at DESC LIMIT 5`,
-    sql<{ attachment_id: number; competencia: string }[]>`SELECT d.attachment_id, c.competencia FROM payroll_docs d JOIN payroll_cycles c ON c.id=d.cycle_id WHERE d.employee_id=${eid} AND d.tipo='HOLERITES' ORDER BY c.competencia DESC LIMIT 6`.catch(() => []),
+    sql<{ attachment_id: number; competencia: string }[]>`SELECT d.attachment_id, coalesce(d.competencia, c.competencia) AS competencia FROM payroll_docs d LEFT JOIN payroll_cycles c ON c.id=d.cycle_id WHERE d.employee_id=${eid} AND d.tipo IN ('HOLERITES','HOLERITE') AND coalesce(d.competencia, c.competencia) IS NOT NULL ORDER BY coalesce(d.competencia, c.competencia) DESC, d.id DESC LIMIT 3`.catch(() => []),
     sql<{ n: number }[]>`SELECT count(*)::int AS n FROM timesheet_audit WHERE employee_id=${eid} AND status IN ('ABERTA','DEVOLVIDA') AND to_char(data, 'YYYY-MM')=${mes}`.catch(() => [{ n: 0 }]),
     sql<{ id: number; codigo: string }[]>`SELECT id, codigo FROM request_types WHERE ativo AND codigo='DECLARACAO'`,
   ]);
   if (!e) redirect("/conta");
   const { dias } = await montarMes(eid, mes); const salvos = dias.filter(d => d.salvo);
-  const per = periodosFerias(e.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodo_ref).map(l => ({ periodoRef: l.periodo_ref, dias: l.dias })), undefined, e.ferias_quitadas_ate);
+  const per = periodosFerias(e.admissao, leaves.filter(l => l.status === "APROVADA" && l.tipo === "FERIAS" && l.periodo_ref).map(l => ({ periodoRef: l.periodo_ref, dias: l.dias + (l.abono_dias ?? 0) })), undefined, e.ferias_quitadas_ate);
   const aberto = per.find(p => (p.status === "ABERTO" || p.status === "VENCIDO") && p.saldo > 0); const emAquis = per.find(p => p.status === "EM_AQUISICAO");
   const agora = leaves.find(l => l.status === "APROVADA" && l.inicio <= h && l.fim >= h); const proximas = leaves.filter(l => l.status === "APROVADA" && l.inicio > h).sort((a, b) => a.inicio.localeCompare(b.inicio));
   const emAnalise = leaves.filter(l => l.status === "SOLICITADA");
@@ -54,6 +56,7 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
   return (
     <Page title={`Olá, ${primeiro}`} sub={`${e.cargo ?? "Colaborador(a)"} · ${e.unidade}${e.gestor ? ` · gestor(a): ${e.gestor}` : ""}. Seu espaço: só os seus dados.`} actions={<Btn kind="ghost" href="/solicitacoes/nova">Nova solicitação</Btn>}>
       <Flash ok={sp.ok} erro={sp.erro} />
+      <AvisosV34 s={s} eid={eid} />
       <Card className="mb-4" title="Hoje">
         <p className="text-sm">{hojeTxt}</p>
         {aulas.length > 0 && !agora && <ul className="mt-2 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">{aulas.map((a, i) => <li key={i} className="rounded border border-line px-2 py-1"><span className="tabular-nums font-medium">{a.inicio}–{a.fim}</span> · {a.turma}{a.disciplina ? ` · ${a.disciplina}` : ""}<span className="text-xs text-slate-500"> · {a.unidade}{a.sala ? ` · ${a.sala}` : ""}</span></li>)}</ul>}
@@ -71,6 +74,7 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
               <Table head={["Dia", "Situação", "Esperado", "Trabalhado", "Saldo"]}>
                 {salvos.map(d => { const df = diffDia(d); return <tr key={d.data}><Td className="whitespace-nowrap">{fmtData(d.data).slice(0, 5)} <span className="text-[11px] text-slate-500">{DIAS_CURTO[d.dow]}</span></Td><Td className="text-xs">{PONTO_LABEL[d.status] ?? d.status}{d.marcacoes ? <div className="text-[11px] tabular-nums text-slate-500">{d.marcacoes}</div> : null}</Td><Td className="tabular-nums">{d.esperado ? fmtMin(d.esperado).replace("+", "") : "—"}</Td><Td className="tabular-nums">{d.trabalhado ? fmtMin(d.trabalhado).replace("+", "") : "—"}</Td><Td className={`tabular-nums ${df < 0 ? "text-erro" : df > 0 ? "text-ok" : "text-slate-400"}`}>{df ? fmtMin(df) : "0"}</Td></tr>; })}
               </Table>
+              <EspelhoTotais dias={salvos} mes={mes} eid={eid} />
               <p className="mt-2 text-xs text-slate-600">Saldo do mês: <b className="tabular-nums">{fmtMin(saldoMes)}</b> · lançamentos entram no banco depois da aprovação.{div?.n ? ` ${div.n} dia(s) em análise pelo RH na auditoria do ponto.` : ""} <a className="text-acao underline" href={`/api/export/meu-espelho?mes=${mes}`}>Baixar (CSV)</a></p>
             </>}
           </Card>
@@ -80,6 +84,8 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
           <Card title="Férias e folgas" actions={<span className="flex gap-1">
               <Modal label="Pedir férias" title="Pedir férias"><form action={solicitarAfastamento} className="space-y-2"><input type="hidden" name="employeeId" value={eid} /><input type="hidden" name="tipo" value="FERIAS" /><input type="hidden" name="voltar" value="/eu" />
                 <div className="grid grid-cols-2 gap-2"><Field label="Início"><Input type="date" name="inicio" required min={addDays(h, 1)} /></Field><Field label="Fim"><Input type="date" name="fim" required min={addDays(h, 1)} /></Field></div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><Field label="Vender dias (abono, até 10)" hint="Recebe em dinheiro até 1/3 das férias. Peça até 15 dias antes de completar o período aquisitivo para ser direito garantido."><Input type="number" name="abonoDias" min={0} max={10} defaultValue={0} /></Field>
+                  <label className="mt-5 flex items-start gap-1.5 text-xs"><input type="checkbox" name="adiantar13" value="1" className="mt-0.5" /> Receber a 1ª parcela do 13º junto com as férias {h.slice(5, 7) === "01" ? "(pedido em janeiro: é direito)" : "(fora de janeiro, depende da escola)"}</label></div>
                 <Field label="Observação (opcional)"><Textarea name="justificativa" className="min-h-[50px]" /></Field>
                 <p className="text-[11px] text-slate-500">{aberto ? `Saldo: ${aberto.saldo} dia(s) do período ${aberto.inicio.slice(0, 4)}–${aberto.fim.slice(0, 4)}.` : "Sem período com saldo no momento."} Mínimo de 5 dias corridos; o pedido segue a aprovação normal (cobertura mínima da equipe).</p><Btn small>Enviar pedido</Btn></form></Modal>
               <Modal label="Pedir folga do banco" title="Folga do banco de horas"><form action={solicitarAfastamento} className="space-y-2"><input type="hidden" name="employeeId" value={eid} /><input type="hidden" name="tipo" value="FOLGA_BANCO" /><input type="hidden" name="voltar" value="/eu" />
@@ -88,7 +94,7 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
             <ul className="space-y-1 text-sm">
               {per.filter(p => p.status !== "QUITADO").slice(-3).reverse().map(p => <li key={p.inicio} className="flex flex-wrap justify-between gap-2"><span>Período {fmtData(p.inicio)} a {fmtData(p.fim)}</span><span className="text-xs text-slate-600">{p.status === "EM_AQUISICAO" ? "em aquisição" : `${p.saldo} dia(s) · tirar até ${fmtData(p.concessivoAte)}`}{p.status === "VENCIDO" ? " · vencido" : ""}</span></li>)}
             </ul>
-            {leaves.length > 0 && <ul className="mt-3 divide-y divide-line border-t border-line text-sm">{leaves.slice(0, 6).map(l => <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5"><span>{LEAVE_LABEL[l.tipo] ?? l.tipo} · {fmtData(l.inicio)} a {fmtData(l.fim)} ({l.dias} dia(s))</span><Badge v={l.status} label={LEAVE_STATUS[l.status] ?? l.status} /></li>)}</ul>}
+            {leaves.length > 0 && <ul className="mt-3 divide-y divide-line border-t border-line text-sm">{leaves.slice(0, 6).map(l => <li key={l.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5"><span>{LEAVE_LABEL[l.tipo] ?? l.tipo} · {fmtData(l.inicio)} a {fmtData(l.fim)} ({l.dias} dia(s){l.abono_dias ? ` + ${l.abono_dias} vendido(s)` : ""}{l.adiantar_13 ? " · 13º junto" : ""})</span><Badge v={l.status} label={LEAVE_STATUS[l.status] ?? l.status} /></li>)}</ul>}
           </Card>
         </div>
         <div className="min-w-0 space-y-4">
@@ -102,7 +108,7 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
           <Card title="Holerites e comprovantes">
             <ul className="space-y-1 text-sm">
               {holerites.map(x => <li key={x.attachment_id}><a className="text-acao" href={`/api/anexos/${x.attachment_id}`} target="_blank" rel="noreferrer">Holerite {x.competencia.split("-").reverse().join("/")}</a></li>)}
-              {holerites.length === 0 && <li className="text-slate-500">Holerites aparecem aqui quando o RH arquivar a folha do mês.</li>}
+              <li><Link className="text-acao" href="/eu/documentos">Todos os meus documentos (holerites, recibos de férias e 13º, informes)</Link></li>
               <li><a className="text-acao" href={`/api/export/meu-espelho?mes=${mes}`}>Espelho do ponto de {mesTxt(mes)} (CSV)</a></li>
               {tipos[0] && <li><Link className="text-acao" href={`/solicitacoes/nova?tipo=${tipos[0].id}`}>Pedir declaração (vínculo, frequência)</Link></li>}
             </ul>
@@ -117,9 +123,20 @@ export default async function MeuEspaco({ searchParams }: { searchParams: Promis
           <Card title="Acesso rápido"><ul className="space-y-1 text-sm"><li><Link className="text-acao" href={`/colaboradores/${eid}/painel`}>Meu painel de desenvolvimento</Link></li><li><Link className="text-acao" href="/desempenho/minha">Minha avaliação</Link></li><li><Link className="text-acao" href="/academy/minha">Meus treinamentos</Link></li>{e.regime === "DOCENTE" && <li><Link className="text-acao" href="/cobertura/minha">Minhas substituições e minha grade</Link></li>}<li><Link className="text-acao" href={`/colaboradores/${eid}`}>Minha ficha completa</Link></li></ul></Card>
         </div>
       </div>
+      <MeuEspacoV34 s={s} eid={eid} />
       <MeuEspacoV31 s={s} eid={eid} />
       <MeuEspacoV30 s={s} eid={eid} />
       <RemuneracaoTotal employeeId={eid} proprio />
     </Page>
   );
+}
+
+/** v34 · totais do mês no espelho (horas a mais, atrasos, faltas, atestados) e a situação da assinatura do espelho. */
+async function EspelhoTotais({ dias, mes, eid }: { dias: { esperado: number; trabalhado: number; status: string }[]; mes: string; eid: number }) {
+  const t = totaisDoMes(dias);
+  const [ass] = await sql<{ id: number; status: string; assinado_em: string | null }[]>`SELECT r.id, r.status, r.assinado_em::text FROM sign_requests r JOIN sign_documents d ON d.id=r.document_id WHERE r.employee_id=${eid} AND d.tipo='ESPELHO' AND d.competencia=${mes} AND d.status <> 'CANCELADO' ORDER BY r.id DESC LIMIT 1`;
+  return <div className="mt-2 grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-4">
+    {[["Horas a mais", fmtMin(t.extras).replace("+", "")], ["Atrasos e saídas", fmtMin(t.atrasos).replace("+", "")], ["Faltas", `${t.diasFalta} dia(s)`], ["Atestados", `${t.atestados} dia(s)`]].map(([k, v]) => <div key={k} className="rounded border border-line px-2 py-1"><span className="block text-[10px] text-slate-500">{k}</span><b className="tabular-nums">{v}</b></div>)}
+    {ass ? <div className="col-span-2 sm:col-span-4">{ass.status === "PENDENTE" ? <Link className="font-medium text-acao underline" href={`/eu/assinaturas/${ass.id}`}>✍️ Conferir e assinar o espelho deste mês</Link> : <span className="text-slate-600">Espelho do mês: {ass.status === "ASSINADO" ? `assinado em ${fmtData(ass.assinado_em!.slice(0, 10))}` : ass.status === "CONTESTADO" ? "contestado — o RH está verificando" : ass.status.toLowerCase()}</span>}</div> : null}
+  </div>;
 }

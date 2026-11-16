@@ -742,6 +742,90 @@ CREATE TABLE IF NOT EXISTS supplier_change_requests (id serial PRIMARY KEY, supp
 CREATE INDEX IF NOT EXISTS supplier_change_sup_idx ON supplier_change_requests(supplier_id, status);
 ALTER TABLE payables ADD COLUMN IF NOT EXISTS excecao_fornecedor text;
 ALTER TABLE contracts ADD COLUMN IF NOT EXISTS excecao_fornecedor text;
+-- v34 · autoatendimento e documentos (referências: MarQ HR e Sankhya Pessoas+): assinatura eletrônica com evidências (hash, data,
+-- IP e dispositivo), espelho do ponto assinado, PDF da folha dividido por pessoa (holerites, recibos e informes), ficha de admissão
+-- pelo link, alterações cadastrais com aprovação e dependentes, ajuste de ponto e atestado pelo Meu espaço, pesquisas internas,
+-- termômetro de humor anônimo, escalas de trabalho, estoque com mínimo e validade, reações nos comunicados e parabéns.
+CREATE TABLE IF NOT EXISTS sign_documents (id serial PRIMARY KEY, titulo text NOT NULL, tipo text NOT NULL DEFAULT 'DOCUMENTO', descricao text, attachment_id integer NOT NULL, hash text NOT NULL, paginas integer, unit_id integer, competencia text, referencia text, prazo date, status text NOT NULL DEFAULT 'ABERTO', criado_por integer, criado_nome text NOT NULL DEFAULT 'sistema', created_at timestamp NOT NULL DEFAULT now(), cancelado_em timestamp, cancelado_nome text, motivo_cancelamento text);
+CREATE INDEX IF NOT EXISTS sign_documents_tipo_idx ON sign_documents(tipo, competencia);
+CREATE TABLE IF NOT EXISTS sign_requests (id serial PRIMARY KEY, document_id integer NOT NULL, employee_id integer NOT NULL, status text NOT NULL DEFAULT 'PENDENTE', assinado_em timestamp, assinado_user_id integer, recusado_em timestamp, motivo text, metodo text, ip text, user_agent text, hash_conferido text, evidencia jsonb, lembrado_em timestamp, resolvido_em timestamp, resolvido_nome text, resolucao text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS sign_requests_doc_emp_uq ON sign_requests(document_id, employee_id);
+CREATE INDEX IF NOT EXISTS sign_requests_emp_idx ON sign_requests(employee_id, status);
+CREATE TABLE IF NOT EXISTS pdf_splits (id serial PRIMARY KEY, tipo text NOT NULL, competencia text NOT NULL, cycle_id integer, nome_arquivo text, attachment_id integer, paginas integer NOT NULL, resultado jsonb NOT NULL, status text NOT NULL DEFAULT 'PREVIA', user_id integer, user_nome text, created_at timestamp NOT NULL DEFAULT now(), confirmado_em timestamp, publicados integer);
+ALTER TABLE payroll_docs ALTER COLUMN cycle_id DROP NOT NULL;
+ALTER TABLE payroll_docs ADD COLUMN IF NOT EXISTS competencia text;
+ALTER TABLE payroll_docs ADD COLUMN IF NOT EXISTS split_id integer;
+CREATE INDEX IF NOT EXISTS payroll_docs_emp_idx ON payroll_docs(employee_id, tipo);
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS nome_social text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS estado_civil text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS raca_cor text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS escolaridade text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS nacionalidade text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS naturalidade text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS rg text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS rg_orgao text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS rg_emissao date;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS pis text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS cep text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS logradouro text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS numero text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS complemento text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS bairro text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS cidade text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS uf text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS banco_codigo text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS banco_agencia text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS banco_conta text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS banco_tipo text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS pix_chave text;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS vale_transporte boolean;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS vt_obs text;
+CREATE TABLE IF NOT EXISTS employee_dependents (id serial PRIMARY KEY, employee_id integer NOT NULL, nome text NOT NULL, parentesco text NOT NULL, data_nascimento date, cpf text, sexo text, irrf boolean NOT NULL DEFAULT false, salario_familia boolean NOT NULL DEFAULT false, plano_saude boolean NOT NULL DEFAULT false, ativo boolean NOT NULL DEFAULT true, inicio date NOT NULL DEFAULT current_date, fim date, motivo_fim text, origem text NOT NULL DEFAULT 'RH', created_at timestamp NOT NULL DEFAULT now(), updated_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS employee_dependents_emp_idx ON employee_dependents(employee_id, ativo);
+CREATE TABLE IF NOT EXISTS employee_change_requests (id serial PRIMARY KEY, employee_id integer NOT NULL, origem text NOT NULL DEFAULT 'MEU_ESPACO', tipo text NOT NULL DEFAULT 'CADASTRO', protocolo text NOT NULL UNIQUE, campos jsonb NOT NULL DEFAULT '[]'::jsonb, dependentes jsonb NOT NULL DEFAULT '[]'::jsonb, dependent_id integer, documentos jsonb NOT NULL DEFAULT '[]'::jsonb, status text NOT NULL DEFAULT 'PENDENTE', motivo text, solicitante_user_id integer, invite_id integer, decidido_por integer, decidido_nome text, decidido_em timestamp, aplicados jsonb, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS employee_change_emp_idx ON employee_change_requests(employee_id, status);
+CREATE TABLE IF NOT EXISTS admission_invites (id serial PRIMARY KEY, employee_id integer NOT NULL, token_hash text NOT NULL UNIQUE, email text, expira_em date NOT NULL, estado text NOT NULL DEFAULT 'ATIVO', aberto_em timestamp, envios integer NOT NULL DEFAULT 0, criado_por integer, criado_nome text, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS admission_invite_ativo_uq ON admission_invites(employee_id) WHERE estado='ATIVO';
+CREATE TABLE IF NOT EXISTS timesheet_adjust_requests (id serial PRIMARY KEY, employee_id integer NOT NULL, data date NOT NULL, tipo text NOT NULL DEFAULT 'ESQUECIMENTO', marcacoes text NOT NULL, motivo text NOT NULL, status text NOT NULL DEFAULT 'PENDENTE', aprovado_por integer, aprovado_nome text, aprovado_em timestamp, ajustado_por integer, ajustado_nome text, ajustado_em timestamp, resposta text, solicitante_user_id integer, created_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS ts_adjust_aberto_uq ON timesheet_adjust_requests(employee_id, data) WHERE status IN ('PENDENTE','APROVADO');
+CREATE INDEX IF NOT EXISTS ts_adjust_status_idx ON timesheet_adjust_requests(status, created_at);
+CREATE TABLE IF NOT EXISTS medical_certificates (id serial PRIMARY KEY, employee_id integer NOT NULL, tipo text NOT NULL DEFAULT 'DIAS', inicio date NOT NULL, fim date NOT NULL, dias integer, horas text, attachment_id integer, obs text, status text NOT NULL DEFAULT 'ENVIADO', leave_request_id integer, decidido_por integer, decidido_nome text, decidido_em timestamp, resposta text, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS medical_cert_status_idx ON medical_certificates(status, created_at);
+CREATE INDEX IF NOT EXISTS medical_cert_emp_idx ON medical_certificates(employee_id);
+CREATE TABLE IF NOT EXISTS custom_surveys (id serial PRIMARY KEY, titulo text NOT NULL, descricao text, identificada boolean NOT NULL DEFAULT false, minimo_anonimato integer NOT NULL DEFAULT 5, perguntas jsonb NOT NULL, publico text NOT NULL DEFAULT 'TODOS', unit_id integer, position_id integer, inicio date NOT NULL, fim date NOT NULL, status text NOT NULL DEFAULT 'RASCUNHO', criado_por integer, criado_nome text, created_at timestamp NOT NULL DEFAULT now(), aberta_em timestamp, encerrada_em timestamp);
+CREATE TABLE IF NOT EXISTS custom_survey_responses (id serial PRIMARY KEY, survey_id integer NOT NULL, user_id integer, employee_id integer, unit_id integer, respostas jsonb NOT NULL, respondido_em timestamp);
+CREATE INDEX IF NOT EXISTS custom_survey_resp_idx ON custom_survey_responses(survey_id);
+CREATE TABLE IF NOT EXISTS custom_survey_marks (survey_id integer NOT NULL, user_id integer NOT NULL, PRIMARY KEY (survey_id, user_id));
+-- termômetro de humor: só contadores por semana × unidade × liderança × nota (nenhuma resposta individual é guardada)
+CREATE TABLE IF NOT EXISTS mood_counts (semana date NOT NULL, unit_id integer NOT NULL DEFAULT 0, gestor_id integer NOT NULL DEFAULT 0, nota smallint NOT NULL, n integer NOT NULL DEFAULT 0, PRIMARY KEY (semana, unit_id, gestor_id, nota));
+CREATE TABLE IF NOT EXISTS mood_factor_counts (semana date NOT NULL, unit_id integer NOT NULL DEFAULT 0, gestor_id integer NOT NULL DEFAULT 0, nota smallint NOT NULL, fator text NOT NULL, n integer NOT NULL DEFAULT 0, PRIMARY KEY (semana, unit_id, gestor_id, nota, fator));
+CREATE TABLE IF NOT EXISTS mood_marks (user_id integer NOT NULL, dia date NOT NULL, PRIMARY KEY (user_id, dia));
+CREATE TABLE IF NOT EXISTS shift_types (id serial PRIMARY KEY, nome text NOT NULL, sigla text, inicio text NOT NULL, fim text NOT NULL, intervalo_min integer NOT NULL DEFAULT 60, cor text NOT NULL DEFAULT 'sky', ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS shift_teams (id serial PRIMARY KEY, nome text NOT NULL, unit_id integer NOT NULL, responsavel_user_id integer, cobertura jsonb NOT NULL DEFAULT '[]'::jsonb, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+ALTER TABLE shift_teams ADD COLUMN IF NOT EXISTS cobertura_dias text NOT NULL DEFAULT 'TODOS';
+CREATE TABLE IF NOT EXISTS shift_team_members (team_id integer NOT NULL, employee_id integer NOT NULL, PRIMARY KEY (team_id, employee_id));
+CREATE TABLE IF NOT EXISTS shift_assignments (id serial PRIMARY KEY, team_id integer NOT NULL, employee_id integer NOT NULL, data date NOT NULL, shift_type_id integer, folga boolean NOT NULL DEFAULT false, obs text, updated_by integer, updated_nome text, updated_at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS shift_assign_uq ON shift_assignments(team_id, employee_id, data);
+CREATE INDEX IF NOT EXISTS shift_assign_emp_idx ON shift_assignments(employee_id, data);
+CREATE TABLE IF NOT EXISTS shift_publications (id serial PRIMARY KEY, team_id integer NOT NULL, semana date NOT NULL, publicado_em timestamp NOT NULL DEFAULT now(), publicado_por integer, publicado_nome text);
+CREATE UNIQUE INDEX IF NOT EXISTS shift_publications_uq ON shift_publications(team_id, semana);
+CREATE TABLE IF NOT EXISTS shift_changes (id serial PRIMARY KEY, team_id integer NOT NULL, employee_id integer NOT NULL, data date NOT NULL, antes text, depois text, motivo text, user_id integer, user_nome text, at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS stock_locations (id serial PRIMARY KEY, unit_id integer NOT NULL, nome text NOT NULL, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS stock_items (id serial PRIMARY KEY, nome text NOT NULL, categoria text NOT NULL DEFAULT 'Outros', unidade_medida text NOT NULL DEFAULT 'un', epi_id integer, controla_validade boolean NOT NULL DEFAULT false, minimo_padrao numeric(12,2) NOT NULL DEFAULT 0, custo_medio numeric(14,4) NOT NULL DEFAULT 0, ativo boolean NOT NULL DEFAULT true, created_at timestamp NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS stock_levels (item_id integer NOT NULL, location_id integer NOT NULL, saldo numeric(12,2) NOT NULL DEFAULT 0, minimo numeric(12,2), PRIMARY KEY (item_id, location_id));
+CREATE TABLE IF NOT EXISTS stock_lots (id serial PRIMARY KEY, item_id integer NOT NULL, location_id integer NOT NULL, lote text, validade date, saldo numeric(12,2) NOT NULL DEFAULT 0, created_at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS stock_lots_item_idx ON stock_lots(item_id, location_id);
+CREATE TABLE IF NOT EXISTS stock_moves (id serial PRIMARY KEY, item_id integer NOT NULL, location_id integer NOT NULL, tipo text NOT NULL, quantidade numeric(12,2) NOT NULL, sinal integer NOT NULL, custo_unit numeric(14,4), lot_id integer, destino_location_id integer, employee_id integer, epi_delivery_id integer, supplier_id integer, motivo text, saldo_apos numeric(12,2), user_id integer, user_nome text, at timestamp NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS stock_moves_item_idx ON stock_moves(item_id, at);
+ALTER TABLE epi_items ADD COLUMN IF NOT EXISTS ca_validade date;
+ALTER TABLE epi_deliveries ADD COLUMN IF NOT EXISTS sign_request_id integer;
+ALTER TABLE epi_deliveries ADD COLUMN IF NOT EXISTS location_id integer;
+CREATE TABLE IF NOT EXISTS announcement_reactions (announcement_id integer NOT NULL, user_id integer NOT NULL, emoji text NOT NULL, at timestamp NOT NULL DEFAULT now(), PRIMARY KEY (announcement_id, user_id, emoji));
+CREATE TABLE IF NOT EXISTS birthday_wishes (id serial PRIMARY KEY, para_employee_id integer NOT NULL, de_user_id integer NOT NULL, de_nome text NOT NULL, ano integer NOT NULL, mensagem text, at timestamp NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX IF NOT EXISTS birthday_wishes_uq ON birthday_wishes(para_employee_id, de_user_id, ano);
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS abono_dias integer NOT NULL DEFAULT 0;
+ALTER TABLE leave_requests ADD COLUMN IF NOT EXISTS adiantar_13 boolean NOT NULL DEFAULT false;
+ALTER TABLE request_types ADD COLUMN IF NOT EXISTS confidencial boolean NOT NULL DEFAULT false;
 `;
 
 // Estrutura vigente ditada em 16/07/2026 (22 cargos) + Professor e Pedagoga (corpo docente).
@@ -938,6 +1022,46 @@ export const DEFAULT_SETTINGS = {
     paresSugeridos: 4,                       // pares sugeridos por avaliado (nunca menos que o mínimo de anonimato do ciclo)
     maxConvitesPorAvaliador: 6,              // ninguém recebe mais que N convites no mesmo ciclo (evita sobrecarga e respostas no automático)
     pdiAdesaoAlvo: 80,                       // v31 · % de liderados com PDI ativo esperado por líder (engajamento por liderança)
+  },
+  // v34 · assinatura eletrônica (documentos, termos de EPI e espelho do ponto): prazos e lembrete
+  assinaturas: {
+    prazoDias: 7,                 // prazo padrão para assinar um documento enviado
+    espelhoPrazoDias: 5,          // prazo para assinar ou contestar o espelho do mês
+    lembreteDiasAntes: 2,         // lembrete (só contagem) quando faltam N dias
+  },
+  // v34 · cadastro: ficha de admissão pelo link e alterações cadastrais pelo Meu espaço (sempre com revisão do RH)
+  cadastro: {
+    conviteDias: 7,               // validade do link da ficha de admissão
+    maxEnviosAdmissao: 3,         // reenvios da ficha antes da revisão
+    maxPedidosAbertos: 3,         // pedidos de alteração abertos por pessoa
+  },
+  // v34 · termômetro de humor: anônimo — a resposta não guarda quem respondeu e o resultado só aparece por grupo com o mínimo
+  termometro: {
+    ativo: true,
+    minimoGrupo: 5,               // respostas mínimas por grupo e semana para exibir
+    alertaMedia: 2.5,             // média semanal (1 a 5) que acende o alerta do grupo
+    fatores: ["Carga de trabalho", "Prazos", "Relação com colegas", "Liderança", "Estrutura e recursos", "Reconhecimento", "Aprendizado", "Clima da equipe"] as string[],
+  },
+  // v34 · escalas de trabalho (portaria, limpeza, cozinha, apoio): alertas de jornada e cobertura
+  escalas: {
+    interjornadaHoras: 11,        // descanso mínimo entre o fim de um turno e o início do próximo
+    jornadaMaxHoras: 10,          // turno acima disto (sem o intervalo) gera alerta
+    exigirFolgaSemanal: true,     // alerta para 7 dias seguidos sem folga
+    diasAvisoPublicacao: 2,       // a escala da próxima semana entra nas pendências N dias antes
+  },
+  // v34 · estoque de materiais e EPIs por unidade e local
+  estoque: {
+    categorias: ["Limpeza", "Cozinha e refeitório", "Expediente", "Pedagógico", "Manutenção", "EPI", "Uniformes", "Outros"] as string[],
+    alertaValidadeDias: 30,       // lote que vence nos próximos N dias entra no alerta
+    alertaCaDias: 60,             // CA de EPI que vence nos próximos N dias entra no alerta
+  },
+  // v34 · Meu espaço: o que o colaborador vê e pede sozinho
+  meuEspaco: {
+    mostrarEvolucaoSalarial: true,
+    mostrarAniversariantes: true,
+    permitirAjustePonto: true,
+    permitirAtestado: true,
+    ajustePontoDiasMax: 35,       // até quantos dias atrás o colaborador pede ajuste de ponto
   },
   // v31 · conversas: 1:1 marcadas e feedback contínuo (qualquer colega manda ou pede feedback)
   // v33 · fornecedores (SO-ARCH-SUP-001) — política proposta, editável em Configurações → Fornecedores (v33). Os documentos não são
@@ -1643,7 +1767,17 @@ const FKS: [string, string, string, string][] = [
   ["supplier_establishments", "supplier_id", "suppliers", "CASCADE"], ["supplier_units", "supplier_id", "suppliers", "CASCADE"], ["supplier_units", "unit_id", "units", "CASCADE"], ["supplier_contacts", "supplier_id", "suppliers", "CASCADE"],
   ["supplier_bank_accounts", "supplier_id", "suppliers", "CASCADE"], ["supplier_bank_changes", "supplier_id", "suppliers", "CASCADE"], ["supplier_bank_changes", "account_id", "supplier_bank_accounts", "CASCADE"], ["supplier_documents", "supplier_id", "suppliers", "CASCADE"],
   ["supplier_homologations", "supplier_id", "suppliers", "CASCADE"], ["supplier_reviews", "homologation_id", "supplier_homologations", "CASCADE"], ["supplier_evaluations", "supplier_id", "suppliers", "CASCADE"], ["supplier_occurrences", "supplier_id", "suppliers", "CASCADE"],
-  ["supplier_invitations", "supplier_id", "suppliers", "CASCADE"], ["supplier_change_requests", "supplier_id", "suppliers", "CASCADE"], ["suppliers", "responsavel_user_id", "users", "SET NULL"], ["suppliers", "conta_id", "chart_accounts", "SET NULL"], ["suppliers", "cost_center_id", "cost_centers", "SET NULL"]
+  ["supplier_invitations", "supplier_id", "suppliers", "CASCADE"], ["supplier_change_requests", "supplier_id", "suppliers", "CASCADE"], ["suppliers", "responsavel_user_id", "users", "SET NULL"], ["suppliers", "conta_id", "chart_accounts", "SET NULL"], ["suppliers", "cost_center_id", "cost_centers", "SET NULL"],
+  // v34 · assinaturas, folha por pessoa, cadastro, autoatendimento, pesquisas, escalas e estoque
+  ["sign_requests", "document_id", "sign_documents", "CASCADE"], ["sign_requests", "employee_id", "employees", "CASCADE"], ["sign_documents", "attachment_id", "attachments", "RESTRICT"], ["sign_documents", "unit_id", "units", "SET NULL"],
+  ["employee_dependents", "employee_id", "employees", "CASCADE"], ["employee_change_requests", "employee_id", "employees", "CASCADE"], ["admission_invites", "employee_id", "employees", "CASCADE"],
+  ["timesheet_adjust_requests", "employee_id", "employees", "CASCADE"], ["medical_certificates", "employee_id", "employees", "CASCADE"], ["medical_certificates", "leave_request_id", "leave_requests", "SET NULL"],
+  ["custom_survey_responses", "survey_id", "custom_surveys", "CASCADE"], ["custom_survey_marks", "survey_id", "custom_surveys", "CASCADE"], ["custom_surveys", "unit_id", "units", "SET NULL"], ["custom_surveys", "position_id", "positions", "SET NULL"],
+  ["shift_teams", "unit_id", "units", "CASCADE"], ["shift_team_members", "team_id", "shift_teams", "CASCADE"], ["shift_team_members", "employee_id", "employees", "CASCADE"], ["shift_assignments", "team_id", "shift_teams", "CASCADE"],
+  ["shift_assignments", "employee_id", "employees", "CASCADE"], ["shift_assignments", "shift_type_id", "shift_types", "SET NULL"], ["shift_publications", "team_id", "shift_teams", "CASCADE"], ["shift_changes", "team_id", "shift_teams", "CASCADE"],
+  ["stock_locations", "unit_id", "units", "CASCADE"], ["stock_levels", "item_id", "stock_items", "CASCADE"], ["stock_levels", "location_id", "stock_locations", "CASCADE"], ["stock_lots", "item_id", "stock_items", "CASCADE"], ["stock_lots", "location_id", "stock_locations", "CASCADE"],
+  ["stock_moves", "item_id", "stock_items", "CASCADE"], ["stock_moves", "location_id", "stock_locations", "CASCADE"], ["stock_items", "epi_id", "epi_items", "SET NULL"],
+  ["announcement_reactions", "announcement_id", "announcements", "CASCADE"], ["announcement_reactions", "user_id", "users", "CASCADE"], ["birthday_wishes", "para_employee_id", "employees", "CASCADE"],
 ];
 
 /** Divide o SQL em instruções, sem quebrar em ';' dentro de aspas simples, blocos $$ ou comentários. */
@@ -1723,6 +1857,50 @@ export async function seedBase(adminPassword: string) {
   log.push(...(await seedV30()));
   log.push(...(await seedV31()));
   log.push(...(await seedV33()));
+  log.push(...(await seedV34()));
+  return log;
+}
+
+/**
+ * v34 · uma vez por banco: os tipos de pedido do autoatendimento (Fale com o RH, carga horária, benefício, movimentação — todos
+ * confidenciais), as telas novas nos acessos personalizados que já viam a tela “mãe”, e turnos-padrão para começar as escalas.
+ */
+export async function seedV34(): Promise<string[]> {
+  const log: string[] = [];
+  try {
+    const [feito] = await sql`SELECT 1 FROM settings WHERE key='v34_autoatendimento'`;
+    if (!feito) {
+      const TIPOS: [string, string, string, number, CampoSeed[], EtapaSeed[], string[] | null][] = [
+        ["FALE_RH", "Fale com o RH", "Dúvida, sugestão ou assunto pessoal com o RH. Só você, o RH e a Direção veem.", 2,
+          [c("assunto", "Assunto", "SELECAO", true, ["Folha e holerite", "Férias", "Benefícios", "Ponto e banco de horas", "Documentos e declarações", "Assunto pessoal", "Outro"]), c("mensagem", "Mensagem", "TEXTO_LONGO")],
+          [{ nome: "RH", perfis: ["RH"] }], null],
+        ["ALT_JORNADA", "Alteração de carga horária ou horário", "Pedido de mudança de carga horária, turno ou horário de trabalho (pela pessoa ou pela liderança).", 5,
+          [c("colaborador", "Colaborador(a)", "TEXTO"), c("atual", "Jornada atual", "TEXTO"), c("proposta", "Jornada proposta (horas e horários)", "TEXTO"), c("inicio", "A partir de", "DATA"), c("motivo", "Motivo", "TEXTO_LONGO")],
+          [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "RH", perfis: ["RH"] }], null],
+        ["BENEFICIO", "Inclusão ou exclusão de benefício", "Vale-transporte, plano de saúde ou odontológico, vale-alimentação e outros (com dependentes, se for o caso).", 3,
+          [c("beneficio", "Benefício", "SELECAO", true, ["Vale-transporte", "Plano de saúde", "Plano odontológico", "Vale-alimentação / refeição", "Seguro de vida", "Outro"]), c("acao", "O que deseja", "SELECAO", true, ["Incluir", "Excluir", "Alterar"]), c("detalhes", "Detalhes (dependentes, linhas de ônibus, plano)", "TEXTO_LONGO"), c("inicio", "A partir de", "DATA", false)],
+          [{ nome: "RH", perfis: ["RH"] }], null],
+        ["MOVIMENTACAO", "Proposta de mudança de cargo ou salário", "A liderança propõe promoção, mudança de cargo ou reajuste para alguém da equipe. Confidencial: quem propõe, quem aprova, RH e Direção.", 7,
+          [c("colaborador", "Colaborador(a)", "TEXTO"), c("tipo", "Tipo", "SELECAO", true, ["Promoção", "Mudança de cargo (mesmo nível)", "Mérito / reajuste", "Enquadramento na faixa"]), c("proposta", "Cargo ou salário proposto", "TEXTO"), c("valor", "Novo salário (R$)", "VALOR", false), c("inicio", "A partir de", "DATA"), c("justificativa", "Justificativa (resultados, responsabilidades)", "TEXTO_LONGO")],
+          [{ nome: "Diretor(a) da unidade", perfis: ["DIRETOR_UNIDADE"] }, { nome: "RH", perfis: ["RH"] }, { nome: "Direção", perfis: ["DIRECAO"] }], ["GESTOR", "DIRETOR_UNIDADE", "RH", "DIRECAO"]],
+      ];
+      let n = 0; const [{ ordem }] = await sql<{ ordem: number }[]>`SELECT coalesce(max(ordem), 0)::int AS ordem FROM request_types`;
+      for (const [k, [codigo, nome, descricao, prazo, campos, etapas, perfis]] of TIPOS.entries()) {
+        const r = await sql`INSERT INTO request_types (codigo, nome, descricao, campos, etapas, prazo_dias, perfis, ordem, confidencial) VALUES (${codigo}, ${nome}, ${descricao}, ${JSON.stringify(campos)}::jsonb, ${JSON.stringify(etapas)}::jsonb, ${prazo}, ${perfis ? JSON.stringify(perfis) : null}::jsonb, ${ordem + k + 1}, true) ON CONFLICT (codigo) DO NOTHING`; n += r.count;
+      }
+      if (n) log.push(`${n} tipo(s) de pedido do autoatendimento cadastrado(s) (Fale com o RH, carga horária, benefício, movimentação), todos confidenciais.`);
+      // telas novas entram nos acessos personalizados que já viam a tela “mãe”
+      const MAES: [string, string[]][] = [["/colaboradores", ["/colaboradores/alteracoes"]], ["/ponto", ["/ponto/ajustes", "/ponto/escalas", "/ponto/atestados"]], ["/documentos", ["/documentos/assinaturas"]], ["/folha/arquivo", ["/folha/dividir"]], ["/clima", ["/clima/pesquisas", "/clima/humor"]], ["/operacoes/fornecedores", ["/operacoes/estoque"]]];
+      const ajustar = (telas: string[]) => { const out = [...telas]; for (const [mae, novas] of MAES) if (telas.includes(mae)) for (const t of novas) if (!out.includes(t)) out.push(t); return out; };
+      let t = 0;
+      for (const p of await sql<{ id: number; acesso: { telas?: string[] | null } | null }[]>`SELECT id, acesso FROM positions WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(p.acesso!.telas!); if (novo.length !== p.acesso!.telas!.length) { await sql`UPDATE positions SET acesso = jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${p.id}`; t++; } }
+      for (const u of await sql<{ id: number; acesso: { telas?: string[] | null } | null }[]>`SELECT id, acesso FROM users WHERE acesso IS NOT NULL AND jsonb_typeof(acesso->'telas')='array'`) { const novo = ajustar(u.acesso!.telas!); if (novo.length !== u.acesso!.telas!.length) { await sql`UPDATE users SET acesso = jsonb_set(acesso, '{telas}', ${JSON.stringify(novo)}::jsonb) WHERE id=${u.id}`; t++; } }
+      if (t) log.push(`Telas novas da v34 incluídas em ${t} acesso(s) personalizado(s).`);
+      const [{ nt }] = await sql<{ nt: number }[]>`SELECT count(*)::int AS nt FROM shift_types`;
+      if (!nt) { await sql`INSERT INTO shift_types (nome, sigla, inicio, fim, intervalo_min, cor) VALUES ('Manhã', 'M', '06:30', '14:50', 60, 'sky'), ('Tarde', 'T', '13:00', '21:20', 60, 'amber'), ('Comercial', 'C', '07:30', '17:18', 72, 'emerald'), ('Noturno 12x36', 'N', '19:00', '07:00', 60, 'violet')`; log.push("Turnos-padrão das escalas criados (Manhã, Tarde, Comercial, Noturno 12x36) — ajuste em Ponto → Escalas → Turnos."); }
+      await sql`INSERT INTO settings (key, value) VALUES ('v34_autoatendimento', ${JSON.stringify({ em: new Date().toISOString(), tipos: n, telas: t })}::jsonb) ON CONFLICT (key) DO NOTHING`;
+    }
+  } catch (e) { log.push(`Autoatendimento (v34) pendente: ${e instanceof Error ? e.message : String(e)}`); }
   return log;
 }
 

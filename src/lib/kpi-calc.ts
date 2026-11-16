@@ -247,7 +247,7 @@ export const CALCS: Record<string, Calc> = {
   "pessoas.ferias_vencendo": {
     calc: async c => {
       const emps = await sql<{ id: number; unit_id: number; admissao: string; quitadas: string | null }[]>`SELECT id, unit_id, admissao::text, ferias_quitadas_ate::text AS quitadas FROM employees WHERE situacao IN ('ATIVO','FERIAS','AFASTADO') AND vinculo IN ('CLT','HORISTA')`;
-      const lv = await sql<{ employee_id: number; periodo_ref: string | null; dias: number }[]>`SELECT employee_id, periodo_ref::text, dias FROM leave_requests WHERE tipo='FERIAS' AND status='APROVADA' AND employee_id = ANY(${emps.map(e => e.id).concat(0)})`;
+      const lv = await sql<{ employee_id: number; periodo_ref: string | null; dias: number }[]>`SELECT employee_id, periodo_ref::text, (dias + abono_dias)::int AS dias FROM leave_requests WHERE tipo='FERIAS' AND status='APROVADA' AND employee_id = ANY(${emps.map(e => e.id).concat(0)})`;
       const lim = addDays(c.hoje, 60); const acc = new Map<number, number>(c.units.map(u => [u, 0]));
       for (const e of emps) { const n = periodosFerias(e.admissao, lv.filter(l => l.employee_id === e.id).map(l => ({ periodoRef: l.periodo_ref, dias: l.dias })), c.hoje, e.quitadas).filter(p => p.status === "VENCIDO" || (p.status === "ABERTO" && p.concessivoAte <= lim)).length; if (n) acc.set(e.unit_id, (acc.get(e.unit_id) ?? 0) + n); }
       return [...acc].map(([u, v]) => ({ periodo: c.ate, unit_id: u, valor: v }));

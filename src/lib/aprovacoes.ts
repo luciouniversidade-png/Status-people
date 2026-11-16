@@ -43,7 +43,7 @@ export async function filaFerias(s: Session, selecionados?: Set<number>): Promis
   const [equipe, fora, usadas] = await Promise.all([
     sql<{ unit_id: number; position_id: number; n: number }[]>`SELECT unit_id, position_id, count(*)::int AS n FROM employees WHERE situacao IN ('ATIVO','FERIAS','AFASTADO') AND position_id IS NOT NULL GROUP BY 1, 2`,
     sql<{ employee_id: number; unit_id: number; position_id: number | null; inicio: string; fim: string }[]>`SELECT l.employee_id, e.unit_id, e.position_id, l.inicio::text, l.fim::text FROM leave_requests l JOIN employees e ON e.id=l.employee_id WHERE l.status='APROVADA' AND l.fim >= ${hoje()}`,
-    sql<{ employee_id: number; periodo_ref: string | null; dias: number }[]>`SELECT employee_id, periodo_ref::text, dias FROM leave_requests WHERE status='APROVADA' AND tipo='FERIAS' AND employee_id = ANY(${ids})`,
+    sql<{ employee_id: number; periodo_ref: string | null; dias: number }[]>`SELECT employee_id, periodo_ref::text, (dias + abono_dias)::int AS dias FROM leave_requests WHERE status='APROVADA' AND tipo='FERIAS' AND employee_id = ANY(${ids})`,
   ]);
   // pedidos normais anteriores na ordem da fila entram como "fora" para os seguintes (só os marcados, quando é o lote sendo aprovado)
   const previstos: Ausencia[] = [];

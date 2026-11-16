@@ -33,12 +33,15 @@ export async function montarMes(employeeId: number, mes: string): Promise<{ dias
     sql<{ inicio: string; fim: string; tipo: string }[]>`SELECT inicio::text, fim::text, tipo FROM leave_requests WHERE employee_id=${employeeId} AND status='APROVADA' AND inicio <= ${fim} AND fim >= ${ini}`,
     sql<{ vigencia_inicio: string; vigencia_fim: string | null; seg: number; ter: number; qua: number; qui: number; sex: number; sab: number; dom: number }[]>`SELECT vigencia_inicio::text, vigencia_fim::text, seg, ter, qua, qui, sex, sab, dom FROM schedules WHERE employee_id=${employeeId} ORDER BY vigencia_inicio DESC`,
   ]);
+  // v34 · quem trabalha por escala (portaria, limpeza, cozinha): a escala publicada define a jornada esperada do dia
+  const { esperadoPelaEscala } = await import("./escalas"); const escala = await esperadoPelaEscala(employeeId, ini, fim);
   const out: Dia[] = [];
   for (let d = 1; d <= nd; d++) {
     const data = `${mes}-${String(d).padStart(2, "0")}`; const dow = new Date(data + "T00:00:00Z").getUTCDay();
     const salvo = salvos.find(x => x.data === data);
     const jornada = jornadas.find(j => j.vigencia_inicio <= data && (!j.vigencia_fim || j.vigencia_fim >= data));
-    let esperado = jornada ? jornada[DOW[dow]] : (dow === 0 || dow === 6 ? 0 : emp.jornada_min_dia ?? 0);
+    const esc = escala.get(data);
+    let esperado = esc !== undefined ? esc : jornada ? jornada[DOW[dow]] : (dow === 0 || dow === 6 ? 0 : emp.jornada_min_dia ?? 0);
     const c = cal.find(x => x.data === data); const l = leaves.find(x => x.inicio <= data && x.fim >= data);
     let status = "NORMAL"; let trabalhado = esperado;
     if (data < emp.admissao || (emp.desligamento && data > emp.desligamento)) { esperado = 0; trabalhado = 0; status = "DSR"; }

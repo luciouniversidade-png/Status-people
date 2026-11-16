@@ -1,8 +1,10 @@
 import Link from "@/components/Link";
-import { requireSession, scopeUnit, canSeeEmployee } from "@/lib/auth";
+import { requireSession, scopeUnit, canSeeEmployee, can } from "@/lib/auth";
+import { Modal } from "@/components/Modal";
+import { moverLiderados } from "./actions";
 import { sql, db, schema } from "@/db";
 import { asc } from "drizzle-orm";
-import { Page, Card, Input, Select, Btn } from "@/components/ui";
+import { Page, Card, Input, Select, Btn, Field, Flash } from "@/components/ui";
 import { arvorePessoas, iniciais, type NoPessoa } from "@/lib/pessoas-v30";
 import { fmtData, hoje } from "@/lib/utils";
 
@@ -57,6 +59,7 @@ export default async function Organograma({ searchParams }: { searchParams: Prom
 
   return (
     <Page title="Organograma e quem é quem" sub="Quem responde a quem, pelo gestor direto da ficha. Toque numa pessoa para ver cargo, unidade, equipe, ramal e e-mail institucional.">
+      <Flash ok={sp.ok} erro={sp.erro} />
       {abas}
       <form className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_200px_auto]"><Input name="q" defaultValue={q} placeholder="Buscar por nome, cargo, área, unidade ou ramal" aria-label="Buscar" /><Select name="u" defaultValue={unidade ?? ""} aria-label="Unidade"><option value="">Rede inteira</option>{units.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}</Select><Btn kind="ghost">Filtrar</Btn></form>
       <div className="mb-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
@@ -87,6 +90,13 @@ export default async function Organograma({ searchParams }: { searchParams: Prom
         {t.noDiretorio || equipe ? <><div><dt className="text-[11px] text-slate-500">Ramal</dt><dd>{t.ramal ?? "—"}</dd></div><div><dt className="text-[11px] text-slate-500">E-mail institucional</dt><dd className="[overflow-wrap:anywhere]">{t.emailInst ? <a className="text-acao" href={`mailto:${t.emailInst}`}>{t.emailInst}</a> : "—"}</dd></div></> : <p className="text-xs text-slate-500">Contato fora do quem é quem (preferência da pessoa).</p>}
       </dl>
       {podeFicha && <div className="mt-3"><Btn small kind="ghost" href={`/colaboradores/${t.id}`}>Abrir ficha</Btn></div>}
+      {can.editar(s) && eq.length > 0 ? <div className="mt-3 border-t border-line pt-3"><Modal label={`Mover liderados (${eq.length})`} title={`Mover liderados de ${t.nome}`} kind="ghost">
+        <form action={moverLiderados} className="space-y-2"><input type="hidden" name="gestorAtual" value={t.id} /><input type="hidden" name="voltar" value={`/organograma?p=${t.id}#pessoa`} />
+          <Field label="Quem muda de gestor"><div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-line p-2">{eq.map(f => <label key={f.id} className="flex items-center gap-1.5 text-sm"><input type="checkbox" name="liderados" value={f.id} defaultChecked /> {f.nome}<span className="text-[11px] text-slate-500">· {f.cargo ?? "—"}</span></label>)}</div></Field>
+          <Field label="Novo(a) gestor(a) direto(a)"><Select name="novoGestor" defaultValue=""><option value="">—</option>{todos.filter(x => x.id !== t.id).map(x => <option key={x.id} value={x.id}>{x.nome} · {x.unidade}</option>)}</Select></Field>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><Field label="A partir de"><Input type="date" name="data" defaultValue={h} /></Field><Field label="Motivo"><Input name="motivo" placeholder="ex.: reestruturação da coordenação" /></Field></div>
+          <p className="text-[11px] text-slate-500">Cada pessoa ganha a movimentação “mudança de gestor” no histórico. O ONE recusa quem viraria gestor(a) de quem está acima dele(a). Avisos só com contagem.</p>
+          <Btn small>Mover</Btn></form></Modal></div> : null}
     </Card>;
   }
 }

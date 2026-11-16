@@ -99,7 +99,7 @@ export async function getSettings(): Promise<Settings> {
 
 // ---------- Auditoria ----------
 // Campos sensíveis nunca entram em claro na trilha de auditoria (a trilha registra QUE mudou, não o valor).
-const SENSIVEIS = new Set(["cpf", "cpfResponsavel", "cpf_responsavel", "salario", "salarioAnterior", "salario_anterior", "senha", "senhaHash", "senha_hash", "totpSecret", "totp_secret", "backupCodes", "backup_codes", "dataNascimento", "data_nascimento", "justificativa"]);
+const SENSIVEIS = new Set(["cpf", "cpfResponsavel", "cpf_responsavel", "salario", "salarioAnterior", "salario_anterior", "senha", "senhaHash", "senha_hash", "totpSecret", "totp_secret", "backupCodes", "backup_codes", "dataNascimento", "data_nascimento", "justificativa", "rg", "pis", "raca_cor", "racaCor", "banco_conta", "bancoConta", "banco_agencia", "bancoAgencia", "pix_chave", "pixChave"]);
 export function mascarar(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(mascarar);
   if (v && typeof v === "object" && !(v instanceof Date)) return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, SENSIVEIS.has(k) ? (x === null || x === undefined || x === "" ? x : "***") : mascarar(x)]));

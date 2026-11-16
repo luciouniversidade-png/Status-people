@@ -8,6 +8,7 @@ import { locksDoMes, pendenciasFechamento } from "@/lib/folha";
 import { fecharPonto, reabrirPonto } from "../folha/actions";
 import { Card, Textarea } from "@/components/ui";
 import { fmtDataHora } from "@/lib/utils";
+import { liberarEspelhosAction } from "../documentos/assinaturas/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export default async function Ponto({ searchParams }: { searchParams: Promise<Re
   const unidades = await sql<{ id: number; nome: string }[]>`SELECT id, nome FROM units ${u === null ? sql`` : sql`WHERE id=${u}`} ORDER BY nome`;
   const locks = await locksDoMes(mes); const pend = await Promise.all(unidades.map(x => pendenciasFechamento(x.id, mes)));
   const podeFechar = ["RH", "DIRECAO", "DIRETOR_UNIDADE"].includes(s.role); const podeReabrir = ["RH", "DIRECAO"].includes(s.role);
+  // v34 · espelhos do mês enviados para assinatura, por unidade
+  const espelhos = new Map((await sql<{ unit_id: number; total: number; assinados: number; contestados: number }[]>`SELECT d.unit_id, count(r.id)::int AS total, count(r.id) FILTER (WHERE r.status='ASSINADO')::int AS assinados, count(r.id) FILTER (WHERE r.status='CONTESTADO')::int AS contestados FROM sign_documents d JOIN sign_requests r ON r.document_id=d.id WHERE d.tipo='ESPELHO' AND d.competencia=${mes} AND d.status <> 'CANCELADO' GROUP BY d.unit_id`).map(r => [r.unit_id, r]));
   const voltar = `/ponto?mes=${mes}`;
   return (
     <Page title="Ponto e jornada" sub="Folha mensal por colaborador: dia a dia com carga esperada, trabalhada e situação. Cada dia salvo vira lançamento no banco de horas."
@@ -43,6 +46,7 @@ export default async function Ponto({ searchParams }: { searchParams: Promise<Re
               {!fechado && podeFechar && <form action={fecharPonto} className="mt-2 space-y-2"><input type="hidden" name="unitId" value={x.id} /><input type="hidden" name="mes" value={mes} /><input type="hidden" name="voltar" value={voltar} />
                 {p.total > 0 && podeReabrir && <Textarea name="ressalva" placeholder="Ressalva (obrigatória com pendências): o que fica em aberto e por quê" className="min-h-[56px] text-xs" />}
                 <Btn small kind={p.total ? "ghost" : "primary"}>{p.total ? "Fechar com ressalva" : "Fechar o mês"}</Btn></form>}
+              {fechado && podeFechar && <form action={liberarEspelhosAction} className="mt-2"><input type="hidden" name="unitId" value={x.id} /><input type="hidden" name="mes" value={mes} /><input type="hidden" name="voltar" value={voltar} /><Btn small kind="ghost">✍️ Liberar espelhos para assinatura</Btn>{espelhos.get(x.id) ? <span className="ml-2 text-[11px] text-slate-600">{espelhos.get(x.id)!.assinados}/{espelhos.get(x.id)!.total} assinados{espelhos.get(x.id)!.contestados ? ` · ${espelhos.get(x.id)!.contestados} contestado(s)` : ""}</span> : null}</form>}
               {fechado && podeReabrir && <details className="mt-2"><summary className="cursor-pointer text-xs text-acao">Reabrir com justificativa</summary><form action={reabrirPonto} className="mt-2 space-y-2"><input type="hidden" name="unitId" value={x.id} /><input type="hidden" name="mes" value={mes} /><input type="hidden" name="voltar" value={voltar} /><Textarea name="motivo" required minLength={10} placeholder="Por que reabrir (fica na auditoria)" className="min-h-[56px] text-xs" /><Btn small danger>Reabrir</Btn></form></details>}
             </div>); })}
         </div>
